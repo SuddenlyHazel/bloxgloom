@@ -134,14 +134,31 @@ fn luau_machine_present_input_exact_output_and_component_fuel_roundtrip() {
 
 #[test]
 fn luau_component_machine_processes_exact_stack_over_listener_and_recovers() {
+    process_over_listener(false);
+}
+
+#[test]
+fn luau_dynamic_transformation_computes_components_over_listener_and_recovers() {
+    process_over_listener(true);
+}
+
+fn process_over_listener(dynamic: bool) {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
     let register = source("{version=1,bytes=string.char(0,255)}", "'preserve_input'")
-        .replace(",fuel={item='bloxgloom:stick',pulses=30}", "");
+        .replace(",fuel={item='bloxgloom:stick',pulses=30}", "")
+        .replace(
+            "h.register_entity(",
+            "h.register_tag('demo:inputs','item',{'demo:raw'}); h.register_entity(",
+        );
     package(&fixture, &register);
     std::fs::write(
         fixture.0.join("packages/demo/server/tick.luau"),
-        "return function(c) return c.data,1,true end",
+        if dynamic {
+            "return function(c) local s=c.slots[1]; if not s then return c.data,1,false end; assert(c.world_time().cycle_ms>0); assert(c.weather().kind); assert(c.tag_contains('item','demo:inputs',s.item)); local members=c.tag_members('item','demo:inputs',0,8); assert(members[1]==s.item); assert(not pcall(function() s.components.version=2 end)); local n=string.byte(s.components.bytes,2); return c.data,1,{{kind='transform',inputs={{slot=1,count=1}},outputs={{slot=2,item='demo:made',count=n==255 and 3 or 1,components={version=1,bytes=string.char(n-1, string.byte(s.components.bytes,1))}}}}} end"
+        } else {
+            "return function(c) return c.data,1,true end"
+        },
     )
     .unwrap();
     const PROFILE: u128 = 0xF039;
@@ -151,6 +168,7 @@ fn luau_component_machine_processes_exact_stack_over_listener_and_recovers() {
     let machine_item = catalog.item_by_key("demo:press").unwrap();
     let raw = catalog.item_by_key("demo:raw").unwrap();
     let made = catalog.item_by_key("demo:made").unwrap();
+    let produced = if dynamic { 3 } else { 2 };
     state.spawn_anchor = [0.5, 79.0, 0.5];
     for x in -2..=2 {
         for z in -2..=3 {
@@ -234,7 +252,7 @@ fn luau_component_machine_processes_exact_stack_over_listener_and_recovers() {
         super::super::super::extension_lifecycle::until(&mut peer, &mut client, &catalog, |c| {
             c.view().unwrap().slots[1]
                 .as_ref()
-                .is_some_and(|stack| stack.item == made && stack.count == 2)
+                .is_some_and(|stack| stack.item == made && stack.count == produced)
                 && c.player_count(1) == 0
         });
         client.close();
@@ -252,7 +270,74 @@ fn luau_component_machine_processes_exact_stack_over_listener_and_recovers() {
     assert!(payload.slots[0].is_none());
     assert_eq!(
         payload.slots[1],
-        Some(Stack::with_components(made, 2, 1, vec![0, 255]).unwrap())
+        Some(
+            Stack::with_components(
+                made,
+                produced,
+                1,
+                if dynamic { vec![254, 0] } else { vec![0, 255] }
+            )
+            .unwrap()
+        )
     );
     assert!(state.inventory_store.load(PROFILE).unwrap().slots[1].is_none());
+}
+
+#[test]
+fn luau_transformations_capture_owned_components_and_replay_deterministically() {
+    let fixture = Fixture::new();
+    package(&fixture, &source("'present'", "'preserve_input'"));
+    std::fs::write(
+        fixture.0.join("packages/demo/server/tick.luau"),
+        "local attempts=0; return function(c) attempts+=1; local s=c.slots[2]; return c.data,20,{{kind='transform',inputs={{slot=2,count=1}},outputs={{slot=3,item='demo:made',count=attempts,components={version=s.components.version,bytes=s.components.bytes..'x'}}}}} end",
+    ).unwrap();
+    let state = fixture.open().unwrap();
+    let catalog = state.world.catalog();
+    let machine = catalog
+        .machine(catalog.entity_type_id_by_key("demo:press_machine").unwrap())
+        .unwrap();
+    let slots = [
+        None,
+        Some(bloxgloom_host_api::machine::Slot {
+            item: "demo:raw",
+            count: 3,
+            has_components: true,
+            stack_key: 1,
+            components: Some(bloxgloom_host_api::machine::ComponentValue {
+                version: 1,
+                bytes: vec![0, 255],
+            }),
+        }),
+        None,
+    ];
+    let context = Context {
+        id: 19,
+        tick: 20,
+        due: 20,
+        slots: &slots,
+        data: b"",
+        fuel: 0,
+        progress: 0,
+        environment: None,
+        tags: None,
+    };
+    for _ in 0..2 {
+        let plan = machine.behavior.plan(&context).unwrap();
+        let [Work::Transform(work)] = plan.work.as_slice() else {
+            panic!("expected transformation")
+        };
+        assert_eq!(work.inputs[0].expected.count, 3);
+        assert_eq!(
+            work.inputs[0].expected.components.as_ref().unwrap().bytes,
+            [0, 255]
+        );
+        assert_eq!(
+            work.outputs[0].stack.count, 1,
+            "retry cannot retain module mutations"
+        );
+        assert_eq!(
+            work.outputs[0].stack.components.as_ref().unwrap().bytes,
+            [0, 255, b'x']
+        );
+    }
 }

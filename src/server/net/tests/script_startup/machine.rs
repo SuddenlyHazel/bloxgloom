@@ -77,6 +77,8 @@ fn luau_machine_negotiates_plans_and_restarts() {
             data: b"",
             fuel: 0,
             progress: 0,
+            environment: None,
+            tags: None,
         })
         .unwrap();
     assert_eq!(plan.data, b"step");
@@ -336,6 +338,8 @@ fn luau_machine_ports_and_transfer_work_negotiate_and_restart() {
             data: b"",
             fuel: 0,
             progress: 0,
+            environment: None,
+            tags: None,
         })
         .unwrap();
     assert_eq!(plan.work.len(), 2);
@@ -661,6 +665,8 @@ fn luau_machine_rejects_invalid_ports_and_undeclared_transfer_work() {
                 data: b"",
                 fuel: 0,
                 progress: 0,
+                environment: None,
+                tags: None,
             })
             .is_err()
     );

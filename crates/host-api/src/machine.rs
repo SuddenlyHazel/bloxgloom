@@ -1,12 +1,15 @@
 //! Active anchored inventories. Hooks declare work; only host operations mutate
-//! items. Recipes are explicit item-production authority, transfers conserve exact
-//! stacks, and opaque hook data cannot override either inventory.
+//! items. Declared filters constrain custom production, recipes provide default
+//! processing, transfers conserve exact stacks, and opaque hook data cannot
+//! override inventory validation.
 use crate::{FootprintCell, RegistrationError};
 use std::sync::Arc;
 mod components;
 pub use components::{ComponentMatch, ComponentOutput, ComponentValue};
 mod lifecycle;
 pub use lifecycle::LifecyclePlan;
+mod transaction;
+pub use transaction::{Input, Output, StackValue, Transformation};
 #[cfg(test)]
 mod tests;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,6 +81,8 @@ pub struct Slot<'a> {
     pub item: &'a str,
     pub count: u16,
     pub has_components: bool,
+    /// Exact authoritative owned-slot data; never supplied by client replicas.
+    pub components: Option<ComponentValue>,
     /// Snapshot-local equivalence class: equal keys mean equal item and exact
     /// components (count excluded). Not a persistent ID and contains no bytes.
     pub stack_key: u8,
@@ -118,10 +123,15 @@ pub struct Context<'a> {
     pub data: &'a [u8],
     pub fuel: u16,
     pub progress: u16,
+    pub environment: Option<crate::gameplay::Environment>,
+    pub tags: Option<&'a dyn crate::queries::Tags>,
 }
 #[derive(Clone, Debug)]
 pub enum Work {
     Process,
+    /// Atomic runtime processing, constrained to this machine's own slots and
+    /// registered item/component filters. The host checks exact input preimages.
+    Transform(Transformation),
     Transfer {
         /// Adjacent peer cell relative to this machine's anchor.
         offset: [i32; 3],
@@ -137,7 +147,7 @@ pub struct Plan {
     pub data: Vec<u8>,
     /// Must be later than Context::due; may be behind current tick for catch-up.
     pub next_tick: u64,
-    /// Up to eight ordered alternatives; first process or available transfer wins.
+    /// Up to eight ordered alternatives; first process or available operation wins.
     pub work: Vec<Work>,
 }
 /// Pure retryable planning on immutable inputs. No I/O or external side effects.

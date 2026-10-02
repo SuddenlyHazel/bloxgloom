@@ -4,6 +4,11 @@ use super::{Invocation, Limits, Program, package::PackageSnapshot, run_with, val
 use bloxgloom_host_api::{RegistrationError, machine as api};
 use mlua::{Function, Lua, Value};
 use std::sync::Arc;
+#[cfg(test)]
+#[path = "machine/tests.rs"]
+mod tests;
+#[path = "machine/transaction.rs"]
+mod transaction;
 #[path = "machine/work.rs"]
 mod work;
 
@@ -96,6 +101,13 @@ fn invoke(
             value.set("item", slot.item)?;
             value.set("count", slot.count)?;
             value.set("has_components", slot.has_components)?;
+            if let Some(components) = &slot.components {
+                let data = lua.create_table()?;
+                data.set("version", components.version)?;
+                data.set("bytes", lua.create_string(&components.bytes)?)?;
+                data.set_readonly(true);
+                value.set("components", data)?;
+            }
             value.set_readonly(true);
             slots.raw_set(index + 1, value)?;
         }
@@ -103,7 +115,10 @@ fn invoke(
     slots.set_readonly(true);
     input.set("slots", slots)?;
     input.set_readonly(true);
-    let (data, delay, proposed_work): (Value, Value, Value) = entry.call(input)?;
+    let (data, delay, proposed_work): (Value, Value, Value) =
+        super::reads::with(lua, &input, context.environment, context.tags, || {
+            entry.call(input.clone())
+        })?;
     let Value::String(data) = data else {
         return Err(mlua::Error::RuntimeError(
             "machine data must be a binary string".into(),
@@ -116,7 +131,7 @@ fn invoke(
     }
     let delay =
         integer(delay, 1, 60000).map_err(|error| mlua::Error::RuntimeError(error.into()))? as u64;
-    let work = work::parse(proposed_work, ports, context.slots.len())
+    let work = work::parse(proposed_work, ports, context.slots)
         .map_err(|error| mlua::Error::RuntimeError(error.into()))?;
     Ok(api::Plan {
         data: data.as_bytes().to_vec(),

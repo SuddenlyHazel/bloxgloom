@@ -1,5 +1,6 @@
-//! Declarative component operations. Values are registration constants, never
-//! private stack data exposed to a behavior. The host evaluates predicates.
+//! Component values for declared recipes and authoritative owned-slot processing.
+//! Recipe predicates remain host evaluated; machine callbacks may inspect their
+//! own captured component values, never client or peer inventory payloads.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ComponentValue {
     pub version: u16,

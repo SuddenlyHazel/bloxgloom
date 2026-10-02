@@ -1,12 +1,12 @@
 //! Luau machine work proposals. The host still resolves ports, peer inventories
-//! and exact stacks; these records contain no item creation or mutation power.
+//! and exact stacks; runtime processing remains confined to declared own slots.
 use super::*;
 use crate::server::script::values::text;
 
 pub(super) fn parse(
     value: Value,
     ports: &[String],
-    own_slots: usize,
+    slots: &[Option<api::Slot<'_>>],
 ) -> Result<Vec<api::Work>, &'static str> {
     let Value::Table(list) = value else {
         return match value {
@@ -35,7 +35,9 @@ pub(super) fn parse(
         if kind == "process" {
             result.push(api::Work::Process);
         } else if kind == "transfer" {
-            result.push(transfer(&work, ports, own_slots)?);
+            result.push(transfer(&work, ports, slots.len())?);
+        } else if kind == "transform" {
+            result.push(api::Work::Transform(transaction::parse(&work, slots)?));
         } else {
             return Err("unknown machine work kind");
         }

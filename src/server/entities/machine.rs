@@ -13,6 +13,7 @@ mod inventory;
 mod planning;
 #[cfg(test)]
 mod tests;
+mod transaction;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::server) struct MachinePayload {
     pub variant: u8,

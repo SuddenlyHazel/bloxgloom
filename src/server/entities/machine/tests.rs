@@ -4,6 +4,8 @@ use crate::{
     items::{ItemId, STICK},
     world::{GRAVEL, STONE},
 };
+#[path = "tests/transaction.rs"]
+mod transaction;
 #[test]
 fn registered_process_matches_previous_kiln_burning_and_production_rules() {
     let catalog = Arc::new(Catalog::builtins());

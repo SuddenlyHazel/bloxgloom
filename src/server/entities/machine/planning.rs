@@ -73,7 +73,7 @@ impl EntityTickPolicy for Adapter {
         snapshot: &EntitySnapshot,
         tick: u64,
         _: &Catalog,
-        _: &VoxelView,
+        view: &VoxelView,
         neighbours: &EntityView,
     ) -> Result<EntityTickPlan, EntityError> {
         let before = snapshot
@@ -90,6 +90,10 @@ impl EntityTickPolicy for Adapter {
                     item: self.catalog.item(s.item).unwrap().key.as_ref(),
                     count: s.count,
                     has_components: s.components.is_some(),
+                    components: s.components.as_ref().map(|value| api::ComponentValue {
+                        version: value.version,
+                        bytes: value.bytes.to_vec(),
+                    }),
                     stack_key: before.slots[..index]
                         .iter()
                         .position(|old| {
@@ -112,6 +116,8 @@ impl EntityTickPolicy for Adapter {
                 data: &before.data,
                 fuel: before.fuel,
                 progress: before.progress,
+                environment: view.environment(),
+                tags: Some(self.catalog.as_ref()),
             })
             .map_err(|_| EntityError::InvalidPayload)?;
         if plan.next_tick <= due || plan.data.len() > 1024 || plan.work.len() > 8 {
@@ -125,6 +131,11 @@ impl EntityTickPolicy for Adapter {
                 api::Work::Process => {
                     self.process(&mut after)?;
                     break;
+                }
+                api::Work::Transform(work) => {
+                    if self.transform(&mut after, &work)? {
+                        break;
+                    }
                 }
                 api::Work::Transfer {
                     offset,
