@@ -28,6 +28,7 @@ const SNAPSHOT_FRAME_HEADROOM: usize = OUTBOUND_FRAME_CAPACITY - 8;
 const SNAPSHOT_BYTE_HEADROOM: u64 = OUTBOUND_CLIENT_BYTE_CAPACITY - 128 * 1024;
 
 pub(super) fn poll_chunk_loads(state: &mut State) -> io::Result<()> {
+    let mut observed = Vec::new();
     for _ in 0..MAX_LOAD_RESULTS_PER_TICK {
         let completion = match state.loader.try_recv() {
             Ok(completion) => completion,
@@ -42,9 +43,19 @@ pub(super) fn poll_chunk_loads(state: &mut State) -> io::Result<()> {
         );
         match completion.result {
             Ok(loaded) => {
-                state
+                let installed = state
                     .world
                     .install_loaded_if_absent(loaded, completion.ticket.edit_epoch)?;
+                let key = completion.ticket.key;
+                if installed
+                    && state.world.lod_max_level() != 4
+                    && (key.y < crate::world::BEDROCK_Y.div_euclid(crate::world::CHUNK_SIZE as i32)
+                        || key.y
+                            > crate::world::MAX_GENERATED_HEIGHT
+                                .div_euclid(crate::world::CHUNK_SIZE as i32))
+                {
+                    observed.push(key);
+                }
             }
             Err(error) => {
                 state
@@ -59,6 +70,9 @@ pub(super) fn poll_chunk_loads(state: &mut State) -> io::Result<()> {
                 ));
             }
         }
+    }
+    if !observed.is_empty() {
+        super::lod::invalidate(state, observed);
     }
     Ok(())
 }

@@ -282,6 +282,15 @@ pub(super) fn poll(state: &mut State) {
             });
             continue;
         };
+        let Ok(resident) = state.world.lod_resident(key.bounds().unwrap()) else {
+            interest.requests.pop_front();
+            let _ = client.sender.try_send(ServerMessage::LodUnavailable {
+                session: client.action_epoch,
+                request,
+                key,
+            });
+            continue;
+        };
         let cancelled = Arc::new(AtomicBool::new(false));
         let revision = state.lod.revision;
         let children = key.children().and_then(|keys| {
@@ -295,6 +304,7 @@ pub(super) fn poll(state: &mut State) {
             key,
             revision,
             overlays,
+            resident,
             children,
             requested_at: Instant::now(),
             cancelled: cancelled.clone(),

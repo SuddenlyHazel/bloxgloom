@@ -35,6 +35,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             key,
             revision: 1,
             overlays,
+            resident: Vec::new(),
             children: None,
             requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -62,6 +63,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             key,
             revision: 1,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
+            resident: Vec::new(),
             children: None,
             requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -95,6 +97,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             key,
             revision: 1,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
+            resident: Vec::new(),
             children: None,
             requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -121,6 +124,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             key,
             revision: service.revision,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
+            resident: Vec::new(),
             children: None,
             requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -159,6 +163,7 @@ fn cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_q
                 key,
                 revision: 1,
                 overlays: vec![],
+                resident: Vec::new(),
                 children: None,
                 requested_at: Instant::now(),
                 cancelled: cancelled.clone(),
@@ -188,6 +193,7 @@ fn cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_q
                 key,
                 revision: service.revision,
                 overlays: vec![],
+                resident: Vec::new(),
                 children: None,
                 requested_at: Instant::now(),
                 cancelled: cancelled.clone(),
@@ -227,6 +233,7 @@ fn unrelated_commit_keeps_inflight_tile_while_related_commit_rejects_old_result(
                 key,
                 revision: 1,
                 overlays: vec![],
+                resident: Vec::new(),
                 children: None,
                 requested_at: Instant::now(),
                 cancelled: cancelled.clone(),
@@ -277,6 +284,7 @@ fn unrelated_commit_keeps_inflight_tile_while_related_commit_rejects_old_result(
             key: near,
             revision: 2,
             overlays: state.world.lod_overlays(near.bounds().unwrap()).unwrap(),
+            resident: Vec::new(),
             children: None,
             requested_at: Instant::now(),
             cancelled: cancelled.clone(),
@@ -319,5 +327,200 @@ fn revision_exhaustion_cancels_every_inflight_dependency() {
     assert!(cancelled.load(Ordering::Relaxed));
     drop(service);
     drop(world);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+struct ObservedHighTerrain;
+impl bloxgloom_host_api::generation::Contributor for ObservedHighTerrain {
+    fn generate(
+        &self,
+        context: bloxgloom_host_api::generation::Context,
+        output: &mut bloxgloom_host_api::generation::Output,
+    ) -> Result<(), bloxgloom_host_api::generation::GenerationError> {
+        if context.chunk == [0, 10, 0] {
+            output.set([0, 0, 0], "bloxgloom:wood[axis=y]")?;
+        }
+        Ok(())
+    }
+}
+fn observed_world(root: &std::path::Path, capacity: usize) -> World {
+    World::with_generation(
+        7,
+        root.to_owned(),
+        capacity,
+        Arc::new(crate::content::Catalog::builtins()),
+        vec![bloxgloom_host_api::generation::Registration {
+            key: "lod:observed_high".into(),
+            revision: 1,
+            contributor: Arc::new(ObservedHighTerrain),
+        }],
+    )
+    .unwrap()
+}
+#[test]
+fn resident_high_contributor_coverage_survives_eviction_without_save_data_or_pins() {
+    let root = temporary();
+    let mut world = observed_world(&root, 1);
+    let source = ChunkKey { x: 0, y: 10, z: 0 };
+    world.get_chunk(source).unwrap();
+    assert!(
+        world
+            .storage_handle()
+            .read_snapshot(source)
+            .unwrap()
+            .is_none()
+    );
+    let key = TileKey {
+        level: 1,
+        x: 0,
+        z: 0,
+    };
+    let resident = world.lod_resident(key.bounds().unwrap()).unwrap();
+    assert_eq!(resident.len(), 1);
+    assert_eq!(resident[0].version, 0);
+    assert_eq!(world.pinned_chunk_count(), 0);
+    // Immutable observed coverage survives normal gameplay LRU eviction.
+    world
+        .get_chunk(ChunkKey {
+            x: 100,
+            y: 10,
+            z: 0,
+        })
+        .unwrap();
+    assert!(world.cached_version(source).is_none());
+    let count = world.cached_len();
+    let service = Service::new(&world, root.clone()).unwrap();
+    service
+        .jobs
+        .as_ref()
+        .unwrap()
+        .try_send(worker::Job {
+            key,
+            revision: 1,
+            overlays: vec![],
+            resident,
+            children: None,
+            requested_at: Instant::now(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        })
+        .unwrap();
+    let tile = service
+        .results
+        .recv_timeout(Duration::from_secs(20))
+        .unwrap()
+        .tile
+        .unwrap();
+    assert!(tile.columns[0].known(160, 176));
+    assert!(!tile.columns[0].known(176, 192));
+    assert!(
+        tile.columns[0]
+            .spans
+            .iter()
+            .any(|s| s.bottom <= 160 && s.top > 160 && s.state == crate::world::WOOD)
+    );
+    assert_eq!(world.cached_len(), count);
+    assert_eq!(world.pinned_chunk_count(), 0);
+    drop(service);
+    drop(world);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn resident_capture_budget_rejects_excessive_observed_columns_and_ignores_builtin_high_air() {
+    let root = temporary();
+    let mut world = observed_world(&root, 2049);
+    let key = TileKey {
+        level: 1,
+        x: 0,
+        z: 0,
+    };
+    for y in 11..2060 {
+        world.get_chunk(ChunkKey { x: 0, y, z: 0 }).unwrap();
+    }
+    assert!(world.lod_resident(key.bounds().unwrap()).is_err());
+    assert_eq!(world.pinned_chunk_count(), 0);
+    drop(world);
+    std::fs::remove_dir_all(&root).unwrap();
+    let root = temporary();
+    let mut builtin = World::with_capacity(7, root.clone(), 1).unwrap();
+    builtin.get_chunk(ChunkKey { x: 0, y: 20, z: 0 }).unwrap();
+    assert!(
+        builtin
+            .lod_resident(key.bounds().unwrap())
+            .unwrap()
+            .is_empty()
+    );
+    drop(builtin);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+impl bloxgloom_host_api::Extension for ObservedHighTerrain {
+    fn register(
+        &self,
+        host: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), bloxgloom_host_api::RegistrationError> {
+        host.generation_contributor(bloxgloom_host_api::generation::Registration {
+            key: "lod:observed_high".into(),
+            revision: 1,
+            contributor: Arc::new(ObservedHighTerrain),
+        })
+    }
+}
+#[test]
+fn new_authoritative_high_load_invalidates_cached_partial_contributor_summary() {
+    let root = temporary();
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&ObservedHighTerrain)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(7, root.clone(), 8, startup).unwrap();
+    let key = TileKey {
+        level: 1,
+        x: 0,
+        z: 0,
+    };
+    let cancelled = Arc::new(AtomicBool::new(false));
+    state.lod.pending.insert(key, (1, cancelled.clone()));
+    state
+        .lod
+        .jobs
+        .as_ref()
+        .unwrap()
+        .try_send(worker::Job {
+            key,
+            revision: 1,
+            overlays: vec![],
+            resident: vec![],
+            children: None,
+            requested_at: Instant::now(),
+            cancelled,
+        })
+        .unwrap();
+    let result = state
+        .lod
+        .results
+        .recv_timeout(Duration::from_secs(20))
+        .unwrap();
+    assert!(state.lod.finish(&result));
+    let tile = result.tile.unwrap();
+    assert!(!tile.columns[0].known(160, 176));
+    state.lod.cache.insert(key, tile);
+    let source = ChunkKey { x: 0, y: 10, z: 0 };
+    assert!(crate::server::streaming::request_chunk(&mut state, source).unwrap());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while state.world.cached_version(source).is_none() {
+        crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "observed high loader completion timeout"
+        );
+        std::thread::yield_now();
+    }
+    assert!(state.lod.revision > 1);
+    assert!(!state.lod.cache.contains_key(&key));
+    assert_eq!(
+        state.world.cached_block(0, 160, 0),
+        Some(crate::world::WOOD)
+    );
+    drop(state);
     std::fs::remove_dir_all(root).unwrap();
 }

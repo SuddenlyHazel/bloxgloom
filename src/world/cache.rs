@@ -127,6 +127,13 @@ impl ChunkCache {
         self.slots[slot].as_ref()
     }
 
+    /// Bounded resident inventory for immutable worker captures; no LRU touch.
+    pub(super) fn entries(&self) -> impl Iterator<Item = (&ChunkKey, &CacheEntry)> {
+        self.indices
+            .iter()
+            .map(|(key, &slot)| (key, self.slots[slot].as_ref().expect("resident cache slot")))
+    }
+
     pub(super) fn get_mut(&mut self, key: &ChunkKey) -> Option<&mut CacheEntry> {
         let slot = *self.indices.get(key)?;
         self.slots[slot].as_mut()

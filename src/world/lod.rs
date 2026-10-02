@@ -2,6 +2,8 @@
 //! A coarse cell represents its center column; saved deltas anywhere in that cell
 //! override the approximation. Coverage describes the authoritative builtin domain,
 //! not a claim that every fine voxel was enumerated.
+mod snapshots;
+
 use super::terrain::LodSampler;
 use crate::{
     content::{CUTOUT, Catalog, OPAQUE, PLANT},

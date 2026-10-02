@@ -11,6 +11,7 @@ pub(super) struct Job {
     pub key: TileKey,
     pub revision: u64,
     pub overlays: Vec<(ChunkKey, Vec<u8>)>,
+    pub resident: Vec<Arc<crate::world::Chunk>>,
     pub children: Option<[LodTile; 4]>,
     pub requested_at: Instant,
     pub cancelled: Arc<AtomicBool>,
@@ -169,6 +170,14 @@ fn build(world: &World, root: &std::path::Path, job: &Job) -> io::Result<LodTile
             });
         }
     }
+    let resident: HashMap<_, _> = job
+        .resident
+        .iter()
+        // Frozen builtin sampling already handles untouched chunks.
+        .filter(|c| world.lod_max_level() != 4 || c.version != 0)
+        .map(|c| (c.key, c))
+        .collect();
+    keys.extend(resident.keys().copied());
     for (key, _) in &job.overlays {
         keys.insert(*key);
     }
@@ -184,6 +193,10 @@ fn build(world: &World, root: &std::path::Path, job: &Job) -> io::Result<LodTile
     for key in keys {
         if job.cancelled.load(Ordering::Relaxed) {
             return Err(io::Error::other("LOD cancelled"));
+        }
+        if let Some(chunk) = resident.get(&key) {
+            chunks.push((***chunk).clone());
+            continue;
         }
         let chunk = match overlays.get(&key) {
             Some(bytes) => world.load_chunk_snapshot_uncached(key, bytes)?,
@@ -207,7 +220,14 @@ fn build(world: &World, root: &std::path::Path, job: &Job) -> io::Result<LodTile
                 - BEDROCK_Y.div_euclid(CHUNK_SIZE as i32)
                 + 1,
         );
-    if source_count + chunks.len() as i64 > 4096 {
+    let extra_sources = existing
+        .iter()
+        .filter(|k| {
+            k.y < BEDROCK_Y.div_euclid(CHUNK_SIZE as i32)
+                || k.y > MAX_GENERATED_HEIGHT.div_euclid(CHUNK_SIZE as i32)
+        })
+        .count();
+    if source_count + extra_sources as i64 > 4096 {
         return Err(io::Error::other("LOD contributor source budget exceeded"));
     }
     for z in minz..=maxz {
