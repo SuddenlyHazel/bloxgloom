@@ -1,0 +1,11 @@
+CPU frame (n=463): p50=0.380 ms, p95=0.702 ms, p99=1.242 ms
+CPU upload-ramp frame (n=163): p50=0.446 ms, p95=0.883 ms, p99=1.465 ms
+CPU steady frame (n=300): p50=0.346 ms, p95=0.658 ms, p99=1.004 ms
+GPU render passes (n=463): p50=0.277 ms, p95=0.934 ms, p99=1.648 ms
+GPU upload-ramp passes (n=163): p50=0.277 ms, p95=0.889 ms, p99=1.817 ms
+GPU steady passes (n=300): p50=0.277 ms, p95=0.934 ms, p99=1.510 ms
+LOD benchmark: horizon=0 summary-bytes=0 mesh-bytes=0 gpu-tiles=0 selected-tiles=0 gpu-bytes=0
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=324, gpu-resident=324 (324 uploaded), final-visible=175 / max-visible=175, final-triangles=89218 / max-triangles=89218, mesh-bytes=18797336, upload-bytes=18797336, max-upload/frame=2 chunks / 263784 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 324092 mesh vertices (57512 cutout), 486138 indices (86268 cutout), generated in 2735.2 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 163 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback

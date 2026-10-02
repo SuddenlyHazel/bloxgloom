@@ -1,0 +1,13 @@
+LOD scene: horizon=1024 tiles=73 unavailable=0 summary=615.34ms summary_bytes=3151694 reduction=17.61ms reduction_parents=12 reduction_unavailable=0 meshing=325.45ms mesh_bytes=118998400 triangles=1189984
+CPU frame (n=535): p50=1.046 ms, p95=1.449 ms, p99=1.650 ms
+CPU upload-ramp frame (n=235): p50=0.636 ms, p95=1.378 ms, p99=1.650 ms
+CPU steady frame (n=300): p50=1.107 ms, p95=1.469 ms, p99=1.649 ms
+GPU render passes (n=535): p50=1.135 ms, p95=1.541 ms, p99=2.313 ms
+GPU upload-ramp passes (n=235): p50=0.351 ms, p95=1.200 ms, p99=1.662 ms
+GPU steady passes (n=300): p50=1.158 ms, p95=1.580 ms, p99=2.450 ms
+LOD benchmark: horizon=1024 summary-bytes=3151694 mesh-bytes=118998400 gpu-tiles=73 selected-tiles=61 gpu-bytes=118998400
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=324, gpu-resident=324 (324 uploaded), final-visible=175 / max-visible=175, final-triangles=1052726 / max-triangles=1052726, mesh-bytes=18573688, upload-bytes=18573688, max-upload/frame=2 chunks / 258216 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 320236 mesh vertices (57512 cutout), 480354 indices (86268 cutout), generated in 2378.3 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 235 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback
+final-frame image: /tmp/bloxgloom-lod-final-qa/near-and-lod-1024.png

@@ -1,0 +1,22 @@
+Final verification, 2026-10-01
+Production/test source commit: beed39f
+
+RUST_TEST_THREADS=4 cargo test
+test result: ok. 1489 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 235.65s
+
+cargo fmt --all -- --check
+Passed (exit 0).
+
+cargo clippy --all-targets --all-features -- -D warnings
+Passed (exit 0).
+
+cargo build --release
+Passed (exit 0).
+
+cargo test gpu_storm_fog_preserves_near_contrast_and_obscures_distant_shadows -- --ignored --nocapture
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1495 filtered out; finished in 0.20s
+
+graphify update .
+Passed; 15,427 nodes, 36,891 edges, 833 communities.
+
+Manual exploration and GPU-edit verification are recorded separately.

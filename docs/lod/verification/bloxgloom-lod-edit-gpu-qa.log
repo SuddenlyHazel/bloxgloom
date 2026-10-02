@@ -1,0 +1,11 @@
+   Compiling bloxgloom v0.1.0 (/Users/hazel/.codex/worktrees/890c/bloxgloom)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.53s
+     Running unittests src/main.rs (target/debug/deps/bloxgloom-f976c01443379f60)
+
+running 1 test
+LOD accepted edit -> first client GPU-drawn: 193.342ms; changed=12826 pixels; production CPU meshing on scoped worker; offscreen GPU completion, excludes image readback/PNG; images=/tmp/bloxgloom-lod-edit-gpu-qa-20261001
+LOD committed edit to two refreshed clients: 315ms
+test server::net::tests::lod::committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1494 filtered out; finished in 3.19s
+

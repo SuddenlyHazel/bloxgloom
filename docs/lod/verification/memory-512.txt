@@ -1,0 +1,30 @@
+LOD scene: horizon=512 tiles=57 unavailable=0 summary=402.00ms summary_bytes=2481500 reduction=17.67ms reduction_parents=12 reduction_unavailable=0 meshing=258.15ms mesh_bytes=90212800 triangles=902128
+CPU frame (n=519): p50=1.074 ms, p95=1.877 ms, p99=4.325 ms
+CPU upload-ramp frame (n=219): p50=0.927 ms, p95=1.814 ms, p99=3.245 ms
+CPU steady frame (n=300): p50=1.096 ms, p95=1.954 ms, p99=5.100 ms
+GPU render passes (n=519): p50=0.946 ms, p95=1.642 ms, p99=2.465 ms
+GPU upload-ramp passes (n=219): p50=0.626 ms, p95=2.151 ms, p99=3.104 ms
+GPU steady passes (n=300): p50=0.963 ms, p95=1.245 ms, p99=2.208 ms
+LOD benchmark: horizon=512 summary-bytes=2481500 mesh-bytes=90212800 gpu-tiles=57 selected-tiles=45 gpu-bytes=90212800
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=324, gpu-resident=324 (324 uploaded), final-visible=175 / max-visible=175, final-triangles=765220 / max-triangles=765220, mesh-bytes=18573688, upload-bytes=18573688, max-upload/frame=2 chunks / 258216 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 320236 mesh vertices (57512 cutout), 480354 indices (86268 cutout), generated in 2472.9 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 219 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback
+        4.34 real         3.84 user         0.52 sys
+           299417600  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               33120  page reclaims
+                1494  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  33  voluntary context switches
+               12227  involuntary context switches
+         56128693411  instructions retired
+         13355633304  cycles elapsed
+           821953640  peak memory footprint

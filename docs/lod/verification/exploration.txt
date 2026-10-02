@@ -1,0 +1,18 @@
+Sustained exploration verification, 2026-10-01
+Command: cargo test lod_exploration_revisits -- --ignored --nocapture
+
+The successful run was captured in tool session 73736 rather than redirected.
+The following measurements are transcribed from that successful output:
+
+130 unique authoritative teleport destinations / coarse tiles plus one revisit
+exploration_elapsed_ms=69821
+ping_max_ms=24
+movement_max_ms=24
+authority_resident_max=5416
+pinned_max=40
+pinned_after_disconnect=0
+replication_bytes_max=47708
+disk_files=128
+disk_bytes=5351080
+
+Test result: 1 passed; 0 failed; 1495 filtered out; finished in 70.12s.

@@ -1,6 +1,9 @@
 # Distant terrain LOD implementation plan
 
-Status: Proposed. This document plans implementation; no LOD code has been added.
+Status: Implemented. The five phases below are complete. See
+[Distant terrain](docs/lod/README.md) for the shipped architecture, limits,
+verification commands, measurements, and screenshots. This document retains
+the original implementation sequence and explicitly deferred follow-up work.
 
 Add a server-supplied distant terrain layer that extends the visible landscape
 without extending full voxel simulation and replication to the same radius.
@@ -8,14 +11,15 @@ Keep existing chunks, lighting, and gameplay authority for the nearby world.
 Use vertical terrain spans and progressively coarser horizontal tiles, following
 the useful architectural ideas in Distant Horizons.
 
-The first integrated target is a configurable 512-block horizon, followed by
-1,024 blocks after measurement. These are proposed targets, not demonstrated
-performance results. Implement the phases below in order, committing working
-increments and recording measured results before expanding scope.
+The integrated default is a configurable 512-block horizon. Builtin worlds also
+support 1,024 blocks; worlds with generation contributors clamp to 512 blocks
+while preserving their accurate generation fallback. Release benchmarks and
+GPU previews verify both builtin horizons within the independent 128 MiB LOD
+geometry budget. Public coarse contributor generation remains deferred.
 
 ## Existing integration points
 
-The current engine already provides useful foundations:
+The pre-LOD engine provided these integration foundations:
 
 - [World generation](src/world/generation.rs) composes builtin terrain with
   registered contributors. Summaries must include this composition and edits.
@@ -27,7 +31,7 @@ The current engine already provides useful foundations:
   LOD must reduce terrain data and generation costs as well as triangle counts.
 - [Client workers](src/client/workers.rs) and renderer uploads reject obsolete
   work and prioritize immediate edits. Preserve those guarantees.
-- [Fog](src/render/fog.wgsl) currently blends to background between 38 and
+- [Fog](src/render/fog.wgsl) originally blended to background between 38 and
   135 blocks. The distant layer needs configurable clear-weather fog distances.
 - [Projection and visibility](src/render/visibility.rs) currently use a
   4,096-block far plane and fixed chunk bounds. Add tile bounds without
@@ -205,7 +209,8 @@ Suggested commit: `feat(server): build and invalidate authoritative LOD tiles`.
    near work taking precedence. Keep installation and eviction coherent so
    resource eviction cannot leave a selected tile without drawable coverage.
 8. Add enabled/horizon/quality controls and diagnostics through focused config
-   and UI modules. An unsupported server or disabled LOD retains existing play.
+   and UI modules. Disabled LOD retains existing play with a matching server;
+   older wire versions follow the normal handshake rejection rule.
 
 Acceptance: use the real nonblocking listener with loopback clients and a unique
 temporary world. Cover initial join, rapid movement, teleport, slow receipt,
@@ -245,9 +250,10 @@ contract to registered generators. It must describe coverage and error and
 compose in the same ordering as ordinary generation. Apply saved edits after
 generation and ensure coarse terrain converges to actual nearby terrain.
 
-The builtin generator can then sample terrain and vegetation directly at the
-requested scale. Contributors without the contract retain full-generation
-fallback or explicit unavailable results when resource limits prevent it.
+The builtin generator now samples terrain and vegetation directly at the
+requested scale through an internal coarse-summary contract. Contributors
+without a public contract retain full-generation fallback or explicit
+unavailable results when resource limits prevent it.
 Document the Rust and Luau authoring surfaces if this contract becomes public.
 Do not bypass extensions merely to make builtin benchmarks faster.
 
