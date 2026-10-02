@@ -9,6 +9,7 @@ mod inventory;
 mod items;
 mod lighting;
 mod logging;
+mod lod;
 mod physics;
 mod preview;
 mod protocol;
