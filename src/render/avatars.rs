@@ -9,8 +9,11 @@ pub(crate) use character_asset::tool_duration as character_tool_duration;
 mod mesh;
 #[cfg(test)]
 mod moving_tests;
+mod pipeline;
 #[cfg(test)]
 mod projectile_preview_tests;
+#[cfg(test)]
+mod shadow_tests;
 #[cfg(test)]
 mod tests;
 
@@ -98,6 +101,7 @@ impl From<&VisualAvatar> for AvatarInstance {
 pub(crate) struct AvatarRenderer {
     characters: character::CharacterRenderer,
     pipeline: wgpu::RenderPipeline,
+    shadow_pipeline: wgpu::RenderPipeline,
     camera_group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -119,27 +123,8 @@ impl AvatarRenderer {
             label: Some("public avatar shader"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
-        let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("avatar camera layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("avatar camera group"),
-            layout: &camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
+        let camera_layout = super::sun_shadow::camera_layout(device);
+        let camera_group = super::sun_shadow::fallback_camera_group(device, camera_buffer);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("avatar pipeline layout"),
             bind_group_layouts: &[Some(&camera_layout)],
@@ -161,51 +146,25 @@ impl AvatarRenderer {
             10 => Uint8x4,
             11 => Float32x4,
         ];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("instanced public avatars"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<mesh::AvatarVertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &vertex_attrs,
-                    }),
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<AvatarInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &instance_attrs,
-                    }),
-                ],
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let (pipeline, shadow_pipeline) = pipeline::pair(
+            device,
+            &shader,
+            &pipeline_layout,
+            format,
+            &[
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<mesh::AvatarVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &vertex_attrs,
+                }),
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<AvatarInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &instance_attrs,
+                }),
+            ],
+            false,
+        );
         let mut mesh = mesh::AvatarMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
@@ -267,6 +226,7 @@ impl AvatarRenderer {
         Self {
             characters,
             pipeline,
+            shadow_pipeline,
             camera_group,
             vertices,
             indices,
@@ -274,6 +234,10 @@ impl AvatarRenderer {
             counts: vec![0; models.len()],
             models,
         }
+    }
+
+    pub(crate) fn set_camera_group(&mut self, group: wgpu::BindGroup) {
+        self.camera_group = group;
     }
 
     pub(crate) fn preview_character_clip(&mut self, clip: &'static str, time: f32) {
@@ -314,11 +278,29 @@ impl AvatarRenderer {
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
         let character_triangles = self.characters.draw(pass, &self.camera_group);
+        character_triangles + self.draw_instances(pass, &self.pipeline, &self.camera_group)
+    }
+
+    pub(crate) fn draw_shadow<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        caster_camera_group: &'a wgpu::BindGroup,
+    ) -> usize {
+        let character_triangles = self.characters.draw_shadow(pass, caster_camera_group);
+        character_triangles + self.draw_instances(pass, &self.shadow_pipeline, caster_camera_group)
+    }
+
+    fn draw_instances<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        pipeline: &'a wgpu::RenderPipeline,
+        camera: &'a wgpu::BindGroup,
+    ) -> usize {
         if self.counts.iter().all(|n| *n == 0) {
-            return character_triangles;
+            return 0;
         }
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.camera_group, &[]);
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, camera, &[]);
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_vertex_buffer(1, self.instances.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -331,7 +313,7 @@ impl AvatarRenderer {
             start += count;
             triangles += (indices.end - indices.start) as usize * *count as usize / 3;
         }
-        triangles + character_triangles
+        triangles
     }
 }
 
@@ -345,6 +327,13 @@ pub(crate) fn character_mouth_names() -> &'static [&'static str; 6] {
 pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {
     super::daylight::shader(
         &include_str!("avatars/character.wgsl")
-            .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog)),
+            .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog))
+            .replace(
+                "// FIRST_PERSON_JOINT_OFFSET",
+                &format!(
+                    "const FIRST_PERSON_JOINT_OFFSET: u32 = {}u;",
+                    MAX_AVATARS * character_asset::JOINT_COUNT
+                ),
+            ),
     )
 }

@@ -148,6 +148,26 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
     });
     let catalog = Catalog::builtins();
     let mut renderer = AvatarRenderer::new(&device, &queue, FORMAT, &camera, &catalog);
+    let quality = super::super::sun_shadow::quality()?;
+    let mut shadows = render::sun_shadow::SunShadows::new(&device, &camera, quality);
+    shadows.update(
+        &queue,
+        render::Camera {
+            position: Vec3::new(0.0, 0.0, 5.0),
+            yaw: 0.0,
+            pitch: 0.0,
+            fov_y_radians: 1.0,
+        },
+        render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+    );
+    renderer.set_camera_group(shadows.camera_group.clone());
+    println!(
+        "sun shadows: {} ({}px, {}m); timings include animated caster pass",
+        quality.as_str(),
+        shadows.projection.settings.resolution,
+        shadows.projection.settings.distance
+    );
+
     let size = wgpu::Extent3d {
         width: WIDTH,
         height: HEIGHT,
@@ -192,7 +212,7 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
             label: Some("character benchmark frame"),
         });
         let measured = frame.checked_sub(WARMUP_FRAMES);
-        let timestamp_writes = measured.and_then(|index| {
+        let mut timestamp_writes = measured.and_then(|index| {
             queries
                 .as_ref()
                 .map(|query_set| wgpu::RenderPassTimestampWrites {
@@ -201,6 +221,21 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
                     end_of_pass_write_index: Some(index as u32 * 2 + 1),
                 })
         });
+        if let Some(mut pass) = shadows.begin_timed(
+            &mut encoder,
+            timestamp_writes
+                .as_ref()
+                .map(|writes| wgpu::RenderPassTimestampWrites {
+                    query_set: writes.query_set,
+                    beginning_of_pass_write_index: writes.beginning_of_pass_write_index,
+                    end_of_pass_write_index: None,
+                }),
+        ) {
+            renderer.draw_shadow(&mut pass, &shadows.caster_group);
+            if let Some(writes) = &mut timestamp_writes {
+                writes.beginning_of_pass_write_index = None;
+            }
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("character-only benchmark pass"),

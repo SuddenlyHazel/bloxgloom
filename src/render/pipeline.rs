@@ -128,27 +128,8 @@ fn create_voxel_pipeline_source(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("camera layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    });
-    let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("camera bind group"),
-        layout: &camera_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: camera_buffer.as_entire_binding(),
-        }],
-    });
+    let camera_layout = super::sun_shadow::camera_layout(device);
+    let camera_group = super::sun_shadow::fallback_camera_group(device, &camera_buffer);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("voxel material tiles"),
         size: wgpu::Extent3d {
@@ -326,6 +307,73 @@ fn create_voxel_pipeline_source(
         camera_buffer,
         camera_group,
         texture_group,
+    )
+}
+
+/// Compile depth-only entry points from the same bounded material hooks and
+/// vertex layout as the color pipeline. Custom vertex displacement and alpha
+/// cutoff therefore participate in the shared map without a second mesh path.
+pub(crate) fn create_sun_shadow_pipelines(
+    device: &wgpu::Device,
+    color: &wgpu::RenderPipeline,
+    prepared: Option<&custom::Prepared>,
+) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    let hooks = prepared.map_or_else(|| String::from("fn bg_vertex(input: BgVertex, layer: u32) -> BgVertex { return input; }\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface { return input; }"), custom::compose);
+    let source = super::daylight::shader(&format!("{}\n{hooks}\n{SHADER}", custom::TYPES));
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("shared voxel sun casters"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    let camera = color.get_bind_group_layout(0);
+    let texture = color.get_bind_group_layout(1);
+    let visual = prepared.map(|_| color.get_bind_group_layout(2));
+    let mut layouts = vec![Some(&camera), Some(&texture)];
+    if let Some(layout) = &visual {
+        layouts.push(Some(layout));
+    }
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("sun voxel caster layout"),
+        bind_group_layouts: &layouts,
+        immediate_size: 0,
+    });
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32, 6 => Float32];
+    let pipeline = |label, cull_mode, cutout| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_shadow"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: VERTEX_STRIDE,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                cull_mode,
+                ..Default::default()
+            },
+            depth_stencil: Some(super::sun_shadow::depth_state()),
+            multisample: Default::default(),
+            fragment: if cutout {
+                Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_shadow"),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                })
+            } else {
+                None
+            },
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    (
+        pipeline("opaque sun caster", Some(wgpu::Face::Back), false),
+        pipeline("cutout sun caster", None, true),
     )
 }
 

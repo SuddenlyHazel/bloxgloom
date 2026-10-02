@@ -20,6 +20,7 @@ fn config_round_trips_through_explicit_path() {
         scale: 1.25,
         fullscreen: true,
         bounced_gi: true,
+        sun_shadow_quality: SunShadowQuality::High,
         exposure: 1.25,
         post_processing: false,
         bloom_enabled: false,
@@ -41,6 +42,61 @@ fn config_round_trips_through_explicit_path() {
 
     assert_eq!(Config::load(&path), config);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn sun_shadow_quality_defaults_parses_and_round_trips_every_level() {
+    assert_eq!(SunShadowQuality::default(), SunShadowQuality::Medium);
+    for source in [
+        "version=1\nfov_degrees=92\naudio_master=0.4\n",
+        "version=1\nfov_degrees=92\naudio_master=0.4\nsun_shadow_quality=ultra\n",
+        "version=1\nfov_degrees=92\naudio_master=0.4\nsun_shadow_quality=\n",
+    ] {
+        let config = parse_config(source);
+        assert_eq!(config.sun_shadow_quality, SunShadowQuality::Medium);
+        assert_eq!(config.fov_degrees, 92.0);
+        assert_eq!(config.audio_master, 0.4);
+    }
+    let directory = test_directory("sun-shadow-quality");
+    let path = directory.join("config");
+    for (quality, stored, label) in [
+        (SunShadowQuality::Off, "off", "Off"),
+        (SunShadowQuality::Low, "low", "Low"),
+        (SunShadowQuality::Medium, "medium", "Medium"),
+        (SunShadowQuality::High, "high", "High"),
+    ] {
+        assert_eq!(SunShadowQuality::parse(stored), Some(quality));
+        assert_eq!(quality.as_str(), stored);
+        assert_eq!(quality.label(), label);
+        let config = Config {
+            sun_shadow_quality: quality,
+            ..Config::default()
+        };
+        config.save(&path).unwrap();
+        assert!(
+            fs::read_to_string(&path)
+                .unwrap()
+                .contains(&format!("sun_shadow_quality={stored}\n"))
+        );
+        assert_eq!(Config::load(&path), config);
+    }
+    assert_eq!(SunShadowQuality::parse("High"), None);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn sun_shadow_quality_cycles_forward_and_backward_including_off() {
+    let levels = [
+        SunShadowQuality::Off,
+        SunShadowQuality::Low,
+        SunShadowQuality::Medium,
+        SunShadowQuality::High,
+    ];
+    for (index, quality) in levels.iter().enumerate() {
+        assert_eq!(quality.cycle(true), levels[(index + 1) % levels.len()]);
+        assert_eq!(quality.cycle(false), levels[(index + 3) % levels.len()]);
+        assert_eq!(quality.cycle(true).cycle(false), *quality);
+    }
 }
 
 #[test]

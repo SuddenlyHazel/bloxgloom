@@ -5,19 +5,7 @@ fn default_only_body_hair_grouping_and_population_churn_remain_bounded() {
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let camera = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: None,
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    });
+    let camera = crate::render::sun_shadow::camera_layout(&device);
     let mut renderer = CharacterRenderer::new(
         &device,
         &queue,
@@ -52,7 +40,10 @@ fn default_only_body_hair_grouping_and_population_churn_remain_bounded() {
         2364 * MAX_AVATARS,
         "unselected catalog meshes must not be submitted"
     );
-    assert_eq!(renderer.joints.size(), (MAX_AVATARS * JOINTS * 64) as u64);
+    assert_eq!(
+        renderer.joints.size(),
+        ((MAX_AVATARS + 1) * JOINTS * 64) as u64
+    );
     renderer.set(&queue, &avatars);
     assert_eq!(renderer.count, MAX_AVATARS as u32);
     renderer.set(&queue, &[]);

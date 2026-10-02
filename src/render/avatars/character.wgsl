@@ -7,6 +7,7 @@ struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: v
 @group(1) @binding(5) var face_features: texture_2d_array<f32>;
 @group(1) @binding(6) var iris_masks: texture_2d_array<f32>;
 // REGISTERED_PALETTES
+// FIRST_PERSON_JOINT_OFFSET
 struct Input {
     @location(0) local: vec3f, @location(1) normal: vec3f, @location(2) joint: u32,
     @location(3) origin: vec3f, @location(4) cosmetics: vec4u,
@@ -19,6 +20,7 @@ struct Input {
 };
 struct Output {
     @builtin(position) clip: vec4f, @location(0) light: vec3f,
+    @location(1) direct: vec3f,
     @location(2) sky: f32,
     @location(3) uv: vec2f, @location(4) @interpolate(flat) material: u32,
     @location(5) @interpolate(flat) recipe: vec3u,
@@ -33,25 +35,30 @@ struct Output {
     @location(14) front: f32,
     @location(15) world_position: vec3f,
 };
-@vertex fn vs_main(input: Input) -> Output {
+fn character_vertex(input: Input, shadow: bool) -> Output {
     var output: Output;
-    let transform = joints[input.instance * 30u + input.joint];
+    // The color pass uses the owner's camera-framed rig. Casters always use
+    // the unmodified world rig, including the full head and attached arms.
+    let first_person = input.recipe.w != 0u && !shadow;
+    let offset = select(input.instance * 30u, FIRST_PERSON_JOINT_OFFSET, first_person);
+    let transform = joints[offset + input.joint];
     let local = (transform * vec4f(input.local, 1.0)).xyz;
     let n = normalize((transform * vec4f(input.normal, 0.0)).xyz);
     let c = cos(input.pose.x); let s = sin(input.pose.x);
     let world = vec3f(local.x*c+local.z*s, local.y, local.z*c-local.x*s) + input.origin;
     let normal = vec3f(n.x*c+n.z*s, n.y, n.z*c-n.x*s);
     output.clip = camera.view_projection * vec4f(world, 1.0);
+    if shadow { output.clip = bg_shadow.view_projection * vec4f(world, 1.0); }
     let surface = input.surface & 255u;
     let head = input.joint == 5u || (input.joint >= 15u && input.joint <= 17u) || input.joint >= 27u;
-    if input.recipe.w != 0u && head { output.clip = vec4f(2.0, 2.0, 2.0, 1.0); }
+    if first_person && head { output.clip = vec4f(2.0, 2.0, 2.0, 1.0); }
     // Styled eye artwork uses the articulated white box as its canvas. Hide the
     // native iris, pupil and glint geometry only when that canvas is selected.
     if input.recipe.x != 0u && (surface == 4u || surface == 5u || surface == 6u || (surface == 2u && head)) {
         output.clip = vec4f(2.0, 2.0, 2.0, 1.0);
     }
     output.local_height = local.y;
-    output.eye_height = select(0.0, input.pose.w, input.recipe.w != 0u);
+    output.eye_height = select(0.0, input.pose.w, first_person);
     output.joint = input.joint;
     let sky = f32(input.light_levels.x) / 15.0;
     let glow = f32(input.light_levels.y) / 15.0;
@@ -59,6 +66,7 @@ struct Output {
     let glow_bounce = vec3f(input.glow_bounce.xyz) / 255.0;
     let visibility = f32((input.surface >> 8u) & 255u) / 255.0;
     output.light = input.tint * bg_surface_light(normal, camera.sun, sky, glow, bounce, glow_bounce, visibility);
+    output.direct = input.tint * bg_direct_light(normal, camera.sun, sky);
     output.world_position = world;
     output.sky = sky;
     output.uv = input.uv; output.material = input.material;
@@ -67,6 +75,12 @@ struct Output {
     output.front = input.normal.z;
     output.hair_color_body = input.hair_color_body; output.cosmetics = input.cosmetics.xyz;
     return output;
+}
+@vertex fn vs_main(input: Input) -> Output {
+    return character_vertex(input, false);
+}
+@vertex fn vs_shadow(input: Input) -> Output {
+    return character_vertex(input, true);
 }
 fn srgb_to_linear(rgb: vec3f) -> vec3f {
     return select(pow((rgb+vec3f(0.055))/1.055,vec3f(2.4)),rgb/12.92,rgb<=vec3f(0.04045));
@@ -81,7 +95,7 @@ fn tint_hair(neutral: vec3f, rgb: vec3f) -> vec3f { return neutral * srgb_to_lin
 fn shade_hair(neutral: vec4f, rgb: vec3f, fixed: bool) -> vec4f {
     return vec4f(select(tint_hair(neutral.rgb,rgb),neutral.rgb,fixed),neutral.a);
 }
-@fragment fn fs_main(input: Output) -> @location(0) vec4f {
+fn character_albedo(input: Output) -> vec4f {
     if input.eye_height > 0.0 && (input.joint == 3u || input.joint == 4u) && input.local_height > input.eye_height - 0.12 { discard; }
     let is_hair = input.material > 0u && input.material < 14u;
     if is_hair && input.material != input.recipe.z { discard; }
@@ -116,5 +130,15 @@ fn shade_hair(neutral: vec4f, rgb: vec3f, fixed: bool) -> vec4f {
         }
     }
     if albedo.a < 0.5 { discard; }
-    return vec4f(bg_apply_fog(albedo.rgb * input.light, input.world_position, input.sky), 1.0);
+    return albedo;
+}
+@fragment fn fs_main(input: Output) -> @location(0) vec4f {
+    let albedo = character_albedo(input);
+    let light = input.light - input.direct * (1.0 - bg_sun_visibility(input.world_position));
+    return vec4f(bg_apply_fog(albedo.rgb * light, input.world_position, input.sky), 1.0);
+}
+@fragment fn fs_shadow(input: Output) {
+    // Keep body, chosen hair, eye canvas and texture alpha identical to color.
+    // eye_height is zero in this pass, so first-person clipping never cuts it.
+    _ = character_albedo(input);
 }

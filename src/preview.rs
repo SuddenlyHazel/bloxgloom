@@ -5,6 +5,9 @@ pub use third_person::{
     render_first_person_previews, render_gameplay_animation_previews, render_third_person_previews,
 };
 mod calibration;
+mod sandbox;
+mod sun_shadow;
+pub use sandbox::{install_sandbox_materials, render_sandbox_previews};
 mod daylight;
 pub use calibration::render_calibration_previews;
 mod weather;
@@ -544,6 +547,7 @@ enum PreviewScene {
     CharacterStyles,
     ThirdPerson(third_person::Shot),
     Calibration(calibration::Scene),
+    Sandbox(sandbox::Shot),
     Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
@@ -644,7 +648,7 @@ async fn render_previews_weather(
         .await?;
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
-    let (mut pipeline, mut cutout_pipeline, camera_buffer, camera_group, texture_group) =
+    let (mut pipeline, mut cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut rain_renderer = render::fire::FireRenderer::with_capacity(
@@ -659,6 +663,10 @@ async fn render_previews_weather(
         &camera_buffer,
         crate::content::catalog(),
     );
+    let mut sun_shadows =
+        render::sun_shadow::SunShadows::new(&device, &camera_buffer, sun_shadow::quality()?);
+    let camera_group = sun_shadows.camera_group.clone();
+    avatar_renderer.set_camera_group(camera_group.clone());
     let mut contact_shadows = render::contact_shadow::Renderer::new(&device, &camera_buffer);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
@@ -714,6 +722,10 @@ async fn render_previews_weather(
         };
     let center_x = center_chunk.0 * 16;
     let center_z = center_chunk.1 * 16;
+    let sun_pipelines = visual_resources
+        .as_mut()
+        .and_then(|resources| resources.sun_pipelines.take())
+        .unwrap_or_else(|| render::create_sun_shadow_pipelines(&device, &pipeline, None));
     let camera_xz = (center_x + 40, center_z + 16);
     let target_xz = (center_x + 8, center_z - 16);
     let target_height = if matches!(scene, PreviewScene::Vegetation) {
@@ -751,6 +763,7 @@ async fn render_previews_weather(
         | PreviewScene::Hoppers
         | PreviewScene::Chests
         | PreviewScene::Calibration(_)
+        | PreviewScene::Sandbox(_)
         | PreviewScene::ThirdPerson(_)
         | PreviewScene::Avatars
         | PreviewScene::Characters(..)
@@ -865,6 +878,13 @@ async fn render_previews_weather(
         avatar_renderer.preview_character_clip("idle", 0.35);
         shadow_avatars = calibration::avatars(&chunks);
         avatar_renderer.set(&queue, &shadow_avatars);
+    }
+    if let PreviewScene::Sandbox(shot) = scene {
+        camera_template = sandbox::prepare(shot, &mut chunks);
+        avatar_renderer.preview_character_clip(shot.clip, shot.seconds);
+        shadow_avatars = sandbox::avatars(&chunks);
+        avatar_renderer.set(&queue, &shadow_avatars);
+        println!("sandbox adapter: {:?}", adapter.get_info());
     }
     if let PreviewScene::ThirdPerson(shot) = scene {
         camera_template = third_person::prepare(shot, &mut chunks, target_xz, target_height);
@@ -1427,7 +1447,10 @@ async fn render_previews_weather(
         let color_view = color.create_view(&Default::default());
         let depth_view = depth.create_view(&Default::default());
         let mut camera = Camera {
-            fov_y_radians: if matches!(scene, PreviewScene::Calibration(_)) {
+            fov_y_radians: if matches!(
+                scene,
+                PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
+            ) {
                 camera_template.fov_y_radians
             } else {
                 70.0f32.to_radians()
@@ -1449,6 +1472,7 @@ async fn render_previews_weather(
             )),
         );
         rain_renderer.set_mesh(&queue, &weather.vertices(camera));
+        sun_shadows.update(&queue, camera, atmosphere);
         let matrix = render::view_projection(camera, output.width, output.height);
         queue.write_buffer(
             &camera_buffer,
@@ -1550,7 +1574,7 @@ async fn render_previews_weather(
         }
         if !matches!(
             scene,
-            PreviewScene::SurfaceBare | PreviewScene::Calibration(_)
+            PreviewScene::SurfaceBare | PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
         ) {
             ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         }
@@ -1564,7 +1588,10 @@ async fn render_previews_weather(
             mapped_at_creation: false,
         });
         let mut post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
-        if matches!(scene, PreviewScene::Calibration(_)) {
+        if matches!(
+            scene,
+            PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
+        ) {
             post.configure(&queue, true, 1.0, 0.12);
         }
         if let Some(resources) = &mut visual_resources {
@@ -1579,6 +1606,18 @@ async fn render_previews_weather(
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("preview commands"),
         });
+        sun_shadow::draw(
+            &mut encoder,
+            &sun_shadows,
+            &sun_pipelines,
+            &texture_group,
+            visual_resources
+                .as_ref()
+                .and_then(|resources| resources.material.as_ref()),
+            &gpu_meshes,
+            drop_gpu_mesh.as_ref(),
+            &avatar_renderer,
+        );
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview world"),
@@ -1687,7 +1726,7 @@ async fn render_previews_weather(
         }
         if !matches!(
             scene,
-            PreviewScene::SurfaceBare | PreviewScene::Calibration(_)
+            PreviewScene::SurfaceBare | PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
         ) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview UI"),

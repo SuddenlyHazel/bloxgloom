@@ -44,6 +44,9 @@ pub(super) fn draw(
             .inner_margin(Margin::same(if compact { 12 } else { 22 }))
             .show(ui, |ui| {
                 ui.set_width(width - if compact { 24.0 } else { 44.0 });
+                // Compact menus can scroll. Reserve a gutter so the scrollbar
+                // cannot intercept clicks on the right-aligned setting buttons.
+                ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
                 egui::ScrollArea::vertical()
                     .id_salt("built-in-menu-scroll")
                     .max_height(height - if compact { 24.0 } else { 44.0 })
@@ -179,6 +182,11 @@ fn settings_rows(
                 SettingId::BloomStrength,
                 "Bloom strength",
                 format!("{:.0}%", settings.bloom_strength * 100.0),
+            ),
+            (
+                SettingId::SunShadows,
+                "Sun shadows",
+                settings.sun_shadow_quality.label().into(),
             ),
         ]
     } else {
