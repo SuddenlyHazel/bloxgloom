@@ -1281,6 +1281,18 @@ fn withheld_motion_receipt_defers_without_duplicating_or_losing_steps() {
         let mut state = state_for(&save, 7);
         let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
         reside_neighbourhood(&mut state, position);
+        // The compared fall crosses into the chunk below the spawn. Tick
+        // captures require its complete 27-chunk neighbourhood too, so pin
+        // the next row before either trajectory runs. Otherwise loader timing
+        // adds unrelated deferrals near y=80 to this receipt-only comparison.
+        reside_neighbourhood(
+            &mut state,
+            [
+                position[0],
+                position[1] - crate::world::CHUNK_SIZE as f32,
+                position[2],
+            ],
+        );
         spawn_drop(&mut state, 1, position, STONE_ITEM, 7, Duration::ZERO);
         (save, state, position)
     }
