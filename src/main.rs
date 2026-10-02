@@ -397,6 +397,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_daylight_previews(std::path::Path::new(&directory))?;
             println!("wrote daylight previews to {directory}");
         }
+        Some("calibration-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "calibration-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: calibration-preview [output-dir]".into());
+            }
+            preview::render_calibration_previews(std::path::Path::new(&directory))?;
+            println!("wrote lighting calibration previews to {directory}");
+        }
         Some("lighting-preview") => {
             let directory = args
                 .next()

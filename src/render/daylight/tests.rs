@@ -16,3 +16,6 @@ fn sun_and_atmosphere_wrap_and_night_preserves_a_small_sky_light() {
     assert!(dawn.sun.distance(before.sun) < 0.0001);
     assert!(dawn.horizon.distance(before.horizon) < 0.0001);
 }
+
+#[path = "calibration_tests.rs"]
+mod calibration;

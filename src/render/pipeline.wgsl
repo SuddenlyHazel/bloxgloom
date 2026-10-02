@@ -26,18 +26,13 @@ struct VertexOutput {
     var output: VertexOutput;
     let vertex = bg_vertex(BgVertex(input.position, input.normal, input.uv), u32(input.layer));
     output.position = camera.view_projection * vec4<f32>(vertex.position, 1.0);
-    let sunlight = max(dot(vertex.normal, normalize(camera.sun.xyz)), 0.0);
     let sky = input.light_levels.x;
     let glow = input.light_levels.y;
     let encoded = u32(input.bounce_packed);
     let bounce = vec3<f32>(f32(encoded & 255u), f32((encoded >> 8u) & 255u), f32((encoded >> 16u) & 255u)) / 255.0;
     let glow_encoded = u32(input.glow_bounce_packed);
     let glow_bounce = vec3<f32>(f32(glow_encoded & 255u), f32((glow_encoded >> 8u) & 255u), f32((glow_encoded >> 16u) & 255u)) / 255.0;
-    output.light = vec3<f32>(0.012, 0.015, 0.022)
-        + sky * camera.sun.w * (vec3<f32>(0.31, 0.40, 0.53)
-            + sunlight * vec3<f32>(0.77, 0.66, 0.47))
-        + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
-        + mix(glow_bounce, bounce, camera.sun.w) * 1.35;
+    output.light = bg_surface_light(vertex.normal, camera.sun, sky, glow, bounce, glow_bounce, 1.0);
     output.uv = vertex.uv;
     output.layer = i32(input.layer);
     output.sky_level = sky;

@@ -24,7 +24,7 @@ pub(super) fn palettes(catalog: &Catalog) -> String {
 }
 
 pub(super) fn shader(catalog: &Catalog) -> String {
-    super::super::fog::shader(
+    super::super::daylight::shader(
         &include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes(catalog)),
     )
 }

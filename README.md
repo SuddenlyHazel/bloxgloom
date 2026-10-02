@@ -259,7 +259,11 @@ Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Admi
 
 Run `cargo run -- lighting-preview lighting-previews` to compare a sealed cave, a lamp under default lighting, and the same lamp under bounced lighting through the production mesh and GPU shader pipeline.
 
+Terrain and actors share a restrained sky/ground hemisphere fill plus directional sun, gated by voxel sky visibility and day/night strength. Character creases use offline, joint-local indirect occlusion, and nearby players have bounded contact shadows only on verified, connected opaque floor tops. These inexpensive depth cues are not dynamic sun shadows. They do not raise the sealed-cave light floor, and no shadow map or material/specular model is added. Contact shadows skip emissive floor tops and sessions with authored material shaders, so custom emission and displaced geometry are preserved.
+
 Run `cargo run --release -- daylight-preview daylight-previews` for sunrise, noon, sunset, midnight, and sealed cave comparisons with and without a lamp.
+
+Run `cargo run --release -- calibration-preview calibration-previews` for matched 1280×800 lighting references: six fixed articulated characters covering light/dark skin, both bodies, and black/blond/pastel hair alongside stone, sand, wood, dirt, moss and leaves. It captures noon, open-sided shade, a cave entrance, a sealed cave, an emissive cave and night through production HDR/postprocessing at exposure 1.0. Camera, idle pose and materials stay fixed; player light is sampled from the scene exactly as in gameplay. The output includes capture settings and omits HUD overlays.
 
 Run `cargo run -- vegetation-preview vegetation-preview.png` to inspect trees and plant cutouts through the production GPU path without opening a window.
 
