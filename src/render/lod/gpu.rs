@@ -6,7 +6,9 @@ use crate::{lod::TileKey, world::ChunkKey};
 use glam::Vec3;
 use std::collections::{HashMap, HashSet, VecDeque};
 use wgpu::util::DeviceExt;
-const MAX_BYTES: usize = 32 * 1024 * 1024;
+// Measured 512-block fixture retains ~57 MiB of cave/terrain surfaces.
+// Independent hard residency cap also accommodates the 1,024-block fixture.
+const MAX_BYTES: usize = 128 * 1024 * 1024;
 const MAX_PENDING: usize = 8;
 const COVERAGE_SLOTS: usize = 16384;
 struct Tile {
@@ -17,6 +19,7 @@ struct Tile {
     revision: u64,
     uniform: wgpu::Buffer,
     group: wgpu::BindGroup,
+    coverage: super::coverage::Coverage,
 }
 pub(crate) struct Gpu {
     pipeline: wgpu::RenderPipeline,
@@ -221,6 +224,7 @@ impl Gpu {
                 revision: m.revision,
                 uniform,
                 group,
+                coverage: m.coverage,
             },
         );
         1
@@ -249,6 +253,10 @@ impl Gpu {
         atmosphere: Atmosphere,
         near: impl Iterator<Item = ChunkKey>,
     ) {
+        if self.horizon == 0 {
+            self.selected.clear();
+            return;
+        }
         let relative = Camera {
             position: Vec3::ZERO,
             ..camera
@@ -272,7 +280,12 @@ impl Gpu {
             }
         }
         queue.write_buffer(&self.coverage, 0, bytemuck::cast_slice(&slots));
-        self.selected = select_ready(self.tiles.keys().copied().collect());
+        self.selected = select_ready(self.tiles.keys().copied().collect(), |parent, children| {
+            super::coverage::can_refine(
+                &self.tiles[&parent].coverage,
+                children.map(|k| &self.tiles[&k].coverage),
+            )
+        });
         if self.horizon == 0 {
             self.selected.clear();
         }
@@ -321,13 +334,22 @@ fn hash(x: i32, y: i32, z: i32) -> usize {
         & (COVERAGE_SLOTS - 1)
 }
 /// A ready parent covers its entire footprint until all four children can draw.
-pub(super) fn select_ready(ready: HashSet<TileKey>) -> Vec<TileKey> {
-    fn visit(k: TileKey, ready: &HashSet<TileKey>, out: &mut Vec<TileKey>) {
+pub(super) fn select_ready(
+    ready: HashSet<TileKey>,
+    can_refine: impl Fn(TileKey, [TileKey; 4]) -> bool,
+) -> Vec<TileKey> {
+    fn visit(
+        k: TileKey,
+        ready: &HashSet<TileKey>,
+        out: &mut Vec<TileKey>,
+        can_refine: &impl Fn(TileKey, [TileKey; 4]) -> bool,
+    ) {
         if let Some(children) = k.children()
             && children.iter().all(|c| ready.contains(c))
+            && can_refine(k, children)
         {
             for c in children {
-                visit(c, ready, out);
+                visit(c, ready, out, can_refine);
             }
             return;
         }
@@ -350,7 +372,7 @@ pub(super) fn select_ready(ready: HashSet<TileKey>) -> Vec<TileKey> {
     roots.sort_by_key(|k| (k.level, k.x, k.z));
     let mut out = vec![];
     for k in roots {
-        visit(k, &ready, &mut out);
+        visit(k, &ready, &mut out, &can_refine);
     }
     out
 }

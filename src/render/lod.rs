@@ -1,5 +1,6 @@
 //! Distant terrain appearance, CPU surfaces, ready coverage, and GPU resources.
 mod colors;
+mod coverage;
 mod gpu;
 mod mesh;
 mod selection;

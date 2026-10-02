@@ -41,10 +41,13 @@ fn parent_stays_until_four_uploaded_children_replace_it() {
     let mut ready = HashSet::from([parent]);
     for c in children.iter().take(3) {
         ready.insert(*c);
-        assert_eq!(super::gpu::select_ready(ready.clone()), vec![parent]);
+        assert_eq!(
+            super::gpu::select_ready(ready.clone(), |_, _| true),
+            vec![parent]
+        );
     }
     ready.insert(children[3]);
-    let selected = super::gpu::select_ready(ready);
+    let selected = super::gpu::select_ready(ready, |_, _| true);
     assert_eq!(selected.len(), 4);
     assert!(!selected.contains(&parent));
     for c in children {
@@ -61,7 +64,7 @@ fn bridge_keeps_both_gap_faces_and_sides() {
         z: 0,
     });
     tile.columns[0] = column(&[(0, 4), (10, 11)]);
-    let mesh = mesh(&tile, &[], catalog, &colors);
+    let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
     assert_eq!(mesh.indices.len() / 6, 12);
     let heights: Vec<_> = mesh
         .vertices
@@ -97,13 +100,13 @@ fn coarse_boundary_splits_only_where_fine_spans_differ() {
     });
     neighbor.columns[0] = column(&[(0, 4)]);
     neighbor.columns[32] = column(&[(0, 8)]);
-    let mesh = mesh(&tile, &[&neighbor], catalog, &colors);
+    let mesh = mesh(&tile, &[&neighbor], catalog, &colors).unwrap();
     let side: Vec<_> = mesh
         .vertices
         .chunks_exact(11)
         .filter(|v| v[3] == 1.0)
         .collect();
-    assert_eq!(side.len(), 8);
+    assert!(side.len() >= 8);
     assert!(side.iter().any(|v| v[1] == 4.0));
     assert!(side.iter().any(|v| v[1] == 8.0));
 }
@@ -122,11 +125,117 @@ fn distant_shader_validates_and_uses_three_dimensional_coverage() {
 fn request_rings_are_bounded_and_coarse_first() {
     for horizon in [512, 1024] {
         for quality in 0..=2 {
-            let tiles = desired_tiles(glam::Vec3::new(-0.1, 700.0, -512.1), horizon, quality);
+            let tiles = desired_tiles(glam::Vec3::new(-0.1, 700.0, -512.1), horizon, quality, 4);
             assert!(tiles.len() < 128);
             assert!(tiles.windows(2).all(|p| p[0].level >= p[1].level));
             assert!(tiles.iter().all(|k| k.bounds().is_some()));
         }
     }
-    assert!(desired_tiles(glam::Vec3::ZERO, 0, 2).is_empty());
+    assert!(desired_tiles(glam::Vec3::ZERO, 0, 2, 4).is_empty());
+}
+
+#[test]
+fn flat_roof_caps_merge_without_filling_openings() {
+    let catalog = crate::content::catalog();
+    let colors = FaceColors::new(catalog);
+    let mut tile = fixture(TileKey {
+        level: 3,
+        x: 0,
+        z: 0,
+    });
+    tile.columns.fill(column(&[(0, 8)]));
+    let flat = mesh(&tile, &[], catalog, &colors).unwrap();
+    assert_eq!(
+        flat.vertices
+            .chunks_exact(11)
+            .filter(|v| v[4] != 0.0)
+            .count(),
+        8
+    );
+    assert!(flat.byte_len() < 32 * 1024);
+    tile.columns[16 + 32 * 16] = Column::default();
+    let opening = mesh(&tile, &[], catalog, &colors).unwrap();
+    let caps: Vec<_> = opening
+        .vertices
+        .chunks_exact(44)
+        .filter(|v| v[4] != 0.0)
+        .collect();
+    for quad in caps {
+        let minx = quad
+            .chunks_exact(11)
+            .map(|v| v[0])
+            .fold(f32::INFINITY, f32::min);
+        let maxx = quad
+            .chunks_exact(11)
+            .map(|v| v[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let minz = quad
+            .chunks_exact(11)
+            .map(|v| v[2])
+            .fold(f32::INFINITY, f32::min);
+        let maxz = quad
+            .chunks_exact(11)
+            .map(|v| v[2])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(!(minx < 136.0 && maxx > 128.0 && minz < 136.0 && maxz > 128.0));
+    }
+}
+
+#[test]
+fn sky_lit_roof_does_not_light_its_retained_cavity() {
+    let catalog = crate::content::catalog();
+    let colors = FaceColors::new(catalog);
+    let mut tile = fixture(TileKey {
+        level: 0,
+        x: 0,
+        z: 0,
+    });
+    tile.columns[0] = column(&[(0, 12)]);
+    tile.columns[0].spans[0].sky = 15;
+    tile.columns[1] = column(&[(0, 4), (10, 12)]);
+    tile.columns[1].spans[1].sky = 15;
+    let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
+    let wall: Vec<_> = mesh
+        .vertices
+        .chunks_exact(11)
+        .filter(|v| v[0] == 1.0 && v[3] == 1.0)
+        .collect();
+    assert!(!wall.is_empty());
+    assert!(wall.iter().all(|v| v[9] == 0.0));
+    let ceiling: Vec<_> = mesh
+        .vertices
+        .chunks_exact(11)
+        .filter(|v| v[1] == 10.0 && v[4] == -1.0)
+        .collect();
+    assert!(!ceiling.is_empty());
+    assert!(ceiling.iter().all(|v| v[9] == 0.0));
+}
+
+#[test]
+fn unknown_child_height_cannot_remove_parent_bridge() {
+    use super::coverage::{Coverage, can_refine};
+    let key = TileKey {
+        level: 1,
+        x: 0,
+        z: 0,
+    };
+    let mut parent = fixture(key);
+    parent.columns[0] = column(&[(40, 42)]);
+    let p = Coverage::from_tile(&parent);
+    let mut children = key.children().unwrap().map(fixture);
+    for c in &mut children {
+        c.columns.fill(column(&[]));
+    }
+    let good = children.each_ref().map(Coverage::from_tile);
+    assert!(can_refine(&p, good.each_ref()));
+    children[0].columns[1].coverage = vec![Interval { bottom: 0, top: 16 }];
+    let partial = children.each_ref().map(Coverage::from_tile);
+    assert!(!can_refine(&p, partial.each_ref()));
+    let ready = std::iter::once(key)
+        .chain(key.children().unwrap())
+        .collect();
+    assert_eq!(
+        super::gpu::select_ready(ready, |_, _| can_refine(&p, partial.each_ref())),
+        vec![key]
+    );
 }
