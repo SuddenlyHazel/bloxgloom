@@ -133,8 +133,9 @@ fn character_albedo(input: Output) -> vec4f {
     return albedo;
 }
 @fragment fn fs_main(input: Output) -> @location(0) vec4f {
+    let receiver = bg_shadow_receiver(input.world_position);
     let albedo = character_albedo(input);
-    let light = input.light - input.direct * (1.0 - bg_sun_visibility(input.world_position));
+    let light = input.light - input.direct * (1.0 - bg_sun_visibility(receiver));
     return vec4f(bg_apply_fog(albedo.rgb * light, input.world_position, input.sky), 1.0);
 }
 @fragment fn fs_shadow(input: Output) {

@@ -3,6 +3,7 @@ use super::*;
 use crate::render::{VERTEX_FLOATS, pipeline};
 
 const SIZE: u32 = 128;
+mod banding;
 
 struct Fixture {
     device: wgpu::Device,
@@ -18,6 +19,7 @@ struct Fixture {
     color: wgpu::Texture,
     depth: wgpu::TextureView,
     readback: wgpu::Buffer,
+    cast_floor: bool,
 }
 
 impl Fixture {
@@ -71,6 +73,7 @@ impl Fixture {
             color,
             depth,
             readback,
+            cast_floor: false,
         }
     }
 
@@ -150,6 +153,17 @@ impl Fixture {
             pass.set_bind_group(1, &self.textures, &[]);
             if let Some(gpu) = &self.material {
                 pass.set_bind_group(2, &gpu.group, &[]);
+            }
+            if self.cast_floor {
+                pass.set_pipeline(&self.caster_pipelines.0);
+                pass.set_vertex_buffer(0, self.floor.slice(..));
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..6, 0, 0..1);
+                pass.set_pipeline(if cutout {
+                    &self.caster_pipelines.1
+                } else {
+                    &self.caster_pipelines.0
+                });
             }
             pass.set_vertex_buffer(0, vertices.slice(..));
             pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);

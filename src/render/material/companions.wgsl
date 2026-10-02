@@ -21,9 +21,9 @@ fn bg_material_specular(input: VertexOutput, coordinates: MaterialCoordinates) -
 
 // Sun-only GGX highlights. Sky and sun visibility gate every reflected term,
 // so normal/specular maps cannot add light to a sealed cave or erase a sun shadow.
-fn bg_material_highlight(input: VertexOutput, surface: BgSurface, specular: vec4f) -> vec3f {
+fn bg_material_highlight(input: VertexOutput, surface: BgSurface, specular: vec4f, sun_visibility: f32) -> vec3f {
     let eye = camera.eye.xyz - input.world_position;
     let v = eye / max(length(eye), 0.0001);
     return bg_specular_light(surface.normal, v, camera.sun, input.sky_level,
-        bg_sun_visibility(input.world_position), surface.albedo.rgb, specular);
+        sun_visibility, surface.albedo.rgb, specular);
 }

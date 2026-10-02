@@ -79,6 +79,7 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
 }
 
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let color = input.color - input.direct * (1.0 - bg_sun_visibility(input.world_position));
+    let receiver = bg_shadow_receiver(input.world_position);
+    let color = input.color - input.direct * (1.0 - bg_sun_visibility(receiver));
     return vec4f(bg_apply_fog(color, input.world_position, input.sky), 1.0);
 }

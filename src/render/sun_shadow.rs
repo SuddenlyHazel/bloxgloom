@@ -331,7 +331,10 @@ pub(super) fn depth_state() -> wgpu::DepthStencilState {
         stencil: Default::default(),
         bias: wgpu::DepthBiasState {
             constant: 1,
-            slope_scale: 1.5,
+            // Receiver-plane correction covers the PCF tap offsets. One texel
+            // of caster slope bias covers the larger depth axis; the receiver
+            // covers the smaller axis in a bilinear texel footprint.
+            slope_scale: 1.0,
             clamp: 0.0,
         },
     }
