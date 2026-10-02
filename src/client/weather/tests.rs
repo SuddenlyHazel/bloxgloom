@@ -55,7 +55,7 @@ fn grounded_and_hovering_weather_stays_exposed_at_vertical_chunk_edges() {
             z: 0,
         };
         let index = Chunk::index([8, roof_y.rem_euclid(CHUNK_SIZE as i32) as usize, 8]).unwrap();
-        for (step, block, expected_audio) in [(2, crate::world::LEAVES, 1.0), (3, STONE, 0.0)] {
+        for (step, block, expected_audio) in [(2, crate::world::LEAVES, 1.0), (3, STONE, 0.8)] {
             let mut blocks = vec![AIR; CHUNK_VOLUME];
             blocks[index] = block;
             app.chunks
@@ -66,9 +66,10 @@ fn grounded_and_hovering_weather_stays_exposed_at_vertical_chunk_edges() {
                 app.weather.target_exposure, 0.0,
                 "both roofs shelter visible rain"
             );
-            assert_eq!(
-                app.weather.target_audio_exposure, expected_audio,
-                "roof {block:?}"
+            assert!(
+                (app.weather.target_audio_exposure - expected_audio).abs() < 0.1,
+                "roof {block:?}: {}",
+                app.weather.target_audio_exposure
             );
         }
     }

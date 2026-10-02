@@ -3,6 +3,7 @@ use crate::weather::{Lightning, WeatherSnapshot, WeatherValues};
 use glam::Vec3;
 use std::time::{Duration, Instant};
 
+mod acoustics;
 mod rain_scene;
 
 const COVER_SIDE: usize = 16;
@@ -193,10 +194,8 @@ impl super::ClientApp {
             self.weather.target_exposure = if roof <= eye.y { 1.0 } else { 0.0 };
             // Porous cutout cover (including modded leaves) catches raindrops,
             // but does not enclose the listener like a building roof.
-            let audio_roof = column_cover(
-                eye.x.floor() as i32,
-                eye.y.floor() as i32,
-                eye.z.floor() as i32,
+            self.weather.target_audio_exposure = acoustics::exposure(
+                eye,
                 scan_ceiling(self.position.y, eye.y.floor() as i32),
                 |x, y, z| {
                     self.block_at(x, y, z).map(|id| {
@@ -205,7 +204,6 @@ impl super::ClientApp {
                     })
                 },
             );
-            self.weather.target_audio_exposure = if audio_roof <= eye.y { 1.0 } else { 0.0 };
         }
         let dt = now
             .saturating_duration_since(self.weather.updated)

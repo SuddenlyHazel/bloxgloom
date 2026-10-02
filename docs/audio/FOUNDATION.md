@@ -329,3 +329,21 @@ The native device path also accepted the generated split-material WAV and
 completed its two-second playback probe without reporting device errors. This
 checks playback availability/delivery; it is not a subjective listening review.
 The code graph was refreshed with AST extraction.
+
+
+### Open shelter entrances
+
+Audio shelter now checks nearby outdoor openings as well as the overhead column.
+Sixteen horizontal probes travel up to eight metres at player-eye height, through
+known acoustically open cells. Reaching a known sky-exposed column contributes
+outdoor sound, weighted by distance and angular coverage. Leaves remain porous;
+solid walls and missing chunks stop a probe. Partial exposure keeps sheltered
+rain quieter while allowing its higher frequencies through an open entrance.
+Closing the entrance restores full indoor muffling. Visible rain clipping and
+fog still use their separate overhead shelter check.
+
+This is bounded local openness, not full diffraction or voxel acoustic tracing;
+deep rooms, bent passages and entrances outside the sampled patch remain muted.
+Regression tests model an open hillside shelter, close its entrance, and verify
+both exposure and increased rain energy through the production mixer. Unknown
+cells/sky and solid walls cannot fabricate outdoor openings.
