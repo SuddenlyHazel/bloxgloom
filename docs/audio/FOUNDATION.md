@@ -15,6 +15,21 @@ writer. **Local preview** cycles Off, Rain, Storm and Wind. **Test sound** plays
 a short synthesized click; in Storm preview it also triggers thunder. Preview selection is local, starts Off, and resets on
 session retirement; it does not announce rain or a storm to other players.
 
+The **Rain tuning** section applies live and persists locally across previews,
+rejoins and restarts. **Rain bed** controls the diffuse far-rain wash independently
+of **Individual drops** and **Impact reverb**; set either bed or drops to zero to
+compare them. The starting bed gain is 0.10. Expand the arrival/distance/gust and
+material sections for click, resonance, filter and bubble controls. Material
+coverage weights and the wind-facing checkbox affect the local preview; live
+impacts use exposed world blocks and rotate with the camera. Custom block sound
+profiles retain their authored timbre unless **Honor custom block sound profiles**
+is disabled; each material's volume applies either way.
+
+**Copy audio settings** sends the complete rain profile and Master/Ambient/Effects
+mix to the native clipboard as `bloxgloom-rain-audio-v1` JSON, including the material
+array's name/order mapping. Paste it into a tuning discussion to propose defaults.
+**Reset rain defaults** resets the rain profile while keeping the volume mix.
+
 Render reproducible stereo PCM without an audio device:
 
 ```sh
@@ -68,7 +83,7 @@ removes voices and clears procedural/reverb/limiter state.
 | Resource | Bound |
 | --- | --- |
 | Pending native commands | 64; overflow rejects new commands |
-| Control updates | One coalesced latest volume/preset state |
+| Control updates | Coalesced latest volume/preset state and rain profile; independent of event queue capacity |
 | Clip voices | 32 |
 | Decoded user clip storage and decode scratch | 64 MiB across the process |
 | WAV file size | 16 MiB |

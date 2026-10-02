@@ -46,6 +46,7 @@ pub(crate) enum Intent {
     JoinAction,
     CharacterRecipe(Option<crate::appearance::CharacterRecipe>),
     CharacterClip(u8),
+    RainAudio(Box<crate::audio::rain_tuning::RainConfig>),
 }
 
 pub(super) struct GameUi {

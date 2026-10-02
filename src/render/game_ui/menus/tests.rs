@@ -300,3 +300,86 @@ fn native_character_menu_keeps_apply_visible_and_blocks_repeat_while_pending() {
         );
     }
 }
+
+#[test]
+fn rain_audio_copy_exports_current_tuning_and_reset_dispatches_live_defaults() {
+    for size in [egui::vec2(1280.0, 720.0), egui::vec2(640.0, 360.0)] {
+        let context = crate::render::game_ui::themed_context();
+        let catalog = crate::content::Catalog::builtins();
+        let mut frame = UiFrame {
+            screen: UiScreen::Audio,
+            ..Default::default()
+        };
+        frame.settings.rain_audio.bed_gain = 0.037;
+        frame.settings.rain_audio.surfaces[9].modes[0].frequency_hz = 470.0;
+        let draw = |events| {
+            let mut intents = Vec::new();
+            let mut output = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    events,
+                    ..Default::default()
+                },
+                |ui| super::draw(ui, &frame, &catalog, &mut intents),
+            );
+            output.textures_delta.clear();
+            (output, intents)
+        };
+        draw(vec![]);
+        let (mut output, _) = draw(vec![]);
+        if size.y < 500.0 {
+            draw(vec![
+                egui::Event::PointerMoved(egui::pos2(size.x / 2.0, size.y / 2.0)),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -180.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+            for _ in 0..8 {
+                output = draw(vec![]).0;
+            }
+        }
+        let click = |pos, pressed| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        };
+        let pos = label_center(&output.shapes, "Copy audio settings");
+        assert!(pos.y > 20.0 && pos.y < size.y - 20.0);
+        draw(click(pos, true));
+        let (output, intents) = draw(click(pos, false));
+        assert!(intents.is_empty(), "copy must not change tuning");
+        let copied = output
+            .platform_output
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                egui::OutputCommand::CopyText(text) => Some(text),
+                _ => None,
+            })
+            .expect("native clipboard copy output");
+        assert_eq!(
+            *copied,
+            frame.settings.rain_audio.export(
+                frame.settings.audio_master,
+                frame.settings.audio_ambient,
+                frame.settings.audio_effects
+            )
+        );
+        label_center(&output.shapes, "Copied!");
+        let pos = label_center(&output.shapes, "Reset rain defaults");
+        draw(click(pos, true));
+        let (_, intents) = draw(click(pos, false));
+        assert!(
+            matches!(&intents[..], [Intent::RainAudio(profile)] if **profile == Default::default())
+        );
+    }
+}

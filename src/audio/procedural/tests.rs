@@ -184,3 +184,24 @@ fn spatial_custom_profiles_change_actual_impacts_and_zero_gain_silences_them() {
         "tile custom gain was ignored in favor of preset metal"
     );
 }
+
+#[test]
+fn changing_preview_keeps_live_rain_profile_and_world_listener() {
+    let mut engine = Procedural::new(17);
+    let profile = crate::audio::rain_tuning::RainConfig {
+        bed_gain: 0.02,
+        drop_gain: 1.5,
+        ..Default::default()
+    };
+    engine.set_rain_config(profile);
+    engine.set_listener([4.0, 8.0, 12.0], 1.2);
+    for preset in [Preset::Rain, Preset::Storm, Preset::Off, Preset::Wind] {
+        engine.set_preset(preset);
+        assert_eq!(engine.rain_config, profile);
+        assert_eq!(engine.listener_position, [4.0, 8.0, 12.0]);
+        assert_eq!(engine.listener_yaw, 1.2);
+        for _ in 0..1024 {
+            assert!(engine.next(preset).0.into_iter().all(f32::is_finite));
+        }
+    }
+}

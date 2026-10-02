@@ -1978,6 +1978,7 @@ impl ClientApp {
                 audio_ambient: self.config.audio_ambient,
                 audio_effects: self.config.audio_effects,
                 audio_preset: self.audio.preset() as u8,
+                rain_audio: self.config.rain_audio,
                 post_processing: self.config.post_processing,
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,
@@ -2195,6 +2196,13 @@ impl ClientApp {
                         && let Some(session) = &mut self.package_ui
                     {
                         session.apply_egui(intent);
+                    }
+                }
+                crate::render::GameUiIntent::RainAudio(profile) => {
+                    if self.screen == UiScreen::Audio {
+                        self.config.rain_audio = profile.sanitized();
+                        self.audio.set_volumes(&self.config);
+                        self.config_writer.request_save(&self.config);
                     }
                 }
                 crate::render::GameUiIntent::CharacterRecipe(recipe) => {

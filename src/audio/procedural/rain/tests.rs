@@ -275,3 +275,44 @@ fn rain_invalid_inputs_reject_without_mutating_configuration() {
         assert_eq!(rain.config.surfaces[index].name, *expected);
     }
 }
+
+#[test]
+fn drop_volume_and_reverb_are_independent_of_the_diffuse_bed() {
+    let listener = Listener::default();
+    let setup = |drop_gain, reverb_gain, bed_gain| {
+        let mut rain = Rain::new(37);
+        rain.configure(RainConfig {
+            drop_gain,
+            reverb_gain,
+            bed_gain,
+            ..Default::default()
+        })
+        .unwrap();
+        rain.start_drop(drop(1), listener).unwrap();
+        rain.bed.ratio = 1.0;
+        rain.bed.gain = [[0.001; BED_BANDS]; 2];
+        rain
+    };
+    let mut dry = setup(1.0, 1.0, 0.0);
+    let mut louder = setup(2.0, 0.5, 0.0);
+    let mut bed_only = setup(0.0, 1.0, 0.25);
+    let mut combined = setup(1.0, 1.0, 0.25);
+    let mut bed_energy = 0.0;
+    let mut drop_energy = 0.0;
+    for _ in 0..4096 {
+        let (a, send_a) = dry.next(listener);
+        let (b, send_b) = louder.next(listener);
+        let (bed, bed_send) = bed_only.next(listener);
+        let (mix, _) = combined.next(listener);
+        assert!((send_a - send_b).abs() < 1e-7);
+        assert_eq!(bed_send, 0.0);
+        for ear in 0..2 {
+            assert!((b[ear] - 2.0 * a[ear]).abs() < 1e-7);
+            assert!((mix[ear] - bed[ear] - a[ear]).abs() < 1e-7);
+            bed_energy += bed[ear].powi(2);
+            drop_energy += a[ear].powi(2);
+        }
+    }
+    assert!(bed_energy > 0.0);
+    assert!(drop_energy > 0.0);
+}

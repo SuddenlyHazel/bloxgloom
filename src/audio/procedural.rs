@@ -18,6 +18,7 @@ use weather::{Storm, Weather};
 use wind::Wind;
 pub(super) struct Procedural {
     rain: Rain,
+    rain_config: crate::audio::rain_tuning::RainConfig,
     insects: insects::Insects,
     wind: Wind,
     storm: Storm,
@@ -40,6 +41,7 @@ impl Procedural {
     pub fn new(seed: u32) -> Self {
         Self {
             rain: Rain::new(seed),
+            rain_config: Default::default(),
             insects: insects::Insects::new(seed),
             wind: Wind::new(seed),
             storm: Storm::new(seed),
@@ -72,7 +74,7 @@ impl Procedural {
     pub fn set_preset(&mut self, _preset: Preset) {
         self.rain = Rain::new(self.seed);
         self.rain
-            .configure(rain::RainConfig::default())
+            .configure(self.rain_config)
             .expect("valid native rain profile");
         self.rain
             .set_listener(self.listener_position, self.listener_yaw);
@@ -86,6 +88,12 @@ impl Procedural {
     pub fn set_world(&mut self, weather: Option<WeatherSound>) {
         self.world = weather.map(WeatherSound::sanitized);
         self.rain.set_scene(self.world.map(|_| self.scene.clone()));
+    }
+    pub fn set_rain_config(&mut self, config: crate::audio::rain_tuning::RainConfig) {
+        self.rain_config = config.sanitized();
+        self.rain
+            .configure(self.rain_config)
+            .expect("sanitized rain profile");
     }
     pub fn set_scene(&mut self, scene: Arc<RainScene>) -> bool {
         if !scene.valid() {

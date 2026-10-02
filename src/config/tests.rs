@@ -36,6 +36,7 @@ fn config_round_trips_through_explicit_path() {
         audio_master: 0.4,
         audio_ambient: 0.2,
         audio_effects: 0.9,
+        rain_audio: Default::default(),
         selected_slot: 7,
         debug_hud: true,
         profile: 0x1234,
@@ -300,4 +301,25 @@ fn lod_settings_reject_unbounded_work_and_preserve_disable() {
         parse_config("version=1\nlod_horizon=65535\n").lod_horizon,
         1024
     );
+}
+
+#[test]
+fn live_rain_tuning_persists_and_old_configs_keep_native_defaults() {
+    let directory = test_directory("rain-tuning");
+    let path = directory.join("config");
+    let mut config = Config::default();
+    config.rain_audio.bed_gain = 0.03;
+    config.rain_audio.drop_gain = 1.5;
+    config.rain_audio.surfaces[9].lowpass_hz = 2300.0;
+    config.save(&path).unwrap();
+    assert_eq!(Config::load(&path), config);
+    assert_eq!(
+        parse_config("version=1\naudio_ambient=0.4\n").rain_audio,
+        Default::default()
+    );
+    assert_eq!(
+        parse_config("version=1\nrain_audio={broken}\n").rain_audio,
+        Default::default()
+    );
+    fs::remove_dir_all(directory).unwrap();
 }

@@ -171,3 +171,55 @@ fn audio_output_reset_adoption_restores_explicit_post_reset_preview_controls() {
     source.mixer.render(&mut frames);
     assert!(frames.iter().flatten().all(|sample| *sample == 0.0));
 }
+
+#[test]
+fn latest_rain_tuning_survives_full_event_queue_and_reset() {
+    let shared = Arc::new(Shared::new(controls()));
+    let (commands, _receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
+    let (complete, done) = mpsc::channel();
+    drop(complete);
+    let output = AudioOutput {
+        commands,
+        shared,
+        done,
+        worker: None,
+    };
+    for _ in 0..COMMAND_CAPACITY {
+        assert!(output.try_send(Command::Stop(1)));
+    }
+    let profile = crate::audio::rain_tuning::RainConfig {
+        gain: 0.0,
+        bed_gain: 0.02,
+        ..Default::default()
+    };
+    output.set_rain_config(Default::default());
+    output.set_rain_config(profile);
+    assert_eq!(*output.shared.rain_config.lock().unwrap(), profile);
+    output.reset();
+    output.set_controls(Controls {
+        preset: Preset::Rain,
+        ..controls()
+    });
+    let mut actual = Source::new();
+    actual.reset();
+    apply_latest_controls(&mut actual, &output.shared);
+    let mut expected = Source::new();
+    expected.mixer.set_controls(unpack_controls(
+        output.shared.controls.load(Ordering::Acquire),
+    ));
+    expected.mixer.set_rain_config(profile);
+    let mut ordinary = Source::new();
+    ordinary.mixer.set_controls(unpack_controls(
+        output.shared.controls.load(Ordering::Acquire),
+    ));
+    let mut differs_from_default = false;
+    for _ in 0..8820 {
+        let a = actual.next();
+        assert_eq!(a, expected.next());
+        differs_from_default |= a != ordinary.next();
+    }
+    assert!(
+        differs_from_default,
+        "reset must restore tuning, not only volumes"
+    );
+}

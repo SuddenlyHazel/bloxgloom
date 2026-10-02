@@ -7,6 +7,7 @@ pub(crate) mod output;
 mod preview;
 mod procedural;
 pub(crate) mod rain_scene;
+pub mod rain_tuning;
 #[cfg(test)]
 mod tests;
 pub(crate) use clip::Clip;

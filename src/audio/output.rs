@@ -4,7 +4,7 @@ use super::{Command, Controls, Mixer, Preset, SAMPLE_RATE};
 use cpal::traits::StreamTrait;
 use rtrb::{Producer, RingBuffer};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering},
     mpsc,
 };
@@ -36,6 +36,8 @@ pub(crate) struct OutputStats {
     pub rejected_commands: u64,
 }
 struct Shared {
+    rain_config: Mutex<crate::audio::rain_tuning::RainConfig>,
+    rain_revision: AtomicU64,
     controls: AtomicU64,
     controls_revision: AtomicU64,
     epoch: AtomicU64,
@@ -50,6 +52,8 @@ struct Shared {
 impl Shared {
     fn new(controls: Controls) -> Self {
         Self {
+            rain_config: Mutex::new(Default::default()),
+            rain_revision: AtomicU64::new(0),
             controls: AtomicU64::new(pack_controls(controls)),
             controls_revision: AtomicU64::new(0),
             epoch: AtomicU64::new(0),
@@ -133,6 +137,16 @@ impl AudioOutput {
             .controls_revision
             .fetch_add(1, Ordering::Release);
     }
+    /// Latest tuning is independent of event queue pressure. Only the worker
+    /// reads this short-lived lock; the device callback never touches it.
+    pub(crate) fn set_rain_config(&self, config: crate::audio::rain_tuning::RainConfig) {
+        let config = config.sanitized();
+        let mut stored = self.shared.rain_config.lock().expect("rain settings lock");
+        if *stored != config {
+            *stored = config;
+            self.shared.rain_revision.fetch_add(1, Ordering::Release);
+        }
+    }
     /// Reset is independent of queue capacity. Old commands and buffered PCM
     /// retain their old epoch and cannot cross a reconnect/session boundary.
     pub(crate) fn reset(&self) {
@@ -209,6 +223,7 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
     let mut controls = shared.controls.load(Ordering::Acquire);
     let mut controls_revision = shared.controls_revision.load(Ordering::Acquire);
     source.mixer.set_controls(unpack_controls(controls));
+    let mut rain_revision = apply_latest_rain(&mut source, shared);
     // Prime before starting callbacks so device startup is not itself an underrun.
     fill(
         &mut producer,
@@ -230,6 +245,10 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
             resampler.reset();
             epoch = current_epoch;
             (controls, controls_revision) = apply_latest_controls(&mut source, shared);
+        }
+        let latest_rain = shared.rain_revision.load(Ordering::Acquire);
+        if latest_rain != rain_revision {
+            rain_revision = apply_latest_rain(&mut source, shared);
         }
         let latest = shared.controls.load(Ordering::Acquire);
         let latest_revision = shared.controls_revision.load(Ordering::Acquire);
@@ -283,7 +302,14 @@ fn apply_latest_controls(source: &mut Source, shared: &Shared) -> (u64, u64) {
     let controls = shared.controls.load(Ordering::Acquire);
     let revision = shared.controls_revision.load(Ordering::Acquire);
     source.mixer.set_controls(unpack_controls(controls));
+    apply_latest_rain(source, shared);
     (controls, revision)
+}
+fn apply_latest_rain(source: &mut Source, shared: &Shared) -> u64 {
+    let revision = shared.rain_revision.load(Ordering::Acquire);
+    let config = *shared.rain_config.lock().expect("rain settings lock");
+    source.mixer.set_rain_config(config);
+    revision
 }
 fn fill(
     producer: &mut Producer<Frame>,

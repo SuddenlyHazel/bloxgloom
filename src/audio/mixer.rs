@@ -68,6 +68,9 @@ impl Mixer {
     pub fn diagnostics(&self) -> (u64, u64, usize, usize, u64) {
         self.synth.stats()
     }
+    pub fn set_rain_config(&mut self, config: crate::audio::rain_tuning::RainConfig) {
+        self.synth.set_rain_config(config);
+    }
     pub fn set_controls(&mut self, controls: Controls) {
         self.controls = controls.sanitized();
     }

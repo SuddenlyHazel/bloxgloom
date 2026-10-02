@@ -5,6 +5,7 @@ use super::Intent;
 mod tests;
 
 mod audio;
+mod audio_tuning;
 mod character;
 mod join;
 use crate::{

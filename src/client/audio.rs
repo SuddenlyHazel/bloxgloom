@@ -32,10 +32,13 @@ impl State {
         #[cfg(not(test))]
         let output = Some(AudioOutput::start(volumes(config, Preset::Off)));
         #[cfg(test)]
-        let output = {
+        let output: Option<AudioOutput> = {
             let _ = config;
             None
         };
+        if let Some(output) = &output {
+            output.set_rain_config(config.rain_audio);
+        }
         Self {
             output,
             voices: Default::default(),
@@ -76,6 +79,7 @@ impl State {
     pub(super) fn set_volumes(&self, config: &Config) {
         if let Some(output) = &self.output {
             output.set_controls(volumes(config, self.preset));
+            output.set_rain_config(config.rain_audio);
         }
     }
     pub(super) fn change_preview(&mut self, increase: bool, config: &Config) {
