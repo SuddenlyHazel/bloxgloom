@@ -75,10 +75,10 @@ impl Service {
     /// Retire exactly the matching accepted job. Unrelated commits may advance
     /// the world counter while this tile's captured dependencies remain valid.
     fn finish(&mut self, result: &worker::Completion) -> bool {
-        if !self
+        if self
             .pending
             .get(&result.key)
-            .is_some_and(|(revision, _)| *revision == result.revision)
+            .is_none_or(|(revision, _)| *revision != result.revision)
         {
             return false;
         }
