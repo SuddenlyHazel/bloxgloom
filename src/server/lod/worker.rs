@@ -12,6 +12,7 @@ pub(super) struct Job {
     pub revision: u64,
     pub overlays: Vec<(ChunkKey, Vec<u8>)>,
     pub children: Option<[LodTile; 4]>,
+    pub requested_at: Instant,
     pub cancelled: Arc<AtomicBool>,
 }
 pub(super) struct Completion {
@@ -19,6 +20,7 @@ pub(super) struct Completion {
     pub revision: u64,
     pub tile: Option<LodTile>,
     pub elapsed: Duration,
+    pub queue_age: Duration,
 }
 
 pub(super) fn run(
@@ -78,6 +80,7 @@ pub(super) fn run(
                 revision: job.revision,
                 tile,
                 elapsed: started.elapsed(),
+                queue_age: started.saturating_duration_since(job.requested_at),
             })
             .is_err()
         {

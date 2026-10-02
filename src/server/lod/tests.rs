@@ -36,6 +36,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             revision: 1,
             overlays,
             children: None,
+            requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
         })
         .unwrap();
@@ -62,6 +63,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             revision: 1,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
             children: None,
+            requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
         })
         .unwrap();
@@ -94,6 +96,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             revision: 1,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
             children: None,
+            requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
         })
         .unwrap();
@@ -119,6 +122,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
             revision: service.revision,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
             children: None,
+            requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
         })
         .unwrap();
@@ -156,6 +160,7 @@ fn cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_q
                 revision: 1,
                 overlays: vec![],
                 children: None,
+                requested_at: Instant::now(),
                 cancelled: cancelled.clone(),
             })
             .unwrap();
@@ -184,6 +189,7 @@ fn cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_q
                 revision: service.revision,
                 overlays: vec![],
                 children: None,
+                requested_at: Instant::now(),
                 cancelled: cancelled.clone(),
             })
             .unwrap();

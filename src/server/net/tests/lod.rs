@@ -56,9 +56,11 @@ fn distant_tile_streams_with_session_and_keeps_gameplay_ping_responsive() {
                 ServerMessage::LodStatus {
                     session: received,
                     horizon,
+                    max_level,
                 } => {
                     assert_eq!(received, session);
                     assert_eq!(horizon, 1024);
+                    assert_eq!(max_level, 4);
                     got_status = true;
                 }
                 ServerMessage::LodTile {
@@ -246,6 +248,125 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
             "LOD committed edit to two refreshed clients: {}ms",
             started.elapsed().as_millis()
         );
+    });
+    stop.send(()).unwrap();
+    server.join().unwrap().unwrap();
+    std::fs::remove_dir_all(save).unwrap();
+    if let Err(error) = result {
+        std::panic::resume_unwind(error);
+    }
+}
+
+struct DistantMarker;
+impl bloxgloom_host_api::generation::Contributor for DistantMarker {
+    fn generate(
+        &self,
+        context: bloxgloom_host_api::generation::Context,
+        output: &mut bloxgloom_host_api::generation::Output,
+    ) -> Result<(), bloxgloom_host_api::generation::GenerationError> {
+        if context.chunk[1] == 4 {
+            output.set([0, 12, 0], "bloxgloom:glowstone")?;
+        }
+        Ok(())
+    }
+}
+impl bloxgloom_host_api::Extension for DistantMarker {
+    fn register(
+        &self,
+        host: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), bloxgloom_host_api::RegistrationError> {
+        host.generation_contributor(bloxgloom_host_api::generation::Registration {
+            key: "lod:marker".into(),
+            revision: 1,
+            contributor: Arc::new(DistantMarker),
+        })
+    }
+}
+#[test]
+fn registered_contributor_summary_negotiates_bounded_fallback_and_preserves_marker() {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-lod-contributor-{}-{stamp}",
+        std::process::id()
+    ));
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&DistantMarker)
+            .unwrap();
+    let state =
+        Box::new(crate::server::server_state_with_startup(7, save.clone(), 8, startup).unwrap());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop, stopped) = mpsc::sync_channel(1);
+    let server = thread::spawn(move || reactor::serve_listener_until(listener, state, stopped));
+    let result = std::panic::catch_unwind(|| {
+        let mut peer = TcpStream::connect(address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::Hello {
+                name: "lod-contributor".into(),
+                profile: 0x10d_c,
+                content_fingerprint: crate::content::catalog().fingerprint(),
+            },
+        )
+        .unwrap();
+        complete_content_handshake(&mut peer);
+        loop {
+            if matches!(
+                protocol::read_server(&mut peer).unwrap(),
+                ServerMessage::ActionSession { .. }
+            ) {
+                break;
+            }
+        }
+        protocol::write_client(&mut peer, &ClientMessage::SetView { radius: 1 }).unwrap();
+        protocol::write_client(&mut peer, &ClientMessage::LodConfig { horizon: 512 }).unwrap();
+        loop {
+            if let ServerMessage::LodStatus {
+                max_level, horizon, ..
+            } = protocol::read_server(&mut peer).unwrap()
+            {
+                assert_eq!(max_level, 3);
+                assert_eq!(horizon, 512);
+                break;
+            }
+        }
+        let key = crate::lod::TileKey {
+            level: 2,
+            x: 0,
+            z: 0,
+        };
+        let started = Instant::now();
+        protocol::write_client(&mut peer, &ClientMessage::LodRequest { request: 1, key }).unwrap();
+        let tile = loop {
+            match protocol::read_server(&mut peer).unwrap() {
+                ServerMessage::LodTile {
+                    request: 1, tile, ..
+                } => break tile,
+                ServerMessage::LodUnavailable { request: 1, .. } => {
+                    panic!("contributor fallback unavailable")
+                }
+                _ => {}
+            }
+        };
+        assert!(
+            tile.columns[0]
+                .spans
+                .iter()
+                .any(|s| s.bottom <= 76 && s.top > 76 && s.state == crate::world::GLOWSTONE)
+        );
+        eprintln!(
+            "LOD exact contributor128-block tile cold: {}ms",
+            started.elapsed().as_millis()
+        );
+        // Height beyond its observed generation band remains explicitly unknown.
+        assert!(!tile.columns[0].known(80, 96));
     });
     stop.send(()).unwrap();
     server.join().unwrap().unwrap();

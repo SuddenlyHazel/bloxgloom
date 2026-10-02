@@ -93,6 +93,7 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
             client.enqueue(ServerMessage::LodStatus {
                 session: client.action_epoch,
                 horizon,
+                max_level: state.world.lod_max_level(),
             });
         }
         ClientMessage::LodRequest { request, key } => {
@@ -102,7 +103,7 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
             let permitted = key.bounds().is_some_and(|b| {
                 let p = client.position();
                 let h = f32::from(interest.horizon);
-                key.level <= 4
+                key.level <= state.world.lod_max_level()
                     && interest.horizon != 0
                     && b[0] as f32 <= p[0] + h
                     && b[2] as f32 >= p[0] - h
@@ -128,7 +129,7 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
 pub(super) fn poll(state: &mut State) {
     while let Ok(result) = state.lod.results.try_recv() {
         state.lod.pending.remove(&result.key);
-        tracing::debug!(key=?result.key,generation_ms=result.elapsed.as_millis(),"LOD terrain completion");
+        tracing::debug!(key=?result.key,generation_ms=result.elapsed.as_millis(),queue_ms=result.queue_age.as_millis(),"LOD terrain completion");
         if result.revision != state.lod.revision {
             continue;
         }
@@ -261,6 +262,7 @@ pub(super) fn poll(state: &mut State) {
             revision,
             overlays,
             children,
+            requested_at: Instant::now(),
             cancelled: cancelled.clone(),
         };
         if state.lod.jobs.as_ref().unwrap().try_send(job).is_ok() {

@@ -163,6 +163,7 @@ pub enum ServerMessage {
     LodStatus {
         session: u64,
         horizon: u16,
+        max_level: u8,
     },
     LodTile {
         session: u64,
@@ -309,7 +310,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
-            ServerMessage::LodStatus { .. } => 10,
+            ServerMessage::LodStatus { .. } => 11,
             ServerMessage::LodTile { tile, .. } => 16 + lod::tile_len(tile),
             ServerMessage::LodUnavailable { .. } => 25,
             ServerMessage::LodInvalidate { .. } => 25,
@@ -650,10 +651,15 @@ pub fn write_server_with_catalog(
             out.extend(session.to_le_bytes());
             out.extend(revision.to_le_bytes());
         }
-        ServerMessage::LodStatus { session, horizon } => {
+        ServerMessage::LodStatus {
+            session,
+            horizon,
+            max_level,
+        } => {
             out.push(39);
             out.extend(session.to_le_bytes());
             out.extend(horizon.to_le_bytes());
+            out.push(*max_level);
         }
         ServerMessage::LodTile {
             session,
@@ -1351,6 +1357,7 @@ pub fn read_server_with_catalog(
         39 => ServerMessage::LodStatus {
             session: c.u64()?,
             horizon: c.u16()?,
+            max_level: c.u8()?,
         },
         40 => ServerMessage::LodTile {
             session: c.u64()?,
