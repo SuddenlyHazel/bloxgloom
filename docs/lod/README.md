@@ -78,7 +78,7 @@ avoiding stale summaries after a crash between world commit and invalidation.
 The cache therefore accelerates same-session eviction/revisit, not restart.
 Deleting or corrupting it never changes authoritative save data.
 
-The wire version is 25. Disabled LOD preserves ordinary play with a matching
+The wire version is 26 (versioned component data in drop and pickup snapshots). Disabled LOD preserves ordinary play with a matching
 server; older wire versions still fail the existing handshake version check.
 No authoritative world-format conversion was added.
 

@@ -7,6 +7,7 @@ use std::io::{self, Read, Write};
 
 pub(crate) mod action_spawns;
 mod bundle;
+pub(crate) mod drops;
 pub use bloxgloom_host_api::motion::SpawnReceipt;
 mod entities;
 pub use bundle::{BundleIdentity, CLIENT_RUNTIME_VERSION, MAX_BUNDLE_PART};
@@ -21,7 +22,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 25;
+const WIRE_VERSION: u8 = 26;
 pub(crate) mod lod;
 mod player_states;
 mod players;
@@ -144,11 +145,13 @@ pub enum ClientMessage {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DroppedItem {
     pub id: u64,
     pub item: ItemId,
     pub count: u16,
+    /// Exact catalog-validated stack data for presentation, never client ownership.
+    pub components: Option<std::sync::Arc<crate::inventory::ComponentPayload>>,
     pub position: [f32; 3],
     /// Age at snapshot time; enough range for a stable hover phase until expiry.
     pub age_ms: u32,
@@ -307,7 +310,6 @@ pub enum ServerMessage {
 /// second time on the simulation thread.
 pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const HEADER: usize = 4 + 2; // length, wire version, message tag
-    const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
             ServerMessage::LodStatus { .. } => 11,
@@ -360,8 +362,8 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
                     })
                     .sum::<usize>()
             }
-            ServerMessage::Drops { items, .. } => 8 + 2 + items.len() * DROP_ITEM,
-            ServerMessage::Pickups { items } => 2 + items.len() * DROP_ITEM,
+            ServerMessage::Drops { items, .. } => 8 + 2 + drops::items_wire_len(items),
+            ServerMessage::Pickups { items } => 2 + drops::items_wire_len(items),
             ServerMessage::Sounds { events, .. } => sounds::len(events),
             ServerMessage::FireBursts { cells } => 1 + cells.len() * 12,
             ServerMessage::WorldSnapshotStart(start) => entities::snapshot_start_wire_len(start),
@@ -900,11 +902,11 @@ pub fn write_server_with_catalog(
         ServerMessage::Drops { revision, items } => {
             out.push(9);
             out.extend(revision.to_le_bytes());
-            write_drop_items(&mut out, items, content_catalog)?;
+            drops::write_items(&mut out, items, content_catalog)?;
         }
         ServerMessage::Pickups { items } => {
             out.push(10);
-            write_drop_items(&mut out, items, content_catalog)?;
+            drops::write_items(&mut out, items, content_catalog)?;
         }
         ServerMessage::Sounds { id, events } => {
             out.push(38);
@@ -966,33 +968,6 @@ pub fn write_server_with_catalog(
     }
     entities::enforce_frame_size(&out)?;
     frame(writer, &out)
-}
-
-fn write_drop_items(
-    out: &mut Vec<u8>,
-    items: &[DroppedItem],
-    content_catalog: &Catalog,
-) -> io::Result<()> {
-    if items.len() > 256 {
-        return Err(invalid("too many drops"));
-    }
-    out.extend((items.len() as u16).to_le_bytes());
-    for item in items {
-        if content_catalog.item(item.item).is_none()
-            || !(1..=STACK_LIMIT).contains(&item.count)
-            || item.position.iter().any(|n| !n.is_finite())
-        {
-            return Err(invalid("invalid dropped item"));
-        }
-        out.extend(item.id.to_le_bytes());
-        out.extend(item.item.0.to_le_bytes());
-        out.extend(item.count.to_le_bytes());
-        for n in item.position {
-            out.extend(n.to_le_bytes());
-        }
-        out.extend(item.age_ms.to_le_bytes());
-    }
-    Ok(())
 }
 
 /// Wire v8 chunk payload: count u16, width u8, first-seen state IDs u32,
@@ -1457,53 +1432,13 @@ pub fn read_server_with_catalog(
             }
             ServerMessage::Inventory { revision, slots }
         }
-        9 => {
-            let revision = c.u64()?;
-            let count = c.u16()? as usize;
-            if count > 256 {
-                return Err(invalid("too many drops"));
-            }
-            let mut items = Vec::with_capacity(count);
-            for _ in 0..count {
-                let item = DroppedItem {
-                    id: c.u64()?,
-                    item: ItemId(c.u32()?),
-                    count: c.u16()?,
-                    position: [c.f32()?, c.f32()?, c.f32()?],
-                    age_ms: c.u32()?,
-                };
-                if content_catalog.item(item.item).is_none()
-                    || !(1..=STACK_LIMIT).contains(&item.count)
-                {
-                    return Err(invalid("invalid dropped item"));
-                }
-                items.push(item);
-            }
-            ServerMessage::Drops { revision, items }
-        }
-        10 => {
-            let count = c.u16()? as usize;
-            if count > 256 {
-                return Err(invalid("too many pickups"));
-            }
-            let mut items = Vec::with_capacity(count);
-            for _ in 0..count {
-                let item = DroppedItem {
-                    id: c.u64()?,
-                    item: ItemId(c.u32()?),
-                    count: c.u16()?,
-                    position: [c.f32()?, c.f32()?, c.f32()?],
-                    age_ms: c.u32()?,
-                };
-                if content_catalog.item(item.item).is_none()
-                    || !(1..=STACK_LIMIT).contains(&item.count)
-                {
-                    return Err(invalid("invalid picked-up item"));
-                }
-                items.push(item);
-            }
-            ServerMessage::Pickups { items }
-        }
+        9 => ServerMessage::Drops {
+            revision: c.u64()?,
+            items: drops::read_items(&mut c, content_catalog)?,
+        },
+        10 => ServerMessage::Pickups {
+            items: drops::read_items(&mut c, content_catalog)?,
+        },
         28 => {
             let action_id = c.u128()?;
             let spawned = action_spawns::read(&mut c)?;

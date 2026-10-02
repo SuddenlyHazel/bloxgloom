@@ -185,7 +185,11 @@ fn inside_view(key: ChunkKey, center: ChunkKey, radius: i64) -> bool {
 pub(super) fn same_drop_positions(a: &[DroppedItem], b: &[DroppedItem]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b).all(|(a, b)| {
-            a.id == b.id && a.item == b.item && a.count == b.count && a.position == b.position
+            a.id == b.id
+                && a.item == b.item
+                && a.count == b.count
+                && a.components == b.components
+                && a.position == b.position
         })
 }
 

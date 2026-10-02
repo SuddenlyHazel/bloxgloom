@@ -372,6 +372,7 @@ fn snapshots_do_not_overtake_player_removals_queued_by_slow_client_disconnects()
             id: 1,
             item: crate::items::ItemId::new(STONE.get()),
             count: 1,
+            components: None,
             position: [0.5, 80.0, 0.5],
             age_ms: 0,
         });

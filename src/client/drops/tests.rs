@@ -6,6 +6,7 @@ fn item(age_ms: u32) -> DroppedItem {
         id: 7,
         item: crate::items::ItemId::new(2),
         count: 4,
+        components: None,
         position: [1.0, 2.0, 3.0],
         age_ms,
     }
@@ -54,7 +55,7 @@ fn moving_drop_blends_between_authoritative_positions() {
     let now = Instant::now();
     let mut animator = DropAnimator::new(now, Arc::new(crate::content::Catalog::builtins()));
     let first = item(2000);
-    animator.snapshot(vec![first], now);
+    animator.snapshot(vec![first.clone()], now);
     let mut next = first;
     next.position[1] -= 1.0;
     animator.snapshot(vec![next], now + Duration::from_millis(20));
@@ -86,7 +87,7 @@ fn sized_drop_keeps_its_preset_through_pickup_flight_without_changing_motion() {
     let mut animator = DropAnimator::new(now, Arc::new(catalog.clone()));
     let mut drop = item(2000);
     drop.item = catalog.item_by_key("test:sized").unwrap();
-    animator.snapshot(vec![drop], now);
+    animator.snapshot(vec![drop.clone()], now);
     let live = animator.visuals(now, Vec3::ZERO)[0];
     assert_eq!(live.presentation_scale(&catalog), live.scale * 0.75);
     animator.picked_up(vec![drop], now);
@@ -133,7 +134,7 @@ fn authored_motion_uses_server_age_and_continues_into_partial_pickup() {
     let mut animator = DropAnimator::new(now, Arc::new(catalog.clone()));
     let mut drop = item(500);
     drop.item = catalog.item_by_key("test:animated").unwrap();
-    animator.snapshot(vec![drop], now);
+    animator.snapshot(vec![drop.clone()], now);
     let live = animator.visuals(now, Vec3::ZERO)[0];
     assert!((live.center.y - 3.57).abs() < 0.01);
     assert!(
@@ -141,7 +142,7 @@ fn authored_motion_uses_server_age_and_continues_into_partial_pickup() {
             .abs()
             < 0.001
     );
-    let mut partial = drop;
+    let mut partial = drop.clone();
     partial.count = 2;
     animator.picked_up(vec![partial], now);
     let first = animator.visuals(now, Vec3::ZERO);

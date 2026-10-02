@@ -1025,11 +1025,13 @@ Implemented smaller API goal (October 2, 2026):
   machine declaration shapes remain bounded to the existing two/three slots.
   See [machine processing](docs/modding/MACHINE-PROCESSING.md).
 - Startup bitmap item icons and worker-based per-stack icon/drop-scale callbacks
-  are Luau bindings. Inventory callbacks receive exact components; world drops
-  expose count only because their current presentation snapshot omits components.
+  are Luau bindings. Inventory and world-drop callbacks receive exact versioned
+  components, including explicit pickup flights. Wire V26 validates the negotiated schema,
+  bounds nearest complete drop snapshots to one frame and pages reliable pickup
+  events without dropping component data. Durable saves keep their existing format.
   See [item visuals](docs/modding/item-visuals.md).
 
-Verification: 1,601 game tests and 49 host API tests passed (10 existing game
+Verification: 1,606 game tests and 49 host API tests passed (10 existing game
 tests ignored), including real nonblocking listener negotiation, authorization,
 transaction rollback, entity-tick batching and restart. Formatting, strict
 all-target/all-feature Clippy and the release build passed. The updated Luau

@@ -34,7 +34,7 @@ return function(stack)
             rows = {'xx', 'xx'},
             palette = {x = charged and {0.2, 0.9, 0.3, 1} or {0.9, 0.4, 0.2, 1}},
         },
-        drop_scale = 0.5 + stack.count / 128,
+        drop_scale = if charged then 1.25 else 0.5 + stack.count / 128,
     }
 end
 ```
@@ -43,9 +43,19 @@ Inputs are `item` (namespaced key), `count` (1–128), `component_version`
 (zero when absent), and `components` (exact opaque bytes as a Luau string).
 Inventory slots, the hotbar and machine/container slots use the returned bitmap.
 The optional `drop_scale` must be 0.5–1.5 and multiplies ordinary world-drop art;
-it does not alter collisions, pickup, ownership or inventory. World-drop snapshots
-currently carry counts but no component bytes, so dropped-item callbacks receive
-an empty component string. UI stacks carry their exact negotiated components.
+it does not alter collisions, pickup, ownership or inventory. UI stacks, nearby
+world-drop snapshots and explicit pickup events carry the same exact versioned
+components, validated against the negotiated item schema. Component bytes on a
+visible drop are public presentation data; do not store secrets in item components.
+Absent components use version zero and an empty string. Unknown items, invalid
+versions or oversized payloads fail the wire decoder instead of being redacted.
+
+Wire V26 requires matching clients and servers; the durable drop/save format is
+unchanged. A drop view retains at most 256 nearest complete stacks that fit one
+64 KiB frame (61 when all payloads use the 1 KiB maximum). Ownership and pickup
+eligibility still cover every authoritative drop. Reliable pickup notifications
+page every picked stack into bounded frames, retaining exact component bytes;
+partial and previously unseen pickups receive their own presentation snapshot.
 
 Callbacks run on a connection-owned worker, with isolated attempts, declared
 client imports, no world mutation or GPU access, 8 MiB memory, 2,000 interrupt
@@ -57,7 +67,8 @@ registered icons and drop scale remain available. A failed variant is cached to
 avoid retrying it each frame. Callbacks should depend only on their stack input.
 
 `fixtures/item-visuals/packages` demonstrates orange low-count, green full-count,
-and blue component-dependent cell art, plus count-dependent world-drop scale.
+and blue component-dependent cell art, plus count-dependent world-drop scale
+and a charged scale of 1.25.
 The focused egui paint test can produce a headless image:
 
 ```sh

@@ -163,9 +163,11 @@ fn prepare(
             }));
         }
         if !effect.pickups.is_empty() {
-            frames.push(SharedMessage::new(ServerMessage::Pickups {
-                items: effect.pickups.clone(),
-            }));
+            for page in crate::protocol::drops::pickup_pages(&effect.pickups) {
+                frames.push(SharedMessage::new(ServerMessage::Pickups {
+                    items: page.to_vec(),
+                }));
+            }
         }
     }
     // Best-effort presentation only. Send after the committed world changes,

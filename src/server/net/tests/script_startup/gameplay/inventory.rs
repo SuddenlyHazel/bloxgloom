@@ -87,8 +87,18 @@ fn luau_take_and_spawn_stack_preserve_binary_components_across_receipt_and_resta
         let mut peer = Peer::connect(address, catalog);
         let request = peer.request(0);
         assert!(peer.send(&request).0);
-        assert!(peer.send(&request).0, "same receipt cannot throw twice");
         peer.inventory_at(1);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let ServerMessage::Drops { items, .. } = peer.read(deadline)
+                && let Some(drop) = items.first()
+            {
+                assert_eq!(drop.count, 1);
+                assert_eq!(drop.components, original.components);
+                break;
+            }
+        }
+        assert!(peer.send(&request).0, "same receipt cannot throw twice");
     });
     let state = fixture.open().unwrap();
     assert_eq!(
@@ -107,6 +117,23 @@ fn luau_take_and_spawn_stack_preserve_binary_components_across_receipt_and_resta
     assert_eq!(drops.len(), 1);
     assert_eq!(drops[0].count, 1);
     assert_eq!(drops[0].components, original.components);
+    let catalog = state.world.catalog_arc();
+    serve(Box::new(state), |address| {
+        let mut peer = Peer::connect(address, catalog);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let ServerMessage::Drops { items, .. } = peer.read(deadline)
+                && let Some(drop) = items.first()
+            {
+                assert_eq!(drop.count, 1);
+                assert_eq!(
+                    drop.components, original.components,
+                    "restart must publish exact components"
+                );
+                break;
+            }
+        }
+    });
 }
 
 const SOURCE: &str = r#"return function(c,e)
@@ -259,6 +286,12 @@ fn luau_automatic_pickup_exact_components_conservation_and_restart() {
                     accepted = true;
                 }
                 ServerMessage::Pickups { items } => {
+                    for drop in &items {
+                        assert_eq!(
+                            drop.components,
+                            original.slots[1].as_ref().unwrap().components
+                        );
+                    }
                     picked += items.iter().map(|d| d.count).sum::<u16>()
                 }
                 _ => {}

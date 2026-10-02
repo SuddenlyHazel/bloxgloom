@@ -102,6 +102,7 @@ fn initial_snapshot_then_ordered_worker_commits_keep_pickup_events_after_invento
                 id: 9,
                 item: crate::items::ItemId::new(crate::world::STONE.get()),
                 count: 1,
+                components: None,
                 position: [0.5, 80.0, 0.5],
                 age_ms: 20,
             });
@@ -117,6 +118,62 @@ fn initial_snapshot_then_ordered_worker_commits_keep_pickup_events_after_invento
         matches!(&messages[..], [ServerMessage::WorldCommitPart(a), ServerMessage::WorldCommitPart(b), ServerMessage::ActionResult {..}, ServerMessage::Inventory {..}, ServerMessage::Pickups {..}]
         if a.block_from == from && a.block_to == from + 1 && b.block_from == a.block_to && b.block_to == from + 2 && a.commit_id < b.commit_id && a.epoch == b.epoch)
     );
+}
+
+#[test]
+fn component_pickup_fanout_pages_all_stacks_after_inventory_with_exact_payloads() {
+    let mut fixture = Fixture::new();
+    let (id, receiver, _peer) = fixture.join(1);
+    let mut effect = effect();
+    effect.client_id = Some(id);
+    effect.profile = Some(1);
+    effect.inventory = Some(Default::default());
+    effect.pickups = (1..=256)
+        .map(|id| crate::protocol::DroppedItem {
+            id,
+            item: crate::items::STICK,
+            count: 128,
+            components: crate::inventory::Stack::with_components(
+                crate::items::STICK,
+                128,
+                1,
+                vec![id as u8; 1024],
+            )
+            .unwrap()
+            .components,
+            position: [0.; 3],
+            age_ms: 1000,
+        })
+        .collect();
+    let prepared = prepare(
+        Capture::new(id, &fixture.state.clients[&id]),
+        &effect,
+        None,
+        None,
+        &SharedParts::default(),
+    )
+    .unwrap();
+    apply(&mut fixture.state, prepared);
+    let frames: Vec<_> = receiver.try_iter().collect();
+    assert!(matches!(
+        frames[0].message(),
+        ServerMessage::Inventory { .. }
+    ));
+    assert_eq!(frames.len(), 6);
+    let mut received = Vec::new();
+    for frame in &frames[1..] {
+        let mut bytes = Vec::new();
+        crate::protocol::write_server(&mut bytes, frame.message()).unwrap();
+        assert!(bytes.len() <= crate::protocol::MAX_FRAME + 4);
+        if let ServerMessage::Pickups { items } =
+            crate::protocol::read_server(bytes.as_slice()).unwrap()
+        {
+            received.extend(items);
+        } else {
+            panic!("unexpected frame after inventory");
+        }
+    }
+    assert_eq!(received, effect.pickups);
 }
 
 #[test]

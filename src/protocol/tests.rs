@@ -114,6 +114,7 @@ fn outbound_wire_lengths_match_serialized_frames() {
         id: 7,
         item: crate::items::STICK,
         count: 2,
+        components: None,
         position: [1.0, 2.0, 3.0],
         age_ms: 12,
     };
@@ -176,9 +177,11 @@ fn outbound_wire_lengths_match_serialized_frames() {
         },
         ServerMessage::Drops {
             revision: 9,
-            items: vec![drop],
+            items: vec![drop.clone()],
         },
-        ServerMessage::Pickups { items: vec![drop] },
+        ServerMessage::Pickups {
+            items: vec![drop.clone()],
+        },
         ServerMessage::OwnedEntity { id: 42 },
     ];
     for message in messages {
@@ -453,6 +456,7 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
         id: 99,
         item: crate::items::STICK,
         count: 63,
+        components: None,
         position: [-4.5, 7.0, 9.25],
         age_ms: 90_327,
     }];
@@ -511,11 +515,18 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
             id: 1,
             item,
             count: 1,
+            components: None,
             position: [0.0; 3],
             age_ms: 0,
         };
         let mut bytes = Vec::new();
-        write_server(&mut bytes, &ServerMessage::Pickups { items: vec![drop] }).unwrap();
+        write_server(
+            &mut bytes,
+            &ServerMessage::Pickups {
+                items: vec![drop.clone()],
+            },
+        )
+        .unwrap();
         assert!(
             matches!(read_server(bytes.as_slice()).unwrap(), ServerMessage::Pickups { items } if items == [drop])
         );
@@ -541,10 +552,19 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
             id: 1,
             item: ItemId(invalid_item),
             count: 1,
+            components: None,
             position: [0.0; 3],
             age_ms: 0,
         };
-        assert!(write_server(Vec::new(), &ServerMessage::Pickups { items: vec![drop] }).is_err());
+        assert!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::Pickups {
+                    items: vec![drop.clone()]
+                }
+            )
+            .is_err()
+        );
     }
 }
 
@@ -828,12 +848,15 @@ fn remapped_ids_above_65535_survive_wire_v8() {
         id: 1,
         item,
         count: 1,
+        components: None,
         position: [0.0; 3],
         age_ms: 1,
     };
     write_server_with_catalog(
         &mut bytes,
-        &ServerMessage::Pickups { items: vec![drop] },
+        &ServerMessage::Pickups {
+            items: vec![drop.clone()],
+        },
         &catalog,
     )
     .unwrap();

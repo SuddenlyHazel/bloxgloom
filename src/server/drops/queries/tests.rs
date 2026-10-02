@@ -112,6 +112,54 @@ fn expired_drop_is_visible_but_never_pickable() {
 }
 
 #[test]
+fn component_drop_projection_keeps_nearest_complete_stacks_within_frame_budget() {
+    let (mut store, _) = test_store();
+    let spawns = (0..256)
+        .map(|index| EntitySpawn::Mobile {
+            entity_type: DROP_ENTITY_TYPE,
+            position: [index as f32 / 16., 0., 0.],
+            payload: DropEntityPayload::new(
+                Stack::with_components(ItemId::new(1), 128, 3, vec![index as u8; 1024]).unwrap(),
+                1000,
+                Duration::ZERO,
+            )
+            .into_entity_payload(),
+            spawn_tick: 1,
+        })
+        .collect();
+    let batch = store.prepare_spawn_batch(spawns).unwrap();
+    store.apply_committed(batch).unwrap();
+    let projected = project_nearby(capture_nearby(&store, [0.; 3]).unwrap(), [0.; 3], 2000);
+    assert_eq!(projected.len(), 61);
+    for (index, item) in projected.iter().enumerate() {
+        assert_eq!(item.position, [index as f32 / 16., 0., 0.]);
+        assert_eq!(item.components.as_ref().unwrap().version, 3);
+        assert_eq!(
+            item.components.as_ref().unwrap().bytes.as_ref(),
+            [index as u8; 1024]
+        );
+    }
+    assert_eq!(
+        store.record_values().count(),
+        256,
+        "visibility limits never delete authoritative drops"
+    );
+    let message = crate::protocol::ServerMessage::Drops {
+        revision: 1,
+        items: projected.clone(),
+    };
+    crate::protocol::write_server(Vec::new(), &message).unwrap();
+    let mut changed = projected.clone();
+    changed[0].components = Stack::with_components(ItemId::new(1), 128, 3, vec![255; 1024])
+        .unwrap()
+        .components;
+    assert!(
+        !crate::server::streaming::same_drop_positions(&projected, &changed),
+        "component-only changes must refresh presentation"
+    );
+}
+
+#[test]
 fn airborne_count_tracks_schedule_not_records() {
     let (mut store, _catalog) = test_store();
     let id = spawn_direct(&mut store, [0.0, 0.0, 0.0], 1, 1_000, Duration::ZERO);

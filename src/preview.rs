@@ -1185,6 +1185,7 @@ async fn render_previews_weather(
             id: index as u64 + 1,
             item,
             count: 1,
+            components: None,
             position: if matches!(scene, PreviewScene::Cave { .. }) {
                 [32.5, 10.0, 13.5 + index as f32 * 2.0]
             } else {
@@ -1208,7 +1209,7 @@ async fn render_previews_weather(
             DropPhase::Pop => now + std::time::Duration::from_millis(250),
             DropPhase::Hover => now,
             DropPhase::Pickup => {
-                animator.picked_up(vec![items[1]], now);
+                animator.picked_up(vec![items[1].clone()], now);
                 now + std::time::Duration::from_millis(180)
             }
         };

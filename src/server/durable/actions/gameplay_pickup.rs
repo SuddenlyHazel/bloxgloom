@@ -101,7 +101,7 @@ pub(super) fn plan(
         };
         pickups.push(DroppedItem {
             count,
-            ..*candidate
+            ..candidate.clone()
         });
     }
     ensure_no_unhandled_anchor(state, &planned.edits)?;

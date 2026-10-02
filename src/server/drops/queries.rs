@@ -55,6 +55,7 @@ fn snapshot_item(drop: &LiveDrop, now_ms: u64) -> DroppedItem {
         id: drop.id.get(),
         item: drop.payload.stack.item,
         count: drop.payload.stack.count,
+        components: drop.payload.stack.components.clone(),
         position: drop.position,
         age_ms: age_ms_now(drop.payload.created_unix_ms, now_ms),
     }
@@ -77,7 +78,8 @@ fn pickup_policy(payload: &DropEntityPayload, catalog: &Catalog, now_ms: u64) ->
 }
 
 /// Bounded client-visibility projection: every drop within view range,
-/// nearest first, capped at 256. This is presentation data; ownership lives
+/// nearest first, capped at 256 and one wire frame of complete stacks.
+/// This is presentation data; ownership lives
 /// in the entity store and never depends on who observes it.
 #[cfg(test)]
 pub(in crate::server) fn nearby(store: &EntityStore, position: [f32; 3]) -> Vec<DroppedItem> {
@@ -166,6 +168,7 @@ pub(in crate::server) fn project_nearby(
                     id: snapshot.id.get(),
                     item: payload.stack.item,
                     count: payload.stack.count,
+                    components: payload.stack.components.clone(),
                     position: drop_position,
                     age_ms: age_ms_now(payload.created_unix_ms, now_ms),
                 },
@@ -175,11 +178,15 @@ pub(in crate::server) fn project_nearby(
             }
         }
     }
-    nearest
+    let mut items: Vec<_> = nearest
         .into_sorted_vec()
         .into_iter()
         .map(|candidate| candidate.1)
-        .collect()
+        .collect();
+    // A snapshot replaces the whole view, so keep the nearest complete stacks
+    // that fit one frame; component bytes are never truncated or redacted.
+    items.truncate(crate::protocol::drops::snapshot_count(&items));
+    items
 }
 
 /// Drops one client may pick up right now: in range, past any pickup delay,

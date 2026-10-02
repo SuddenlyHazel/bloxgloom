@@ -12,6 +12,7 @@ const POSITION_BLEND: f32 = 0.08;
 
 struct PickupFlight {
     start: VisualDrop,
+    stack: crate::inventory::Stack,
     started: Instant,
     animation: DropAnimation,
 }
@@ -58,7 +59,7 @@ impl DropAnimator {
     pub(crate) fn picked_up(&mut self, items: Vec<DroppedItem>, now: Instant) {
         for item in items {
             let animation = self.catalog.drop_animation(item.item);
-            let mut start = self
+            let start = self
                 .items
                 .iter()
                 .find(|live| live.id == item.id)
@@ -70,18 +71,12 @@ impl DropAnimator {
                     visual
                 })
                 .unwrap_or_else(|| live_visual(&item, item.age_ms as f32 / 1000.0, animation));
-            if let Some(presentation) = self
-                .catalog
-                .item_visuals
-                .visual(&crate::inventory::Stack::new(item.item, item.count))
-            {
-                start.scale *= presentation.drop_scale;
-            }
             if let Some(live) = self.items.iter_mut().find(|live| live.id == item.id) {
                 live.count = live.count.saturating_sub(item.count);
             }
             self.pickups.push(PickupFlight {
                 start,
+                stack: item.stack(),
                 started: now,
                 animation,
             });
@@ -105,11 +100,7 @@ impl DropAnimator {
             let age = (u128::from(item.age_ms) + elapsed_ms) as f32 / 1000.0;
             let mut visual = live_visual(item, age, self.catalog.drop_animation(item.item));
             visual.center += self.position_for(item, now) - Vec3::from_array(item.position);
-            if let Some(presentation) = self
-                .catalog
-                .item_visuals
-                .visual(&crate::inventory::Stack::new(item.item, item.count))
-            {
+            if let Some(presentation) = self.catalog.item_visuals.visual(&item.stack()) {
                 visual.scale *= presentation.drop_scale;
             }
             result.push(visual);
@@ -120,12 +111,20 @@ impl DropAnimator {
                 / flight.animation.pickup_duration)
                 .clamp(0.0, 1.0);
             let eased = t * t * (3.0 - 2.0 * t);
+            // A reliable pickup may arrive before the corresponding live view.
+            // Keep consulting the asynchronous cache while its flight is alive
+            // so a cold component variant can still receive its worker reply.
+            let drop_scale = self
+                .catalog
+                .item_visuals
+                .visual(&flight.stack)
+                .map_or(1.0, |presentation| presentation.drop_scale);
             result.push(VisualDrop {
                 item: flight.start.item,
                 center: flight.start.center.lerp(target, eased)
                     + Vec3::Y * (flight.animation.pickup_arc * (std::f32::consts::PI * t).sin()),
                 angle: flight.start.angle + t * flight.animation.pickup_turn,
-                scale: flight.start.scale * (1.0 - eased).max(0.03),
+                scale: flight.start.scale * drop_scale * (1.0 - eased).max(0.03),
                 light: Default::default(),
             });
         }

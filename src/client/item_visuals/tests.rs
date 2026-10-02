@@ -152,13 +152,17 @@ fn item_visuals_drop_animator_applies_only_client_presentation_scale() {
         id: 77,
         item: stack.item,
         count: 1,
+        components: None,
         position: [0., 0., 0.],
         age_ms: 1000,
     };
-    animator.snapshot(vec![item], now);
+    animator.snapshot(vec![item.clone()], now);
     let small = animator.visuals(now, glam::Vec3::ZERO)[0];
     animator.snapshot(
-        vec![crate::protocol::DroppedItem { count: 128, ..item }],
+        vec![crate::protocol::DroppedItem {
+            count: 128,
+            ..item.clone()
+        }],
         now,
     );
     let large = animator.visuals(now, glam::Vec3::ZERO)[0];
@@ -169,6 +173,90 @@ fn item_visuals_drop_animator_applies_only_client_presentation_scale() {
         item.count, 1,
         "presentation never edits authoritative snapshot values"
     );
+}
+
+#[test]
+fn item_visuals_drop_animator_consumes_received_components_for_live_and_pickup_art() {
+    let (_bundle, catalog, stack) = example();
+    let charged = Stack::with_components(stack.item, 3, 1, vec![255, 0, 9]).unwrap();
+    let item = crate::protocol::DroppedItem {
+        id: 79,
+        item: charged.item,
+        count: charged.count,
+        components: charged.components.clone(),
+        position: [0., 0., 0.],
+        age_ms: 1000,
+    };
+    let receive = |message: crate::protocol::ServerMessage| {
+        let mut bytes = Vec::new();
+        crate::protocol::write_server_with_catalog(&mut bytes, &message, &catalog).unwrap();
+        match crate::protocol::read_server_with_catalog(bytes.as_slice(), &catalog).unwrap() {
+            crate::protocol::ServerMessage::Drops { items, .. }
+            | crate::protocol::ServerMessage::Pickups { items } => items,
+            _ => panic!("wrong drop message"),
+        }
+    };
+    let received = receive(crate::protocol::ServerMessage::Drops {
+        revision: 1,
+        items: vec![item.clone()],
+    });
+    let mut picked = item.clone();
+    picked.count = 1;
+    let pickups = receive(crate::protocol::ServerMessage::Pickups {
+        items: vec![picked],
+    });
+    let catalog = Arc::new(catalog);
+    let now = Instant::now();
+    let mut animator = crate::client::drops::DropAnimator::new(now, Arc::clone(&catalog));
+    animator.snapshot(received, now);
+    // Enqueue only through the actual animator; no prewarmed callback can hide
+    // a componentless stack constructed at the presentation boundary.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if (animator.visuals(now, glam::Vec3::ZERO)[0].scale - 1.25).abs() < 0.00001 {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let visual = wait(&catalog, &charged);
+    assert_eq!(
+        visual.icon.as_ref().unwrap().palette[0].1,
+        [0.2, 0.5, 1., 1.]
+    );
+    animator.picked_up(pickups.clone(), now);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let visuals = loop {
+        let visuals = animator.visuals(now, glam::Vec3::ZERO);
+        if (visuals[1].scale - 1.25).abs() < 0.00001 {
+            break visuals;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    assert_eq!(visuals.len(), 2, "partial pickup keeps the live remainder");
+    assert_eq!(
+        visuals[1].scale, 1.25,
+        "pickup flight uses the received payload"
+    );
+    assert_eq!(pickups[0].components, charged.components);
+    assert_eq!(
+        item.count, 3,
+        "presentation never changes the server snapshot"
+    );
+    // A pickup may arrive without a retained live snapshot; it is self-contained.
+    let mut unseen = crate::client::drops::DropAnimator::new(now, catalog);
+    let mut fresh_variant = pickups[0].clone();
+    fresh_variant.count = 4;
+    unseen.picked_up(vec![fresh_variant], now);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if (unseen.visuals(now, glam::Vec3::ZERO)[0].scale - 1.25).abs() < 0.00001 {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 
 #[test]
