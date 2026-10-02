@@ -132,6 +132,7 @@ impl State {
         {
             self.builds.remove(&other);
             self.worker.cancel(other);
+            self.mesh_retry.remove(&other);
             self.pending_mesh.insert(other);
         }
     }

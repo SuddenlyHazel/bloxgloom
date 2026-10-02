@@ -27,12 +27,16 @@ fn obsolete_requests_and_other_sessions_cannot_install_tiles() {
             started: Instant::now(),
         },
     );
+    state
+        .mesh_retry
+        .insert(key, Instant::now() + Duration::from_secs(60));
     state.accept(8, 10, tile(key, 1));
     state.accept(7, 9, tile(key, 1));
     assert!(state.tiles.is_empty());
     assert!(state.requests.contains_key(&key));
     state.accept(7, 10, tile(key, 1));
     assert_eq!(state.tiles.len(), 1);
+    assert!(!state.mesh_retry.contains_key(&key));
     state.retire();
 }
 #[test]
