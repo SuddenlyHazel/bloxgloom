@@ -63,6 +63,7 @@ pub fn install_sandbox_materials(catalog: &mut Catalog) -> Result<(), Box<dyn Er
             flammable: false,
             emission: if emissive { 15 } else { 0 },
             reflectance: color,
+            acoustics: None,
             properties: vec![],
             states: vec![api::BlockState::default()],
         })?;
