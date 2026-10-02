@@ -376,8 +376,9 @@ fn registered_contributor_summary_negotiates_bounded_fallback_and_preserves_mark
             "LOD exact contributor128-block tile cold: {}ms",
             started.elapsed().as_millis()
         );
-        // Height beyond its observed generation band remains explicitly unknown.
-        assert!(!tile.columns[0].known(80, 96));
+        // Resident near chunks can extend the builtin band, but heights never
+        // observed by either generation or streaming remain explicitly unknown.
+        assert!(!tile.columns[0].known(300, 316));
     });
     stop.send(()).unwrap();
     server.join().unwrap().unwrap();
