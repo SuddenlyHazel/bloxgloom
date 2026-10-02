@@ -139,7 +139,7 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
     edits.push((3, 95, 0, crate::world::GLOWSTONE));
     let prepared = state.world.prepare_edits(&edits).unwrap();
     state.world.apply_prepared_edits(prepared).unwrap();
-    for profile in [0x10d_1, 0x10d_2] {
+    for profile in [0x10d1, 0x10d2] {
         state.position_store.save(profile, [0.5, 95., 0.5]).unwrap();
     }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -173,8 +173,8 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
             protocol::write_client(&mut peer, &ClientMessage::LodConfig { horizon: 512 }).unwrap();
             (peer, epoch)
         };
-        let (mut first, epoch) = connect(0x10d_1);
-        let (mut second, _) = connect(0x10d_2);
+        let (mut first, epoch) = connect(0x10d1);
+        let (mut second, _) = connect(0x10d2);
         let key = crate::lod::TileKey {
             level: 1,
             x: 0,
@@ -311,7 +311,7 @@ fn registered_contributor_summary_negotiates_bounded_fallback_and_preserves_mark
             &mut peer,
             &ClientMessage::Hello {
                 name: "lod-contributor".into(),
-                profile: 0x10d_c,
+                profile: 0x10dc,
                 content_fingerprint: crate::content::catalog().fingerprint(),
             },
         )
