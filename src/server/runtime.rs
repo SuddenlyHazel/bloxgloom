@@ -437,6 +437,7 @@ pub(super) fn tick_with_inputs(
                     .map(|client| client.position())
                     .collect();
                 let seed = context.state.seed;
+                let environment = crate::server::environment::Capture::new(context.state);
                 let entities = &context.state.entities;
                 // Split the borrows: the owner wave stages through the
                 // shared durable journal while applying to the runtime store.
@@ -455,6 +456,7 @@ pub(super) fn tick_with_inputs(
                         durability,
                         in_flight: &staged_key_sets,
                         world: systems::RegisteredWorldInputs {
+                            environment: Some(environment),
                             world: Some(world),
                             entities: Some(entities),
                             lifecycles: Some(&context.state.lifecycles),

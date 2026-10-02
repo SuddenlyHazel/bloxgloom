@@ -63,6 +63,9 @@ return function(c, e)
     local next = if previous == 'bloxgloom:air' then 'bloxgloom:glowstone' else 'bloxgloom:sand'
     c.set_block(2,80,0,next)
     assert(c.block(2,80,0).state == next)
+    local cells = c.blocks(2,80,0,2,1,1)
+    assert(#cells == 2 and cells[1].state == next and cells[2].cell[1] == 3)
+    assert(not pcall(function() cells[1].cell[1] = 1 end))
     local mode = string.byte(e.arguments, 1)
     if mode == 1 then error('rollback script error') end
     if mode == 2 then pcall(function() c.set_block(2.5,80,0,next) end) end
@@ -71,7 +74,7 @@ return function(c, e)
     if mode == 5 then local _ = string.rep('x', 16000000) end
     if mode == 6 then pcall(function() for i=1,4100 do c.block(2,80,0) end end) end
     if mode == 7 then pcall(function() c.transfer(0,1,129) end) end
-    if mode == 8 then pcall(function() c.block(1600,80,0) end) end
+    if mode == 8 then pcall(function() c.blocks(1600,80,0,2,1,1) end) end
 end
 "#;
 

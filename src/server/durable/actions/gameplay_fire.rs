@@ -49,7 +49,7 @@ pub(in crate::server) fn plan(
             profile_services: None,
             players: &[],
             action_id: None,
-            clock: None,
+            clock: Some(state.world_time.capture()),
             weather: Some(state.weather.capture()),
             actor: None,
             actor_position: None,

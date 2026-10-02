@@ -447,7 +447,7 @@ fn batchable_motion(action: &CommitAction) -> bool {
         .as_ref()
         .is_some_and(|entities| entities.entity_ids().len() == 1)
         && action.world_edits.is_empty()
-        && action.terrain_reads.is_empty()
+        && action.terrain_reads.environment_only()
         && action.deltas.is_empty()
         && action.changed_cells.is_empty()
         && action.pickups.is_empty()
@@ -617,6 +617,12 @@ fn stage_motion_batch(
         .collect();
     wakes.sort();
     wakes.dedup();
+    // Retain every environmental dependency when combining pure tick work.
+    // These are shared read reservations, so independent readers may batch.
+    let mut terrain_reads = super::TerrainReads::default();
+    for (_, action) in &candidates {
+        terrain_reads.extend(action.terrain_reads.clone())?;
+    }
     let entities = Some(batch);
     let batch_action = CommitAction {
         client_id: None,
@@ -624,7 +630,7 @@ fn stage_motion_batch(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
-        terrain_reads: Default::default(),
+        terrain_reads,
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),

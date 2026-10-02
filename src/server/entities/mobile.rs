@@ -108,6 +108,8 @@ impl EntityTickPolicy for Adapter {
             .0
             .behavior
             .tick(&api::Context {
+                environment: view.environment(),
+                tags: Some(catalog),
                 id: snapshot.id.get(),
                 tick,
                 next_tick: snapshot.next_tick,

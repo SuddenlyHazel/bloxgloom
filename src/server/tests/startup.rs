@@ -129,6 +129,7 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
                 durability: &mut state.durability,
                 in_flight: &[],
                 world: crate::server::runtime::systems::RegisteredWorldInputs {
+                    environment: None,
                     world: Some(&mut state.world),
                     entities: Some(&state.entities),
                     lifecycles: Some(&state.lifecycles),
@@ -289,6 +290,7 @@ fn external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edit
                 durability: &mut state.durability,
                 in_flight: &[],
                 world: crate::server::runtime::systems::RegisteredWorldInputs {
+                    environment: None,
                     world: Some(&mut state.world),
                     entities: Some(&state.entities),
                     lifecycles: Some(&state.lifecycles),

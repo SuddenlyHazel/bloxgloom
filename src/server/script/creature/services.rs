@@ -150,7 +150,9 @@ pub(super) fn invoke(
         )?;
         host.set_readonly(true);
         let (data, delay, x, z, lifecycle): (Value, Value, Value, Value, Value) =
-            entry.call(host)?;
+            super::super::reads::with(lua, &host, context.environment, context.tags, || {
+                entry.call(host.clone())
+            })?;
         if let Some(error) = *rejected.borrow() {
             return Err(invalid(error));
         }

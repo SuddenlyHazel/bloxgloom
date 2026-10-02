@@ -45,9 +45,21 @@ pub struct VoxelView {
     chunks: HashMap<ChunkKey, Arc<Chunk>>,
     revisions: Vec<(ChunkKey, u64)>,
     catalog: Arc<Catalog>,
+    environment: Option<super::environment::Capture>,
 }
 
 impl VoxelView {
+    pub(super) fn with_environment(mut self, environment: super::environment::Capture) -> Self {
+        self.environment = Some(environment);
+        self
+    }
+    pub(super) fn environment(&self) -> Option<bloxgloom_host_api::gameplay::Environment> {
+        self.environment.as_ref().map(|capture| capture.value)
+    }
+    pub(super) fn environment_capture(&self) -> Option<&super::environment::Capture> {
+        self.environment.as_ref()
+    }
+
     /// Captures exactly the chunks supplied. Both `Chunk` and `Arc<Chunk>` are
     /// accepted; duplicate keys and malformed block arrays are rejected.
     /// This validated constructor is available to extension systems that
@@ -142,6 +154,7 @@ impl VoxelView {
             chunks: by_key,
             revisions,
             catalog,
+            environment: None,
         })
     }
 

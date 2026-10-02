@@ -31,6 +31,7 @@ impl ReadStamp {
         self.revision.load(Ordering::Acquire) == self.captured
     }
 }
+#[derive(Clone)]
 pub(super) struct Capture {
     pub stamp: ReadStamp,
     pub time: bloxgloom_host_api::gameplay::WorldTime,

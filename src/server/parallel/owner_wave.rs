@@ -156,6 +156,7 @@ pub struct OwnerJob {
     world_chunks: Vec<Arc<crate::world::Chunk>>,
     world_entities: Option<Vec<crate::server::entities::EntitySnapshot>>,
     owner_catalog: Option<Arc<crate::content::Catalog>>,
+    environment: Option<bloxgloom_host_api::gameplay::Environment>,
 }
 
 impl OwnerJob {
@@ -187,7 +188,23 @@ impl OwnerJob {
             world_chunks: Vec::new(),
             world_entities: None,
             owner_catalog: None,
+            environment: None,
         })
+    }
+
+    pub(in crate::server) fn with_read_services(
+        mut self,
+        catalog: Arc<crate::content::Catalog>,
+        environment: Option<bloxgloom_host_api::gameplay::Environment>,
+    ) -> Self {
+        self.owner_catalog = Some(catalog);
+        self.environment = environment;
+        self
+    }
+    pub(in crate::server) fn environment(
+        &self,
+    ) -> Option<bloxgloom_host_api::gameplay::Environment> {
+        self.environment
     }
 
     pub(in crate::server) fn with_world_chunks(

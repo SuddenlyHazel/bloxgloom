@@ -254,7 +254,8 @@ pub(in crate::server) fn plan_interact(
         &catalog,
         actor_rules.eye_height(),
     )?;
-    let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    let view = capture_view_for_plan(state, &snapshot.location, read_radius)?
+        .with_environment(crate::server::environment::Capture::new(state));
     let neighbours = if reads_neighbours {
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
     } else {
@@ -465,7 +466,8 @@ impl TickInput {
     }
 
     pub fn is_current(&self, state: &State) -> bool {
-        self.dependencies.is_current(&state.entities)
+        self.view.environment_capture().is_none_or(|capture| capture.is_current())
+            && self.dependencies.is_current(&state.entities)
             // Session players are not WAL participants. Validate their captured
             // public state (including absence) at the coordinator planning
             // boundary; subsequent movement may occur after this decision.
@@ -512,7 +514,8 @@ pub(in crate::server) fn capture_tick_input(
     // over unchanged entity state.
     let read_radius = descriptor.tick_read_radius();
     let catalog = state.world.catalog_arc();
-    let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    let view = capture_view_for_plan(state, &snapshot.location, read_radius)?
+        .with_environment(crate::server::environment::Capture::new(state));
     let neighbours = if descriptor.tick_reads_neighbours() {
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
     } else {
@@ -611,6 +614,9 @@ pub(in crate::server) fn commit_tick_plan(
     let (mut world_edits, mut changed_cells, _read_chunks, mut write_coords) =
         validate_footprint_plan(state, id, &snapshot.location, &plan.block_states, &catalog)?;
     let mut terrain_reads = TerrainReads::default();
+    if let Some(capture) = view.environment_capture() {
+        capture.fence(&mut terrain_reads);
+    }
     let wakes = plan_wakes(
         state,
         &neighbours,
@@ -828,7 +834,7 @@ fn plan_reaction_removal(
             profile_services: None,
             players: &[],
             action_id: None,
-            clock: None,
+            clock: Some(state.world_time.capture()),
             weather: Some(state.weather.capture()),
             actor: None,
             actor_position: None,

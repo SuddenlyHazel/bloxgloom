@@ -82,6 +82,10 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn tags(&self) -> Option<std::sync::Arc<dyn bloxgloom_host_api::queries::Tags>> {
+        Some(self.world.catalog_arc())
+    }
+
     fn authorize_inventory(
         &self,
         owner: bloxgloom_host_api::gameplay::InventoryId,

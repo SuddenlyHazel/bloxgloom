@@ -170,6 +170,8 @@ impl EntityTickPolicy for Adapter {
             .definition
             .behavior
             .react(&api::Context {
+                environment: view.environment(),
+                tags: Some(self.catalog.as_ref()),
                 anchor: [anchor.x, anchor.y, anchor.z],
                 tick,
                 state: &snapshot.private_payload,

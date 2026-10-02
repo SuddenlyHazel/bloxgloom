@@ -233,6 +233,10 @@ impl SystemHandler for Adapter {
             }
         });
         let context = api::Context {
+            environment: job.environment(),
+            tags: job
+                .owner_catalog()
+                .map(|catalog| catalog as &dyn bloxgloom_host_api::queries::Tags),
             owner: public_owner(job.owner()),
             revision: snapshot.revision(),
             tick,

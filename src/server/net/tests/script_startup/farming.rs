@@ -46,6 +46,7 @@ fn stage(state: &mut State, key: &str, tick: u64) {
                 durability: &mut state.durability,
                 in_flight: &[],
                 world: RegisteredWorldInputs {
+                    environment: None,
                     world: Some(&mut state.world),
                     entities: Some(&state.entities),
                     lifecycles: Some(&state.lifecycles),

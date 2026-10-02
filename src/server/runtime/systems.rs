@@ -64,6 +64,7 @@ pub(in crate::server) struct RegisteredWaveInputs<'a> {
 }
 
 pub(in crate::server) struct RegisteredWorldInputs<'a> {
+    pub environment: Option<crate::server::environment::Capture>,
     pub world: Option<&'a mut crate::world::World>,
     pub entities: Option<&'a crate::server::entities::EntityStore>,
     pub lifecycles: Option<&'a crate::server::lifecycle::Registry>,
@@ -459,6 +460,7 @@ impl SystemRuntime {
         world_inputs: RegisteredWorldInputs<'_>,
     ) -> io::Result<Option<PreparedRegisteredWave>> {
         let RegisteredWorldInputs {
+            environment,
             mut world,
             entities,
             lifecycles,
@@ -654,6 +656,9 @@ impl SystemRuntime {
         let mut jobs = Vec::with_capacity(selected.len());
         let mut expected = Vec::with_capacity(selected.len());
         let mut terrain_reads = TerrainReads::default();
+        if let Some(capture) = &environment {
+            capture.fence(&mut terrain_reads);
+        }
         let mut received = Vec::new();
         let mut received_count = 0;
         for (job_id, owner) in selected.iter().copied().enumerate() {
@@ -679,6 +684,12 @@ impl SystemRuntime {
             let key = JobKey::new(batch, owner, job_id as u64, snapshot.revision());
             let mut job = OwnerJob::new(id.clone(), key, vec![snapshot])
                 .map_err(|error| io::Error::other(format!("registered owner job: {error:?}")))?;
+            if let Some(world) = world.as_deref() {
+                job = job.with_read_services(
+                    world.catalog_arc(),
+                    environment.as_ref().map(|capture| capture.value),
+                );
+            }
             if let Some(radius) = system.world_read_radius() {
                 let world = world.as_deref_mut().ok_or_else(|| {
                     io::Error::new(
@@ -830,6 +841,7 @@ impl SystemRuntime {
                 )
             })?;
             world::plan_edits(world::EditInputs {
+                environment: environment.as_ref(),
                 world,
                 entities,
                 lifecycles,
@@ -1001,6 +1013,7 @@ impl SystemRuntime {
                 durability,
                 in_flight,
                 world: RegisteredWorldInputs {
+                    environment: None,
                     world: None,
                     entities: None,
                     lifecycles: None,

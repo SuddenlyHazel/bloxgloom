@@ -263,6 +263,7 @@ fn durable_intent_bootstrap_prepared_waves_reserve_capacity_across_systems() {
             wave,
             &state.effect_kinds,
             RegisteredWorldInputs {
+                environment: None,
                 world: Some(&mut state.world),
                 entities: Some(&state.entities),
                 lifecycles: Some(&state.lifecycles),

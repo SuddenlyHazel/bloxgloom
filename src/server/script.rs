@@ -14,6 +14,7 @@ pub(in crate::server::script) mod machine;
 mod observers;
 pub mod package;
 mod players;
+mod reads;
 pub(crate) mod runtime;
 pub(super) mod startup;
 mod system;

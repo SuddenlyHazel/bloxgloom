@@ -596,7 +596,7 @@ fn plan_gameplay_removals(
             profile_services: None,
             players: &[],
             action_id: None,
-            clock: None,
+            clock: Some(state.world_time.capture()),
             weather: Some(state.weather.capture()),
             actor: Some((actor.0, actor.1)),
             actor_position: Some(actor_position),

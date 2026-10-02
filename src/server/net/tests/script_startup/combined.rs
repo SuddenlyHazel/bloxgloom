@@ -40,6 +40,7 @@ fn grow_once(state: &mut State) {
                 durability: &mut state.durability,
                 in_flight: &[],
                 world: RegisteredWorldInputs {
+                    environment: None,
                     world: Some(&mut state.world),
                     entities: Some(&state.entities),
                     lifecycles: Some(&state.lifecycles),

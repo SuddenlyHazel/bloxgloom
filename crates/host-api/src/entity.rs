@@ -76,6 +76,8 @@ pub trait World {
     ) -> Result<Movement, Error>;
 }
 pub struct Context<'a> {
+    pub environment: Option<crate::gameplay::Environment>,
+    pub tags: Option<&'a dyn crate::queries::Tags>,
     pub id: u64,
     pub tick: u64,
     pub next_tick: Option<u64>,

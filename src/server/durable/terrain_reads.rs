@@ -227,14 +227,17 @@ impl TerrainReads {
                 .as_ref()
                 .is_none_or(crate::server::world_time::ReadStamp::is_current)
     }
-    pub fn is_empty(&self) -> bool {
+    /// Clock/weather are shared immutable inputs and can accompany pure motion.
+    pub fn environment_only(&self) -> bool {
         self.terrain.is_empty()
             && self.entities.is_empty()
-            && self.clock.is_none()
-            && self.weather.is_none()
             && self.profiles.is_empty()
             && self.inventories.is_empty()
             && self.players.is_none()
+    }
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.environment_only() && self.clock.is_none() && self.weather.is_none()
     }
     pub fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
         self.terrain

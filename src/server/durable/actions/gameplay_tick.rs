@@ -99,7 +99,7 @@ pub(in crate::server) fn plan_event(
             profile_services: moving.then_some(&state.system_runtime),
             players: &players,
             action_id: None,
-            clock: moving.then(|| state.world_time.capture()),
+            clock: Some(state.world_time.capture()),
             weather: Some(state.weather.capture()),
             actor: None,
             actor_position: None,

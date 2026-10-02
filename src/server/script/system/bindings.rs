@@ -4,6 +4,7 @@ use super::*;
 use std::cell::Cell;
 mod intents;
 mod motion;
+mod terrain;
 
 #[derive(Clone, Copy)]
 pub(super) struct Capabilities {
@@ -80,6 +81,7 @@ pub(super) fn invoke(
     let wakes = RefCell::new(Vec::new());
     let outbox = RefCell::new(outbox);
     lua.scope(|scope| {
+        terrain::install(scope, &host, context, &reads, &rejected)?;
         motion::install(
             scope,
             &host,
@@ -388,7 +390,10 @@ pub(super) fn invoke(
             )?,
         )?;
         host.set_readonly(true);
-        let (data, delay): (Value, Value) = entry.call(host)?;
+        let (data, delay): (Value, Value) =
+            super::super::reads::with(lua, &host, context.environment, context.tags, || {
+                entry.call(host.clone())
+            })?;
         checked(&rejected, || {
             let delay = integer(delay, 1, u32::MAX.into())? as u64;
             Ok(api::Plan {

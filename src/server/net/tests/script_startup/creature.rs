@@ -61,6 +61,8 @@ fn luau_creature_negotiates_model_ticks_and_restarts() {
     assert_eq!(creature.model[0].color, [0.2, 0.8, 0.3]);
     let initial = creature.behavior.initial();
     let context = api::Context {
+        environment: None,
+        tags: None,
         id: 37,
         tick: 1,
         next_tick: Some(1),
@@ -141,6 +143,8 @@ fn luau_creature_rejects_invalid_declaration_before_save_and_caught_route_failur
     let creature = catalog.mobile_entity(id).unwrap();
     let initial = creature.behavior.initial();
     let context = api::Context {
+        environment: None,
+        tags: None,
         id: 1,
         tick: 1,
         next_tick: Some(1),
@@ -259,6 +263,8 @@ fn luau_creature_world_services_are_bounded_and_caught_errors_reject_tick() {
         let creature = catalog.mobile_entity(id).unwrap();
         let initial = creature.behavior.initial();
         let context = api::Context {
+            environment: None,
+            tags: None,
             id: 1,
             tick: 1,
             next_tick: Some(1),
@@ -286,6 +292,8 @@ fn luau_creature_tick_can_request_bounded_self_spawn_and_despawn() {
     let creature = catalog.mobile_entity(id).unwrap();
     let initial = creature.behavior.initial();
     let context = api::Context {
+        environment: None,
+        tags: None,
         id: 1,
         tick: 1,
         next_tick: Some(1),
@@ -326,6 +334,8 @@ fn luau_creature_rejects_invalid_lifecycle_before_movement_or_state_change() {
         let creature = catalog.mobile_entity(id).unwrap();
         let initial = creature.behavior.initial();
         let context = api::Context {
+            environment: None,
+            tags: None,
             id: 1,
             tick: 1,
             next_tick: Some(1),
@@ -366,6 +376,8 @@ fn luau_creature_neighbour_policy_negotiates_and_reads_bounded_public_views() {
         public: b"pose",
     }];
     let context = api::Context {
+        environment: None,
+        tags: None,
         id: 1,
         tick: 1,
         next_tick: Some(1),
@@ -434,6 +446,8 @@ fn luau_creature_spawns_another_declared_type_with_its_own_initial_state() {
         .unwrap();
     let initial = parent.behavior.initial();
     let context = api::Context {
+        environment: None,
+        tags: None,
         id: 1,
         tick: 1,
         next_tick: Some(1),

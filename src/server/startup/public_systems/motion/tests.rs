@@ -119,6 +119,8 @@ fn owner_moving_spawn_wraps_record_and_rejects_missing_authority_or_capture() {
         catalog: &catalog,
     };
     let context = api::Context {
+        environment: None,
+        tags: None,
         owner: api::Owner::Chunk([0; 3]),
         revision: 7,
         tick: 50,

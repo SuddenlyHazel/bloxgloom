@@ -17,6 +17,7 @@ pub mod machine;
 pub mod motion;
 pub mod player;
 pub mod players;
+pub mod queries;
 pub mod sound;
 pub mod system;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};

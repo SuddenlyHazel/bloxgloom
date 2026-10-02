@@ -13,6 +13,7 @@ pub(in crate::server::script) mod motion;
 pub(in crate::server::script) mod players;
 mod profile_state;
 mod queries;
+mod terrain;
 mod weather;
 
 pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
@@ -50,6 +51,7 @@ pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
     lua.scope(|scope| {
         super::inventory::install(scope, &host, &context, rejected)?;
         queries::install(scope, &host, &context, rejected)?;
+        terrain::install(scope, &host, &context, rejected)?;
         weather::install(scope, &host, &context, rejected)?;
         players::install(scope, &host, &context, rejected)?;
         profile_state::install(scope, &host, &context, rejected)?;
@@ -260,7 +262,10 @@ pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
             })?,
         )?;
         host.set_readonly(true);
-        entry.call::<R>((host, fields))
+        let tags = context.borrow().tags();
+        super::super::reads::tags_with(lua, &host, tags.as_deref(), || {
+            entry.call::<R>((host.clone(), fields))
+        })
     })
 }
 

@@ -133,6 +133,7 @@ pub(super) fn capture(
 /// Generated entities and drops share the owner's WAL record and receipt. There
 /// is no player actor, so player inventory/pickup effects remain unsupported.
 pub(super) struct EditInputs<'a> {
+    pub environment: Option<&'a crate::server::environment::Capture>,
     pub world: &'a mut World,
     pub entities: &'a EntityStore,
     pub lifecycles: Option<&'a crate::server::lifecycle::Registry>,
@@ -148,6 +149,7 @@ pub(super) struct EditInputs<'a> {
 
 pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitAction>> {
     let EditInputs {
+        environment,
         world,
         entities,
         lifecycles,
@@ -463,8 +465,8 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             profile_services: None,
             players: &[],
             action_id: None,
-            clock: None,
-            weather: None,
+            clock: environment.map(|capture| capture.clock_capture()),
+            weather: environment.map(|capture| capture.weather_capture()),
             actor: None,
             actor_position: None,
             admin: false,

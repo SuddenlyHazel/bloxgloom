@@ -12,6 +12,7 @@ mod durable;
 mod ecology;
 mod effects;
 mod entities;
+mod environment;
 mod session_ids;
 #[cfg(test)]
 pub(crate) mod motion_preview_solver {

@@ -1,6 +1,8 @@
 //! Immutable native inputs and deterministic attempt seeds; no live host access.
 use super::*;
 pub(super) struct Event<'a> {
+    pub environment: Option<bloxgloom_host_api::gameplay::Environment>,
+    pub tags: Option<&'a dyn bloxgloom_host_api::queries::Tags>,
     pub kind: &'static str,
     pub state: &'a [u8],
     pub anchor: Option<[i32; 3]>,
@@ -13,6 +15,8 @@ pub(super) struct Event<'a> {
 impl<'a> Event<'a> {
     pub fn new(kind: &'static str, state: &'a [u8]) -> Self {
         Self {
+            environment: None,
+            tags: None,
             kind,
             state,
             anchor: None,

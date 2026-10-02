@@ -60,6 +60,8 @@ pub struct Cell<'a> {
     pub solid: bool,
 }
 pub struct Context<'a> {
+    pub environment: Option<crate::gameplay::Environment>,
+    pub tags: Option<&'a dyn crate::queries::Tags>,
     pub anchor: [i32; 3],
     pub tick: u64,
     pub state: &'a Payload,

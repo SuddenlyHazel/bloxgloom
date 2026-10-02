@@ -27,6 +27,8 @@ pub struct Seed {
 }
 
 pub struct Context<'a> {
+    pub environment: Option<crate::gameplay::Environment>,
+    pub tags: Option<&'a dyn crate::queries::Tags>,
     pub owner: Owner,
     pub revision: u64,
     pub tick: u64,

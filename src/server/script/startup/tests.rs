@@ -88,6 +88,8 @@ fn multiple_shared_callbacks_keep_keyed_owner_state_and_canonical_order() {
     let mut states = Vec::new();
     for system in &declarations.systems {
         let context = bloxgloom_host_api::system::Context {
+            environment: None,
+            tags: None,
             owner: system.seeds[0].owner,
             revision: 0,
             tick: 1,

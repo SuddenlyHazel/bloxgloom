@@ -62,6 +62,8 @@ fn luau_anchored_callbacks_accept_full_registered_binary_limits_and_immutable_in
         definition
             .behavior
             .react(&api::Context {
+                environment: None,
+                tags: None,
                 anchor: [0, 80, 2],
                 tick: u64::MAX,
                 state: &decoded,
@@ -112,6 +114,8 @@ fn luau_anchored_rejects_failed_validation_oversized_public_and_ambiguous_reacti
                 definition
                     .behavior
                     .react(&api::Context {
+                        environment: None,
+                        tags: None,
                         anchor: [0, 80, 2],
                         tick: 123,
                         state: &payload,

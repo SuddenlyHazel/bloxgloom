@@ -60,7 +60,8 @@ impl ScriptAnchored {
             Limits::default(),
             Execution::new("anchored",event.seed(), format!("{}:{}",self.module,event.kind)),
             |lua,entry|{
-                let value=entry.call::<Value>(event.table(lua)?)?;
+                let input = event.table(lua)?;
+                let value=super::reads::with(lua, &input, event.environment, event.tags, || entry.call::<Value>(input.clone()))?;
                 reply::parse(value,&event,self.state_limit,self.public_limit)
             },
         ).map_err(|error|{tracing::warn!(%error,module=%self.module,event=event.kind,"anchored callback rejected without effects");Error::InvalidState})
@@ -103,6 +104,8 @@ impl api::Behavior for ScriptAnchored {
         event.anchor = Some(context.anchor);
         event.tick = Some(context.tick);
         event.cells = context.cells;
+        event.environment = context.environment;
+        event.tags = context.tags;
         let Reply::Reaction(reaction) = self.call(event)? else {
             return Err(Error::InvalidState);
         };

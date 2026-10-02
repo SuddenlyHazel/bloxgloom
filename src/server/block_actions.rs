@@ -33,10 +33,14 @@ pub(super) struct BlockActionContext<'a> {
     entities: &'a EntityStore,
     seed: u64,
     weather: super::weather::Capture,
+    clock: super::world_time::Capture,
     lifecycles: &'a super::lifecycle::Registry,
 }
 
 impl BlockActionContext<'_> {
+    pub(super) fn clock(&self) -> super::world_time::Capture {
+        self.clock.clone()
+    }
     pub(super) fn lifecycle(
         &self,
         state: BlockStateId,
@@ -166,6 +170,7 @@ pub(super) fn invoke_hook(
         entities: &state.entities,
         seed: state.seed,
         weather: state.weather.capture(),
+        clock: state.world_time.capture(),
         lifecycles: &state.lifecycles,
     };
     let mut builder = BlockCommitBuilder {

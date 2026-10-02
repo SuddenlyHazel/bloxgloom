@@ -361,3 +361,12 @@ fn field(hash: &mut u64, bytes: &[u8]) {
     hash_bytes(hash, &(bytes.len() as u64).to_le_bytes());
     hash_bytes(hash, bytes);
 }
+
+impl bloxgloom_host_api::queries::Tags for Catalog {
+    fn members(&self, kind: TagKind, key: &str) -> Option<&BTreeSet<String>> {
+        self.composition
+            .tags
+            .get(&(kind, key.to_owned()))
+            .map(|tag| &tag.resolved)
+    }
+}

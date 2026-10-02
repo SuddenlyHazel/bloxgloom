@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 mod clock;
 mod definition;
 mod entities;
+mod environment;
 mod handlers;
 mod inventory;
 mod motion;
@@ -20,6 +21,7 @@ mod weather;
 pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
+pub use environment::Environment;
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
 pub use inventory::{Components, InventoryId, PickupTransfer, Slot, Stack};
 pub use motion::{MotionChange, MotionCommand, MovingSpawn, SpawnReference};
@@ -70,6 +72,10 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn tags(&self) -> Option<std::sync::Arc<dyn crate::queries::Tags>> {
+        None
+    }
+
     fn sound_registered(&self, _key: &str) -> bool {
         false
     }
@@ -232,6 +238,10 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    pub fn tags(&self) -> Option<std::sync::Arc<dyn crate::queries::Tags>> {
+        self.snapshot.tags()
+    }
+
     pub fn action_id(&self) -> Option<u128> {
         self.snapshot.action_id()
     }
