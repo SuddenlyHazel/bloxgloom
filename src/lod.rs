@@ -155,6 +155,7 @@ impl LodTile {
                     return Err("unknown LOD material".into());
                 };
                 if s.bottom >= s.top
+                    || s.top.checked_sub(s.bottom).is_none()
                     || !c.known(s.bottom, s.top)
                     || s.sky > 15
                     || s.glow > 15

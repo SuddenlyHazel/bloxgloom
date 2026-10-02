@@ -218,3 +218,32 @@ fn snapshot_order_preserves_trees_bridges_and_unknown_vertical_gaps() {
     );
     assert!(extract(key, 1, &[chunk(0, AIR), chunk(0, STONE)], &catalog).is_err());
 }
+
+#[test]
+fn hostile_vertical_extent_cannot_overflow_mesh_dimensions() {
+    let catalog = Catalog::builtins();
+    let mut tile = LodTile {
+        key: TileKey {
+            level: 0,
+            x: 0,
+            z: 0,
+        },
+        revision: 1,
+        columns: vec![Column::default(); TILE_COLUMNS],
+        geometric_error: 0,
+    };
+    tile.columns[0] = Column {
+        coverage: vec![Interval {
+            bottom: i32::MIN,
+            top: i32::MAX,
+        }],
+        spans: vec![Span {
+            bottom: i32::MIN,
+            top: i32::MAX,
+            state: STONE,
+            sky: 0,
+            glow: 0,
+        }],
+    };
+    assert!(tile.validate(&catalog).is_err());
+}
