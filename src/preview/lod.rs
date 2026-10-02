@@ -26,6 +26,31 @@ pub(super) fn terrain_meshes(
     }
     let summary_ms = started.elapsed().as_secs_f64() * 1000.0;
     let summary_bytes: usize = tiles.iter().map(LodTile::encoded_bytes).sum();
+    let summaries: std::collections::HashMap<_, _> =
+        tiles.iter().map(|tile| (tile.key, tile)).collect();
+    let mut reduction_elapsed = std::time::Duration::ZERO;
+    let mut reduction_parents = 0;
+    let mut reduction_unavailable = 0;
+    for tile in &tiles {
+        let Some(keys) = tile.key.children() else {
+            continue;
+        };
+        let [Some(a), Some(b), Some(c), Some(d)] = keys.map(|key| summaries.get(&key).copied())
+        else {
+            continue;
+        };
+        let started = Instant::now();
+        let reduced = std::hint::black_box(crate::lod::reduce_parent(
+            tile.key,
+            tile.revision,
+            [a, b, c, d],
+            catalog,
+        ));
+        reduction_elapsed += started.elapsed();
+        reduction_parents += 1;
+        reduction_unavailable += usize::from(reduced.is_err());
+    }
+    let reduction_ms = reduction_elapsed.as_secs_f64() * 1000.0;
     let colors = FaceColors::new(catalog);
     let started = Instant::now();
     let meshes = tiles
@@ -39,7 +64,7 @@ pub(super) fn terrain_meshes(
         })
         .collect::<Result<Vec<_>, _>>()?;
     eprintln!(
-        "LOD scene: horizon={horizon} tiles={} unavailable={unavailable} summary={summary_ms:.2}ms summary_bytes={summary_bytes} meshing={:.2}ms mesh_bytes={} triangles={}",
+        "LOD scene: horizon={horizon} tiles={} unavailable={unavailable} summary={summary_ms:.2}ms summary_bytes={summary_bytes} reduction={reduction_ms:.2}ms reduction_parents={reduction_parents} reduction_unavailable={reduction_unavailable} meshing={:.2}ms mesh_bytes={} triangles={}",
         tiles.len(),
         started.elapsed().as_secs_f64() * 1000.0,
         meshes.iter().map(Mesh::byte_len).sum::<usize>(),
