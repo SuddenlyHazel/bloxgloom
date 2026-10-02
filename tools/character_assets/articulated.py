@@ -121,4 +121,6 @@ def convert(dest=DEST):
         (dest/f"clip_{clip['name']}.json").write_text(json.dumps(clip,separators=(',',':'))+'\n')
     (dest/'manifest.json').write_text(json.dumps(dict(version=2,joints=30,source_height=1.8,head_joint=5,source_forward='-Z',runtime_forward='+Z',runtime_scale=1,records=records),indent=2)+'\n')
     print('Converted',sum(r['vertices'] for r in records),'vertices;',sum(r['triangles'] for r in records),'triangles; 30 joints; both bodies and 13 hairstyles')
-if __name__=='__main__':convert()
+if __name__=='__main__':
+    convert()
+    print('Next: python3 tools/character_assets/bake_occlusion.py (required after native mesh changes)')

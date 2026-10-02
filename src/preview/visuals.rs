@@ -33,6 +33,7 @@ pub fn render_visual_previews(
 
 pub(super) struct Resources {
     pub material: Option<crate::render::custom::Gpu>,
+    pub sun_pipelines: Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>,
     pub effect: Option<Arc<crate::render::effects::Prepared>>,
     updates: Vec<crate::render::parameters::Update>,
 }
@@ -47,6 +48,7 @@ impl Resources {
         let bundle = crate::server::package_bundle_for_preview(root)?;
         let mut startup = crate::client::startup::prepare(bundle.clone())?;
         let updates = startup.parameters.take_updates();
+        let mut sun_pipelines = None;
         let material = if let Some(source) = bundle.material() {
             let prepared = source.resolve(crate::content::catalog())?;
             let ((o, c, _, _, _), mut gpu) = render::create_custom_voxel_pipeline(
@@ -56,6 +58,11 @@ impl Resources {
                 crate::content::catalog(),
                 &prepared,
             )?;
+            sun_pipelines = Some(render::create_sun_shadow_pipelines(
+                device,
+                &o,
+                Some(&prepared),
+            ));
             *opaque = o;
             *cutout = c;
             for update in &updates {
@@ -67,6 +74,7 @@ impl Resources {
         };
         Ok(Self {
             material,
+            sun_pipelines,
             effect: bundle.effect().cloned(),
             updates,
         })

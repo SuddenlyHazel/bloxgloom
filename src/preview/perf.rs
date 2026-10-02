@@ -2,6 +2,10 @@ pub(crate) mod characters;
 
 use super::*;
 
+// Software adapters can take longer than 30 s to drain a fully queued run.
+// This is outside all measured intervals, matching the character benchmark.
+const GPU_READBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 struct PerfGpuMesh {
     opaque: Option<PerfGpuSubmesh>,
     cutout: Option<PerfGpuSubmesh>,
@@ -153,8 +157,19 @@ pub(super) async fn run_perf_benchmark_async(
     let post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
-    let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
+    let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+    let shadow_quality = super::sun_shadow::quality()?;
+    let mut sun_shadows =
+        render::sun_shadow::SunShadows::new(&device, &camera_buffer, shadow_quality);
+    let camera_group = sun_shadows.camera_group.clone();
+    let sun_pipelines = render::create_sun_shadow_pipelines(&device, &pipeline, None);
+    eprintln!(
+        "sun shadows: {} ({}px, {}m); GPU timestamps include shadow pass",
+        shadow_quality.as_str(),
+        sun_shadows.projection.settings.resolution,
+        sun_shadows.projection.settings.distance
+    );
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -414,11 +429,45 @@ pub(super) async fn run_perf_benchmark_async(
             bytemuck::cast_slice(&render::target_outline_vertices(target_block)),
         );
 
+        sun_shadows.update(
+            &queue,
+            camera,
+            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+        );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless perf frame"),
         });
         let first_query = u32::try_from(samples.len() * 2)?;
         let frame_query_set = query_set.as_ref();
+        if let Some(mut pass) = sun_shadows.begin_timed(
+            &mut encoder,
+            frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
+                query_set: set,
+                beginning_of_pass_write_index: Some(first_query),
+                end_of_pass_write_index: None,
+            }),
+        ) {
+            pass.set_bind_group(0, &sun_shadows.caster_group, &[]);
+            pass.set_bind_group(1, &texture_group, &[]);
+            for cutout in [false, true] {
+                pass.set_pipeline(if cutout {
+                    &sun_pipelines.1
+                } else {
+                    &sun_pipelines.0
+                });
+                for (key, mesh) in &gpu_meshes {
+                    if !sun_shadows.projection.contains_chunk(*key, 0.0) {
+                        continue;
+                    }
+                    let mesh = if cutout { &mesh.cutout } else { &mesh.opaque };
+                    if let Some(mesh) = mesh {
+                        pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                        pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..mesh.indices, 0, 0..1);
+                    }
+                }
+            }
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
@@ -439,11 +488,13 @@ pub(super) async fn run_perf_benchmark_async(
                     }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
-                    query_set: set,
-                    beginning_of_pass_write_index: Some(first_query),
-                    end_of_pass_write_index: None,
-                }),
+                timestamp_writes: frame_query_set
+                    .filter(|_| !sun_shadows.projection.enabled)
+                    .map(|set| wgpu::RenderPassTimestampWrites {
+                        query_set: set,
+                        beginning_of_pass_write_index: Some(first_query),
+                        end_of_pass_write_index: None,
+                    }),
                 ..Default::default()
             });
             pass.set_pipeline(&sky_pipeline);
@@ -576,7 +627,7 @@ pub(super) async fn run_perf_benchmark_async(
         let submission = queue.submit(Some(encoder.finish()));
         device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission.clone()),
-            timeout: Some(std::time::Duration::from_secs(30)),
+            timeout: Some(GPU_READBACK_TIMEOUT),
         })?;
         let (sender, receiver) = mpsc::channel();
         readback.map_async(wgpu::MapMode::Read, .., move |result| {
@@ -584,7 +635,7 @@ pub(super) async fn run_perf_benchmark_async(
         });
         device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission),
-            timeout: Some(std::time::Duration::from_secs(30)),
+            timeout: Some(GPU_READBACK_TIMEOUT),
         })?;
         receiver.recv()??;
         let mapped = readback.get_mapped_range(..)?;
@@ -610,7 +661,7 @@ pub(super) async fn run_perf_benchmark_async(
         if let Some(submission) = last_submission {
             device.poll(wgpu::PollType::Wait {
                 submission_index: Some(submission),
-                timeout: Some(std::time::Duration::from_secs(30)),
+                timeout: Some(GPU_READBACK_TIMEOUT),
             })?;
         }
         None
@@ -715,7 +766,7 @@ pub(super) async fn run_perf_benchmark_async(
         vertex_count, cutout_vertex_count, index_count, cutout_index_count, generation_ms
     );
     eprintln!(
-        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
+        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
         PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done,
     );
     // Copy/readback follows all measured submissions and timestamp resolution;
@@ -743,3 +794,6 @@ fn print_percentiles(label: &str, values: &[f64]) {
         percentile(99),
     );
 }
+
+#[cfg(test)]
+mod tests;

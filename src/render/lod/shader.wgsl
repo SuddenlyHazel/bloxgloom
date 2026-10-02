@@ -7,8 +7,9 @@ struct In { @location(0) position:vec3f,@location(1) normal:vec3f,@location(2) c
 struct Out { @builtin(position) position:vec4f,@location(0) relative:vec3f,@location(1) local:vec3f,@location(2) color:vec3f,@location(3) sky:f32,@location(4) normal:vec3f };
 @vertex fn vs_main(v:In)->Out {
     var o:Out;o.relative=v.position+tile.relative.xyz;o.position=camera.view_projection*vec4f(o.relative,1.0);o.local=v.position;o.normal=v.normal;o.sky=v.light.x;
-    let sunlight=max(dot(v.normal,normalize(camera.sun.xyz)),0.0);
-    let light=vec3f(0.012,0.015,0.022)+v.light.x*camera.sun.w*(vec3f(0.31,0.40,0.53)+sunlight*vec3f(0.77,0.66,0.47))+v.light.y*v.light.y*vec3f(1.0,0.57,0.23);
+    // Use the calibrated near-surface basis. Distant geometry does not sample
+    // the camera-local shadow map, whose range is inside the near chunk band.
+    let light=bg_surface_light(v.normal,camera.sun,v.light.x,v.light.y,vec3f(0.0),vec3f(0.0),1.0);
     o.color=v.color*light;return o;
 }
 @fragment fn fs_main(v:Out)->@location(0) vec4f {

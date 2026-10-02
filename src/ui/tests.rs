@@ -377,6 +377,7 @@ fn graphics_controls_fit_and_hit_test_at_both_ui_scales() {
             SettingId::Exposure,
             SettingId::Bloom,
             SettingId::BloomStrength,
+            SettingId::SunShadows,
             SettingId::LodHorizon,
             SettingId::LodQuality,
         ] {
@@ -394,6 +395,9 @@ fn graphics_controls_fit_and_hit_test_at_both_ui_scales() {
                 layout.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
                 Some(control)
             );
+            if matches!(control, UiControl::Decrease(_) | UiControl::Increase(_)) {
+                assert!(rect.y + rect.height <= layout.rect(UiControl::Back).unwrap().y);
+            }
         }
         assert!(layout.rect(UiControl::ToggleFullscreen).is_none());
     }

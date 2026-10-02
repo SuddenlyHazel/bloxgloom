@@ -346,7 +346,11 @@ impl UiLayout {
             );
         }
         let row_height = if compact {
-            36.0 * self.scale
+            (if self.screen == UiScreen::Graphics {
+                30.0
+            } else {
+                36.0
+            }) * self.scale
         } else {
             (52.0 * self.scale).clamp(42.0, 58.0)
         };
@@ -372,6 +376,7 @@ impl UiLayout {
                 SettingId::Exposure,
                 SettingId::Bloom,
                 SettingId::BloomStrength,
+                SettingId::SunShadows,
                 SettingId::LodHorizon,
                 SettingId::LodQuality,
             ]

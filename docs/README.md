@@ -1,5 +1,6 @@
 # Documentation
 
+- [Sandbox rendering fixtures](rendering/sandbox-fixtures.md): repeatable workshop, factory and neon lighting captures.
 - [Modding](modding/README.md): current authoring examples and host references.
 - [Scripting capabilities](../SCRIPTING.md): implemented Luau bindings and limits.
 - [Current Luau gaps](../LUAU-SCRIPTING-GAPS.md): missing capabilities and priorities.

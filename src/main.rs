@@ -65,6 +65,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         catalog
     };
+    let mut catalog = catalog;
+    if arguments
+        .first()
+        .is_some_and(|command| command == "sandbox-preview")
+    {
+        preview::install_sandbox_materials(&mut catalog)?;
+    }
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
@@ -397,6 +404,37 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_daylight_previews(std::path::Path::new(&directory))?;
             println!("wrote daylight previews to {directory}");
+        }
+        Some("sandbox-preview") => {
+            let usage = "usage: sandbox-preview [output-dir] [all|workshop|factory|neon] [all|noon|sunset|night] [hero|characters] [idle|walk]";
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "sandbox-previews".to_string());
+            let theme = args.next().unwrap_or_else(|| "all".to_string());
+            let time = args.next().unwrap_or_else(|| "all".to_string());
+            let view = args.next().unwrap_or_else(|| "hero".to_string());
+            let pose = args.next().unwrap_or_else(|| "idle".to_string());
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            preview::render_sandbox_previews(
+                std::path::Path::new(&directory),
+                &theme,
+                &time,
+                &view,
+                &pose,
+            )?;
+            println!("wrote sandbox rendering fixtures to {directory}");
+        }
+        Some("calibration-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "calibration-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: calibration-preview [output-dir]".into());
+            }
+            preview::render_calibration_previews(std::path::Path::new(&directory))?;
+            println!("wrote lighting calibration previews to {directory}");
         }
         Some("lighting-preview") => {
             let directory = args

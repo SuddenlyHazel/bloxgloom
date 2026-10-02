@@ -6,8 +6,8 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     let source = include_str!("../../character.wgsl");
-    let functions =
-        &source[source.find("fn srgb_to_linear").unwrap()..source.find("@fragment").unwrap()];
+    let functions = &source
+        [source.find("fn srgb_to_linear").unwrap()..source.find("fn character_albedo").unwrap()];
     let source = format!(
         "{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(tint_iris(vec3f(1.0,127.0,255.0),f32(id.x)),1.0); result[id.x+256u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),false); result[id.x+512u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),true); }}"
     );

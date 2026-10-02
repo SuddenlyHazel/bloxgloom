@@ -74,7 +74,7 @@ impl Gpu {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("LOD shader"),
             source: wgpu::ShaderSource::Wgsl(
-                super::super::fog::shader(include_str!("shader.wgsl")).into(),
+                super::super::daylight::surface_shader(include_str!("shader.wgsl")).into(),
             ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

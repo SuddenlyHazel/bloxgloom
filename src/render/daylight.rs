@@ -2,6 +2,17 @@
 use super::SUN_DIRECTION;
 use glam::{Mat4, Vec3};
 
+/// Compose calibrated lighting and fog without reserving shadow bindings.
+/// Distant terrain shares this basis but owns a separate coverage bind group.
+pub(super) fn surface_shader(source: &str) -> String {
+    super::fog::shader(&format!("{}\n{source}", include_str!("daylight.wgsl")))
+}
+
+/// Near opaque surfaces additionally sample the camera-local sun shadow map.
+pub(super) fn shader(source: &str) -> String {
+    surface_shader(&format!("{}\n{source}", super::sun_shadow::SHADER))
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct Atmosphere {
     pub sun: Vec3,

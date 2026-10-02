@@ -37,6 +37,7 @@ struct CharacterInstance {
 pub(super) struct CharacterRenderer {
     asset: CharacterAsset,
     pipeline: wgpu::RenderPipeline,
+    shadow_pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -69,16 +70,19 @@ impl CharacterRenderer {
             }
             range.end = (index * 3 + 3) as u32;
         }
+        let visibility =
+            super::character_asset::occlusion::builtin_visibility(asset.vertices.len());
         let vertices: Vec<_> = asset
             .vertices
             .iter()
-            .map(|v| Vertex {
+            .zip(visibility)
+            .map(|(v, visibility)| Vertex {
                 position: v.position,
                 normal: v.normal,
                 joint: v.joint as u32,
                 uv: v.uv,
                 material: v.material,
-                surface: v.surface,
+                surface: super::character_asset::occlusion::pack_surface(v.surface, visibility),
             })
             .collect();
         let buffer = |label, contents, usage| {
@@ -113,7 +117,8 @@ impl CharacterRenderer {
         );
         let joints = dynamic(
             "bounded character joints",
-            (MAX_AVATARS * JOINTS * 64) as u64,
+            // One extra rig keeps camera framing out of the world shadow.
+            ((MAX_AVATARS + 1) * JOINTS * 64) as u64,
             wgpu::BufferUsages::STORAGE,
         );
         let texture_entry = |binding, dimension| wgpu::BindGroupLayoutEntry {
@@ -237,54 +242,29 @@ impl CharacterRenderer {
         instance_attributes[8].offset = std::mem::offset_of!(CharacterInstance, iris) as u64;
         instance_attributes[9].offset =
             std::mem::offset_of!(CharacterInstance, hair_color_body) as u64;
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("instanced authored characters"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &vertex_attributes,
-                    }),
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<CharacterInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &instance_attributes,
-                    }),
-                ],
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: super::DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let (pipeline, shadow_pipeline) = super::pipeline::pair(
+            device,
+            &shader,
+            &pipeline_layout,
+            format,
+            &[
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &vertex_attributes,
+                }),
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<CharacterInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &instance_attributes,
+                }),
+            ],
+            true,
+        );
         Self {
             asset,
             pipeline,
+            shadow_pipeline,
             group,
             vertices,
             indices,
@@ -307,6 +287,7 @@ impl CharacterRenderer {
         self.style_counts.fill(0);
         let mut instances = Vec::new();
         let mut joints = Vec::new();
+        let mut first_person_joints = None;
         // Admission stays nearest-first; grouping only reorders already-admitted
         // actors. The GPU processes the body and the selected hair, never the kit.
         for group in 0..GROUPS {
@@ -358,10 +339,11 @@ impl CharacterRenderer {
                         avatar.character_look,
                     ),
                 };
+                joints.extend(pose.iter().map(|matrix| matrix.to_cols_array()));
                 if let Some(view) = first_person {
                     view.prepare_pose(&mut pose, avatar.character_tool);
+                    first_person_joints = Some(pose.map(|matrix| matrix.to_cols_array()));
                 }
-                joints.extend(pose.iter().map(|matrix| matrix.to_cols_array()));
             }
             self.style_counts[group] = (instances.len() - start) as u32;
         }
@@ -369,6 +351,13 @@ impl CharacterRenderer {
         if self.count != 0 {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&instances));
             queue.write_buffer(&self.joints, 0, bytemuck::cast_slice(&joints));
+            if let Some(pose) = first_person_joints {
+                queue.write_buffer(
+                    &self.joints,
+                    (MAX_AVATARS * JOINTS * 64) as u64,
+                    bytemuck::cast_slice(&pose),
+                );
+            }
         }
     }
 
@@ -393,10 +382,27 @@ impl CharacterRenderer {
         pass: &mut wgpu::RenderPass<'a>,
         camera: &'a wgpu::BindGroup,
     ) -> usize {
+        self.draw_instances(pass, camera, &self.pipeline)
+    }
+
+    pub(super) fn draw_shadow<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        camera: &'a wgpu::BindGroup,
+    ) -> usize {
+        self.draw_instances(pass, camera, &self.shadow_pipeline)
+    }
+
+    fn draw_instances<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        camera: &'a wgpu::BindGroup,
+        pipeline: &'a wgpu::RenderPipeline,
+    ) -> usize {
         if self.count == 0 {
             return 0;
         }
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, camera, &[]);
         pass.set_bind_group(1, &self.group, &[]);
         pass.set_vertex_buffer(0, self.vertices.slice(..));

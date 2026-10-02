@@ -211,7 +211,7 @@ impl UiBuilder<'_> {
                 if frame.screen == UiScreen::Audio {
                     "LOCAL PREVIEW - NOT WORLD WEATHER"
                 } else if frame.screen == UiScreen::Graphics {
-                    "TONE MAPPING / EXPOSURE / BLOOM"
+                    "SUN SHADOWS / EXPOSURE / BLOOM"
                 } else {
                     "LOCAL CLIENT OPTIONS"
                 },
@@ -342,6 +342,11 @@ impl UiBuilder<'_> {
                 format!("{:.0}%", frame.settings.bloom_strength * 100.0),
             ),
             (
+                SettingId::SunShadows,
+                "SUN SHADOWS",
+                frame.settings.sun_shadow_quality.label().to_uppercase(),
+            ),
+            (
                 SettingId::LodHorizon,
                 "DISTANT TERRAIN",
                 if frame.settings.lod_horizon == 0 {
@@ -366,7 +371,11 @@ impl UiBuilder<'_> {
         };
         let top = panel.y + (if compact { 74.0 } else { 116.0 }) * self.scale;
         let row_height = if compact {
-            36.0 * self.scale
+            (if frame.screen == UiScreen::Graphics {
+                30.0
+            } else {
+                36.0
+            }) * self.scale
         } else {
             (52.0 * self.scale).clamp(42.0, 58.0)
         };
@@ -427,7 +436,7 @@ impl UiBuilder<'_> {
             self.text(
                 "POST OFF BYPASSES EXPOSURE + BLOOM",
                 panel.x + 20.0 * self.scale,
-                top + 4.0 * row_height + 6.0 * self.scale,
+                top + graphics_rows.len() as f32 * row_height + 6.0 * self.scale,
                 if compact { 0.55 } else { 0.65 },
                 MUTED,
                 40,

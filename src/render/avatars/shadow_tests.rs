@@ -1,0 +1,470 @@
+//! Read back real color/depth passes to protect caster and receiver contracts.
+use super::*;
+use crate::render::{daylight::Atmosphere, sun_shadow};
+use glam::Quat;
+
+const WIDTH: u32 = 128;
+const HEIGHT: u32 = 96;
+
+fn avatar(model: AvatarModel) -> VisualAvatar {
+    VisualAvatar {
+        motion: None,
+        animation: Default::default(),
+        model,
+        pose: [0.0; 4],
+        character_pose: [0.3, 0.2, 0.7, 0.4],
+        character_look: [0.2, -0.1],
+        character_crouch: 0.0,
+        character_tool: None,
+        character_recipe: Some(Default::default()),
+        airborne: false,
+        id: 1,
+        position: Vec3::ZERO,
+        cosmetics: [0; 4],
+        light_levels: [15, 0, 0, 0],
+        bounce: [0; 4],
+        glow_bounce: [0; 4],
+        tint: [1.0; 3],
+    }
+}
+
+struct Scene {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: AvatarRenderer,
+    caster: wgpu::BindGroup,
+    shadow_uniform: wgpu::Buffer,
+    shadow_data: [f32; 24],
+    shadow: wgpu::Texture,
+    depth: wgpu::Texture,
+    color: wgpu::Texture,
+    readback: wgpu::Buffer,
+    depth_copy: wgpu::RenderPipeline,
+    depth_copy_group: wgpu::BindGroup,
+}
+
+impl Scene {
+    fn new(catalog: &crate::content::Catalog) -> Self {
+        let instance = wgpu::Instance::default();
+        let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+        eprintln!("avatar shadow GPU: {:?}", adapter.get_info());
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+        let matrix = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
+            * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
+        let mut atmosphere = Atmosphere::at(crate::daylight::INITIAL_MS);
+        atmosphere.sun = Vec3::Z;
+        atmosphere.strength = 1.0;
+        let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(
+                &atmosphere.camera_data(matrix, Vec3::new(0.0, 0.0, 4.0)),
+            ),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let mut shadow_data = [0.0; 24];
+        shadow_data[..16].copy_from_slice(&matrix.to_cols_array());
+        shadow_data[16..20].copy_from_slice(&[1.0 / WIDTH as f32, 40.0, 1.0, 0.0]);
+        shadow_data[23] = 9.9;
+        let shadow_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&shadow_data),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let texture = |format, usage| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            })
+        };
+        let shadow = texture(
+            DEPTH_FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
+        );
+        let dummy = texture(DEPTH_FORMAT, wgpu::TextureUsages::TEXTURE_BINDING);
+        let depth = texture(DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT);
+        let color = texture(
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        );
+        // Downlevel OpenGL exposes comparison sampling but neither direct
+        // depth copies nor depth textureLoad. Reconstruct 24-bit depth with
+        // nearest comparisons, then pack a float into RGBA8 for CPU checks.
+        let copy_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("portable shadow depth readback"),
+            source: wgpu::ShaderSource::Wgsl(r#"
+                @group(0) @binding(0) var depth: texture_depth_2d;
+                @group(0) @binding(1) var compare_depth: sampler_comparison;
+                @vertex fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    let p = array<vec2f, 3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));
+                    return vec4f(p[index],0.0,1.0);
+                }
+                @fragment fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+                    let uv = position.xy / vec2f(textureDimensions(depth));
+                    var low = 0.0;
+                    var high = 1.0;
+                    for (var step = 0u; step < 24u; step += 1u) {
+                        let mid = (low + high) * 0.5;
+                        if textureSampleCompareLevel(depth,compare_depth,uv,mid) > 0.5 {
+                            low = mid;
+                        } else { high = mid; }
+                    }
+                    let value = select(low,1.0,textureSampleCompareLevel(depth,compare_depth,uv,1.0) > 0.5);
+                    let bits = bitcast<u32>(value);
+                    return vec4f(vec4u(bits & 255u,(bits >> 8u) & 255u,(bits >> 16u) & 255u,bits >> 24u))/255.0;
+                }
+            "#.into()),
+        });
+        let depth_copy = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &copy_shader,
+                entry_point: Some("vs"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &copy_shader,
+                entry_point: Some("fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let copy_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let depth_copy_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &depth_copy.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &shadow.create_view(&Default::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&copy_sampler),
+                },
+            ],
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let group = |view: &wgpu::TextureView| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &sun_shadow::camera_layout(&device),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: shadow_uniform.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            })
+        };
+        let caster = group(&dummy.create_view(&Default::default()));
+        let mut renderer = AvatarRenderer::new(
+            &device,
+            &queue,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &camera,
+            catalog,
+        );
+        renderer.set_camera_group(group(&shadow.create_view(&Default::default())));
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(WIDTH * HEIGHT * 4),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        Self {
+            device,
+            queue,
+            renderer,
+            caster,
+            shadow_uniform,
+            shadow_data,
+            shadow,
+            depth,
+            color,
+            readback,
+            depth_copy,
+            depth_copy_group,
+        }
+    }
+
+    fn render(
+        &mut self,
+        avatars: &[VisualAvatar],
+        caster: bool,
+        occluded: bool,
+        enabled: bool,
+    ) -> Vec<u8> {
+        self.renderer.set(&self.queue, avatars);
+        self.shadow_data[18] = f32::from(enabled);
+        self.queue.write_buffer(
+            &self.shadow_uniform,
+            0,
+            bytemuck::cast_slice(&self.shadow_data),
+        );
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let view = self.shadow.create_view(&Default::default());
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(if occluded { 0.0 } else { 1.0 }),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            if caster {
+                assert!(self.renderer.draw_shadow(&mut pass, &self.caster) > 0);
+            }
+        }
+        if caster {
+            let color = self.color.create_view(&Default::default());
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.depth_copy);
+            pass.set_bind_group(0, &self.depth_copy_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        if !caster {
+            let color = self.color.create_view(&Default::default());
+            let depth = self.depth.create_view(&Default::default());
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            assert!(self.renderer.draw(&mut pass) > 0);
+        }
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.color,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &self.readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(WIDTH * 4),
+                    rows_per_image: Some(HEIGHT),
+                },
+            },
+            wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.readback
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(std::time::Duration::from_secs(10)),
+            })
+            .unwrap();
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        let bytes = self.readback.slice(..).get_mapped_range().unwrap().to_vec();
+        self.readback.unmap();
+        bytes
+    }
+}
+
+#[test]
+fn gpu_character_casters_keep_full_world_rig_and_selected_hair_in_first_person() {
+    let mut scene = Scene::new(&crate::content::Catalog::builtins());
+    let mut actor = avatar(AvatarModel::Player);
+    let mut previous = Vec::new();
+    for (body, hair, crouch, tool) in [
+        (0, 0, 0.0, None),
+        (0, 9, 0.0, None),
+        (1, 3, 1.0, Some((true, 0.3))),
+    ] {
+        actor.character_recipe = Some(crate::appearance::CharacterRecipe {
+            body,
+            hair,
+            ..Default::default()
+        });
+        actor.character_crouch = crouch;
+        actor.character_tool = tool;
+        scene.renderer.set_first_person(None);
+        let third_person = scene.render(&[actor], true, false, true);
+        let visible = scene.render(&[actor], false, false, true);
+        let depths: &[f32] = bytemuck::cast_slice(&third_person);
+        assert!(
+            depths.iter().filter(|depth| **depth < 1.0).count() > 300,
+            "full caster must draw"
+        );
+        assert_ne!(
+            third_person, previous,
+            "body/hair/animation must affect shadow geometry"
+        );
+        for pitch in [-1.2, 0.0, 1.0] {
+            scene.renderer.set_first_person(Some(FirstPersonView {
+                id: actor.id,
+                eye_height: 1.6 - crouch * 0.55,
+                pitch,
+            }));
+            assert_eq!(
+                third_person,
+                scene.render(&[actor], true, false, true),
+                "camera framing/head hiding leaked into world shadow"
+            );
+        }
+        assert_ne!(
+            visible,
+            scene.render(&[actor], false, false, true),
+            "the color pass must still use first-person clipping/framing"
+        );
+        previous = third_person;
+    }
+}
+
+#[test]
+fn gpu_avatar_receivers_remove_only_direct_sun_and_off_matches_unoccluded() {
+    let mut scene = Scene::new(&crate::content::Catalog::builtins());
+    for model in [
+        AvatarModel::Player,
+        AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),
+    ] {
+        let mut actor = avatar(model);
+        for levels in [[15, 0, 0, 0], [0; 4], [0, 15, 0, 0]] {
+            actor.light_levels = levels;
+            actor.bounce = [25, 40, 10, 0];
+            actor.glow_bounce = [18, 12, 6, 0];
+            let lit = scene.render(&[actor], false, false, true);
+            let shadow = scene.render(&[actor], false, true, true);
+            let off = scene.render(&[actor], false, true, false);
+            assert_eq!(
+                lit, off,
+                "Off must leave the calibrated base lighting unchanged"
+            );
+            if levels[0] == 0 {
+                assert_eq!(
+                    lit, shadow,
+                    "cave floor, glow and bounced fill must not be sun-shadowed"
+                );
+            } else {
+                assert_ne!(
+                    lit, shadow,
+                    "outdoor characters and public avatars must receive shadows"
+                );
+                assert!(
+                    shadow
+                        .chunks_exact(4)
+                        .filter(|p| p[..3].iter().any(|c| *c > 8))
+                        .count()
+                        > 100,
+                    "indirect light must remain visible"
+                );
+                assert!(
+                    lit.iter().zip(&shadow).all(|(a, b)| a >= b),
+                    "a shadow must never add light"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn gpu_public_casters_share_creature_and_rigid_animated_geometry() {
+    let catalog = moving_tests::catalog([0.5, 0.1, 0.1]);
+    let mut scene = Scene::new(&catalog);
+    let mut creature = avatar(AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE));
+    let resting = scene.render(&[creature], true, false, true);
+    creature.pose = [0.6, 0.8, 0.1, 0.3];
+    assert_ne!(resting, scene.render(&[creature], true, false, true));
+    let mut rigid = avatar(AvatarModel::Moving(
+        catalog.entity_type_id_by_key("demo:projectile").unwrap(),
+    ));
+    rigid.position.y = 0.8;
+    rigid.motion = Some(MovingVisual {
+        tick: 1,
+        revision: 1,
+        orientation: Quat::IDENTITY.to_array(),
+        velocity: [0.0; 3],
+        stopped: false,
+    });
+    let horizontal = scene.render(&[rigid], true, false, true);
+    rigid.motion.as_mut().unwrap().orientation =
+        Quat::from_rotation_z(std::f32::consts::FRAC_PI_2).to_array();
+    assert_ne!(horizontal, scene.render(&[rigid], true, false, true));
+}

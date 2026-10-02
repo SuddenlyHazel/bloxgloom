@@ -55,8 +55,8 @@ thunder. Clip voices can loop and use a world position. Positional clips downmix
 to mono, use equal-power horizontal panning and inverse-distance attenuation,
 and respond to the listener's position/yaw. Volume and positional gains glide
 over 20 ms. Clip starts have a short attack, and explicit stops fade over 20 ms. Nonpositional stereo clips retain their channels. Blocks are currently
-one metre for the native distance interpretation. There is no terrain occlusion,
-room geometry or Doppler calculation.
+one metre for the native distance interpretation. Positional clips also use the
+voxel obstruction described below. Room reflections and Doppler remain future work.
 
 The final stereo-linked lookahead limiter has 128 mixer frames of latency,
 a 0.98 output ceiling and 100 ms gain recovery. Master volume applies to all
@@ -189,6 +189,84 @@ mixer. It adds live gain/pitch updates, committed stock gameplay cues, duplicate
 delivery suppression and session/entity cleanup. Procedural weather retains its
 existing native path.
 
+
+## Positional clip obstruction
+
+Packaged positional clips and entity-linked loops now react to walls between
+the source and the player's eye. A dedicated worker samples immutable snapshots
+of resident server chunks at ten times per second during steady playback, with
+an immediate refresh for new sources, for at most 32 sources
+within 32 metres. It does no terrain tracing on the window or device callback
+thread. The snapshot holds at most 512 shared chunks; missing terrain is unknown,
+without procedural fallback or an invented doorway.
+
+Transmission depends on crossed material and thickness. Solid stone/default
+hard blocks attenuate more than wood; declared wood, glass and dirt rain surfaces
+select distinct transmission coefficients. Cutout foliage and declared leaf
+surfaces remain porous. Custom rain impact resonances do not themselves define
+wall transmission. Known source/listener endpoint voxels are excluded so a sound
+anchored inside its machine does not muffle itself; an adjacent wall still counts.
+
+When a direct path meets a barrier, a bounded one-bend search looks up to three
+metres around that first barrier for an opening or edge. A longer route loses
+additional energy, and unknown waypoints cannot create openings. This is a local
+doorway approximation: it does not simulate waves, full diffraction, arbitrary
+corridors or geometry-based reverb. Obstructed gain has a 0.025 floor; high
+frequencies soften as transmission falls. Native gain and lowpass targets glide
+over approximately 100 ms independently of the clip's authored gain and pitch.
+
+Positional starts wait briefly for their initial sample, including short
+one-shots, with a 100 ms sampling deadline. Native queue pressure can delay
+admission. Out-of-range sources and stalled sampling use a
+conservative gain of 0.35 and a 2,400 Hz lowpass; an outstanding result times
+out after 200 ms and retries with a fresh generation. Unknown cells use
+conservative
+transmission and can reach the sampler's quieter floor. If the obstruction
+worker cannot start, a warning is logged and existing immediate audio playback
+continues. This failure does not prevent gameplay or require an audio device.
+
+Results are fenced against session retirement, terrain replacement/eviction,
+listener movement and source movement. Removed, replaced or expired voices
+cannot be revived by an old result. Queue pressure retains the latest obstruction
+target for retry, and edits are resampled even when source and listener stand
+still. Entity-linked sources keep their existing replica lifetime rules.
+
+This applies to positional clip voices. Native rain, wind, thunder and insects
+retain their existing shelter exposure and procedural paths; their reverb and
+thunder reflectors still use synthetic geometry. Geometry-based reverb remains
+separate work.
+
+For a listening check, place a running rain collector beside a shelter with Local
+preview Off. Compare an aligned open entrance, a closed stone wall, a wooden
+wall and a leaf canopy. Remove and replace the wall without moving, then walk
+around the entrance and turn while the loop plays. Expect smooth muffling,
+audible nearby openings and a porous canopy.
+
+The production-mixer regression renders the real collector motor through four
+terrain scenes at the same distance. Stone passes 6.2% of open-air energy, an
+offset doorway 27.6%, and leaves 88.4%. To export the comparison for listening:
+
+```sh
+BLOXGLOOM_OBSTRUCTION_WAV=target/audio-integration/obstruction.wav \
+  cargo test terrain_profiles_muffle_fixture_motor_in_production_mixer -- --nocapture
+cargo run --release -- audio-file target/audio-integration/obstruction.wav 9
+cargo test worker_throughput -- --ignored --nocapture
+```
+
+The WAV contains open air, stone wall, offset doorway and leaves, two seconds
+per scene with 250 ms gaps. On the M1 Pro development machine, the debug worker
+stress scene took 2.29 ms per 32-source job (200 jobs, all 25 rays exercised per
+source); this is worker CPU time, excluding presentation and native mixing.
+
+Verification: 65 audio-selected tests, the explicit worker throughput test,
+formatting and strict all-target/all-feature Clippy passed. The full all-feature
+game suite had 1,471 passes, seven ignored tests and one existing motion-receipt
+comparison failure; that test passed its isolated rerun. All 46 host API tests
+passed separately. The incremental release build and nine-second native-device
+playback of the exported comparison completed successfully. The full-suite
+failure is recorded in
+`target/audio-integration/obstruction-workspace-tests.log` and was outside the
+client/audio changes.
 
 ## World-space rain surfaces
 

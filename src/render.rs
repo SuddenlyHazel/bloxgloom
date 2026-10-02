@@ -3,6 +3,7 @@
 mod avatars;
 pub(crate) mod camera;
 mod character_preview;
+pub(crate) mod contact_shadow;
 pub(crate) use character_preview::CharacterPreview;
 pub(crate) mod custom;
 mod drops;
@@ -23,6 +24,7 @@ pub(crate) mod daylight;
 mod pipeline;
 pub(crate) mod post;
 mod sky;
+pub(crate) mod sun_shadow;
 mod target;
 mod visibility;
 
@@ -55,8 +57,8 @@ pub(crate) use game_ui::Intent as GameUiIntent;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
 pub use mesh::{ChunkMesh, mesh_chunk_lit, mesh_chunk_lit_with_catalog};
-pub(crate) use pipeline::create_voxel_pipeline_with_catalog;
 pub(crate) use pipeline::{create_custom_voxel_pipeline, create_voxel_pipeline};
+pub(crate) use pipeline::{create_sun_shadow_pipelines, create_voxel_pipeline_with_catalog};
 pub(crate) use sky::{create_sky_pipeline, sky_camera_data};
 pub(crate) use target::{create_target_pipeline, target_outline_vertices};
 pub(crate) use visibility::{chunk_visible, view_projection};
@@ -157,6 +159,9 @@ pub struct Renderer {
     drop_cutout_indices: wgpu::Buffer,
     drop_cutout_index_count: u32,
     avatars: avatars::AvatarRenderer,
+    contact_shadows: contact_shadow::Renderer,
+    sun_shadows: sun_shadow::SunShadows,
+    sun_pipelines: (wgpu::RenderPipeline, wgpu::RenderPipeline),
     fire: fire::FireRenderer,
     game_ui: game_ui::GameUi,
     meshes: HashMap<ChunkKey, GpuMesh>,
@@ -281,20 +286,29 @@ impl Renderer {
         let depth = create_depth(&device, config.width, config.height);
         let post = post::PostProcess::new(&device, config.width, config.height, format);
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
-        let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
+        let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
         let lod = lod::Gpu::new(&device, post::HDR_FORMAT);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
+        let contact_shadows = contact_shadow::Renderer::new(&device, &camera_buffer);
         let rain =
             fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
-        let avatars = avatars::AvatarRenderer::new(
+        let mut avatars = avatars::AvatarRenderer::new(
             &device,
             &queue,
             post::HDR_FORMAT,
             &camera_buffer,
             &catalog,
         );
+        let sun_shadows = sun_shadow::SunShadows::new(
+            &device,
+            &camera_buffer,
+            crate::config::SunShadowQuality::default(),
+        );
+        avatars.set_camera_group(sun_shadows.camera_group.clone());
+        let camera_group = sun_shadows.camera_group.clone();
+        let sun_pipelines = create_sun_shadow_pipelines(&device, &pipeline, None);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let game_ui = game_ui::GameUi::new(&window, &device, &queue, format, &catalog);
@@ -355,6 +369,9 @@ impl Renderer {
             drop_cutout_indices,
             drop_cutout_index_count: 0,
             avatars,
+            contact_shadows,
+            sun_shadows,
+            sun_pipelines,
             fire,
             game_ui,
             meshes: HashMap::new(),
@@ -384,6 +401,16 @@ impl Renderer {
     pub fn configure_post(&mut self, enabled: bool, exposure: f32, bloom_strength: f32) {
         self.post
             .configure(&self.queue, enabled, exposure, bloom_strength);
+    }
+
+    pub(crate) fn configure_sun_shadows(&mut self, quality: crate::config::SunShadowQuality) {
+        if self
+            .sun_shadows
+            .configure(&self.device, &self.camera_buffer, quality)
+        {
+            self.camera_group = self.sun_shadows.camera_group.clone();
+            self.avatars.set_camera_group(self.camera_group.clone());
+        }
     }
 
     pub(crate) fn set_world_time(&mut self, time: u64) {
@@ -448,6 +475,10 @@ impl Renderer {
         self.avatars.set_first_person(view);
     }
 
+    pub(crate) fn set_contact_shadows(&mut self, patches: &[contact_shadow::Patch]) {
+        self.contact_shadows.set(&self.queue, patches);
+    }
+
     pub(crate) fn set_avatars(&mut self, avatars: &[VisualAvatar]) {
         self.avatars.set(&self.queue, avatars);
     }
@@ -455,6 +486,13 @@ impl Renderer {
     /// Whether geometry is already available to draw while a replacement builds.
     pub fn has_chunk_mesh(&self, key: ChunkKey) -> bool {
         self.meshes.contains_key(&key)
+    }
+
+    /// Floor decals must not use newly edited geometry before its GPU upload.
+    pub(crate) fn has_current_chunk_mesh(&self, key: ChunkKey, revision: u64) -> bool {
+        self.meshes
+            .get(&key)
+            .is_some_and(|mesh| mesh.lighting_revision == revision)
     }
 
     /// Replace a pending mesh of the same chunk; a full queue returns ownership for retry.
@@ -599,6 +637,7 @@ impl Renderer {
             atmosphere,
             self.ready_near.iter().copied(),
         );
+        self.sun_shadows.update(&self.queue, camera, atmosphere);
         self.rain
             .set_mesh(&self.queue, &self.weather.vertices(camera));
         let mut stats = RenderStats {
@@ -673,6 +712,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
+        self.draw_sun_shadows(&mut encoder);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
@@ -728,6 +768,11 @@ impl Renderer {
                 stats.drawn_triangles += self.drop_index_count as usize / 3;
             }
             stats.drawn_triangles += self.avatars.draw(&mut pass);
+            // Authored materials may move cube tops or synthesize emission.
+            // A darkening decal cannot preserve those arbitrary surface terms.
+            if self.material_gpu.is_none() {
+                stats.drawn_triangles += self.contact_shadows.draw(&mut pass);
+            }
             pass.set_pipeline(&self.cutout_pipeline);
             pass.set_bind_group(0, &self.camera_group, &[]);
             pass.set_bind_group(1, &self.texture_group, &[]);

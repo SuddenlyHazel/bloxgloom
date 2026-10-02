@@ -259,7 +259,13 @@ Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Admi
 
 Run `cargo run -- lighting-preview lighting-previews` to compare a sealed cave, a lamp under default lighting, and the same lamp under bounced lighting through the production mesh and GPU shader pipeline.
 
+Terrain and actors share a restrained sky/ground hemisphere fill plus directional sun, gated by voxel sky visibility and day/night strength. Nearby terrain, cutout foliage, dropped items and animated characters now share a sun shadow map. **Settings → Graphics → Sun Shadows** selects Off, Low (1024px / 24m), Medium (2048px / 40m, default), or High (4096px / 56m). Medium/High use stable light-space PCF filtering, and all tiers fade at their range and near the horizon. Night skips the sun pass; local emissive light and the sealed-cave floor are unchanged. Lower texture limits clamp map resolution, with the map disabled below 512px. The saved key is `sun_shadow_quality=medium`.
+
+Character creases still use offline joint-local indirect occlusion, and nearby players retain bounded contact shadows on verified, connected opaque floor tops. Contact shadows skip emissive floor tops and sessions with authored material shaders. Shared sun casters use the same current joint transforms and selected hair as visible characters, including a complete world-space silhouette in first person. Authored material displacement and cutout alpha run in both passes; hooks receive the same unshadowed lighting inputs, while the final lit color receives sun attenuation and authored emission remains independent. This milestone adds no material/specular model or gameplay progression.
+
 Run `cargo run --release -- daylight-preview daylight-previews` for sunrise, noon, sunset, midnight, and sealed cave comparisons with and without a lamp.
+
+Run `cargo run --release -- calibration-preview calibration-previews` for matched 1280×800 lighting references: six fixed articulated characters covering light/dark skin, both bodies, and black/blond/pastel hair alongside stone, sand, wood, dirt, moss and leaves. It captures noon, open-sided shade, a cave entrance, a sealed cave, an emissive cave and night through production HDR/postprocessing at exposure 1.0. Camera, idle pose and materials stay fixed; player light is sampled from the scene exactly as in gameplay. The output includes capture settings and omits HUD overlays.
 
 Run `cargo run -- vegetation-preview vegetation-preview.png` to inspect trees and plant cutouts through the production GPU path without opening a window.
 

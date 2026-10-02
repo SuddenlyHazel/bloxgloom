@@ -131,6 +131,19 @@ not a guarantee for every camera, world, GPU, or extension.
 | Near + 512 LOD, voxel | 0.946 / 1.362 | 0.952 / 1.359 | 90,212,800 B | 45 of 57 resident |
 | Near + 1,024 LOD, voxel | 1.107 / 1.469 | 1.158 / 1.580 | 118,998,400 B | 61 of 73 resident |
 
+After integrating main's calibrated daylight and medium sun shadows, matching
+300-frame runs measured CPU/GPU steady p50 of 0.450/0.509 ms near-only,
+0.459/0.524 ms near-only bounced, and 1.195/1.159 ms with 512-block LOD.
+GPU timestamps now include the nearby sun caster pass, so these are a separate
+baseline from the table above. LOD geometry remains 90,212,800 bytes; cold
+summaries/reduction/meshing took 384.19/17.81/253.17 ms. See the merged
+[voxel](verification/merged-perf-voxel.txt),
+[bounced](verification/merged-perf-bounced.txt), and
+[512 LOD](verification/merged-lod-512.txt) logs and
+[integrated frame](verification/merged-near-and-lod-512.png).
+The graphics menu retains sun-shadow controls alongside distant terrain/detail;
+keyboard order matches the rows, and compact native menus support scrolling.
+
 Near setup took approximately 2.4 s, with 18,573,688 bytes of near geometry and
 88,026 near triangles. LOD setup is excluded from frame samples:
 

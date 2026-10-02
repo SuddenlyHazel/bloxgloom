@@ -652,6 +652,9 @@ impl ClientApp {
                 self.config.lod_quality =
                     (i32::from(self.config.lod_quality) + sign as i32).clamp(0, 2) as u8;
             }
+            SettingId::SunShadows => {
+                self.config.sun_shadow_quality = self.config.sun_shadow_quality.cycle(increase);
+            }
             SettingId::Sensitivity => {
                 self.config.sensitivity =
                     (self.config.sensitivity + sign * 0.00025).clamp(0.0002, 0.01);
@@ -898,6 +901,8 @@ impl ClientApp {
                 UiControl::Increase(SettingId::Bloom),
                 UiControl::Decrease(SettingId::BloomStrength),
                 UiControl::Increase(SettingId::BloomStrength),
+                UiControl::Decrease(SettingId::SunShadows),
+                UiControl::Increase(SettingId::SunShadows),
                 UiControl::Decrease(SettingId::LodHorizon),
                 UiControl::Increase(SettingId::LodHorizon),
                 UiControl::Decrease(SettingId::LodQuality),
@@ -1873,6 +1878,12 @@ impl ClientApp {
         for batch in sounds.chunks(32) {
             self.play_sounds(false, None, batch.to_vec(), now);
         }
+        self.audio.poll_obstruction(
+            self.camera().position.to_array(),
+            &self.chunks,
+            &self.catalog,
+            now,
+        );
         let mut parameter_updates = self
             .package_ui
             .as_mut()
@@ -1950,6 +1961,7 @@ impl ClientApp {
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,
                 bloom_strength: self.config.bloom_strength,
+                sun_shadow_quality: self.config.sun_shadow_quality,
                 sensitivity: self.config.sensitivity,
                 fov_degrees: self.config.fov_degrees,
                 view_distance: self.effective_view_distance,
@@ -2045,6 +2057,24 @@ impl ClientApp {
         if let Some(visual) = &self.visual_session {
             visual_fire.extend(visual.effects(now, &visual_avatars));
         }
+        let contact_shadows = crate::render::contact_shadow::patches(
+            &visual_avatars,
+            camera.position,
+            &self.catalog,
+            |x, y, z| {
+                let (key, local) = crate::world::world_to_chunk(x, y, z);
+                let block = self.chunks.get(&key)?.block(local)?;
+                if block != crate::world::AIR
+                    && !self
+                        .renderer
+                        .as_ref()?
+                        .has_current_chunk_mesh(key, *self.lighting_revisions.get(&key)?)
+                {
+                    return None;
+                }
+                Some(block)
+            },
+        );
         let first_person_eye_height = self.camera().position.y - self.position.y;
         if let Some(renderer) = &mut self.renderer {
             renderer.set_world_time(self.world_time.now());
@@ -2061,6 +2091,8 @@ impl ClientApp {
                     }),
             );
             renderer.set_avatars(&visual_avatars);
+            renderer.set_contact_shadows(&contact_shadows);
+            renderer.configure_sun_shadows(self.config.sun_shadow_quality);
             renderer.configure_post(
                 self.config.post_processing,
                 self.config.exposure,

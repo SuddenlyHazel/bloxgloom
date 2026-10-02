@@ -1,10 +1,9 @@
 //! Sample-clock mixer with bounded native voices and smoothed playback controls.
 use super::{
-    Clip, Command, Controls, Preset, SAMPLE_RATE, WeatherSound, limiter::Limiter,
-    procedural::Procedural,
+    Clip, Command, Controls, MAX_CLIP_VOICES, Preset, SAMPLE_RATE, WeatherSound, limiter::Limiter,
+    obstruction::Obstruction, procedural::Procedural,
 };
 use std::sync::Arc;
-const MAX_VOICES: usize = 32;
 struct Voice {
     clip: Arc<Clip>,
     cursor: f64,
@@ -18,6 +17,7 @@ struct Voice {
     ears: [f32; 2],
     age: u32,
     stop_remaining: Option<u32>,
+    obstruction: Obstruction,
 }
 pub(crate) struct Mixer {
     voices: Vec<Voice>,
@@ -50,7 +50,7 @@ fn gains(position: Option<[f32; 3]>, listener: [f32; 3], yaw: f32) -> [f32; 2] {
 impl Mixer {
     pub fn new(seed: u32) -> Self {
         Self {
-            voices: Vec::with_capacity(MAX_VOICES),
+            voices: Vec::with_capacity(MAX_CLIP_VOICES),
             listener: [0.0; 3],
             yaw: 0.0,
             controls: Controls::default(),
@@ -72,6 +72,35 @@ impl Mixer {
         self.controls = controls.sanitized();
     }
     pub fn command(&mut self, command: Command) -> bool {
+        let (command, initial_obstruction) = match command {
+            Command::PlayObstructed {
+                clip,
+                position,
+                gain,
+                pitch,
+                looping,
+                id,
+                transmission,
+                lowpass_hz,
+            } => {
+                if !Obstruction::valid(transmission, lowpass_hz) {
+                    self.rejected = self.rejected.saturating_add(1);
+                    return false;
+                }
+                (
+                    Command::Play {
+                        clip,
+                        position: Some(position),
+                        gain,
+                        pitch,
+                        looping,
+                        id,
+                    },
+                    Some(Obstruction::initial(transmission, lowpass_hz)),
+                )
+            }
+            other => (other, None),
+        };
         if let Command::Click(id) = command {
             return self.command(Command::Play {
                 clip: self.click.clone(),
@@ -101,7 +130,7 @@ impl Mixer {
                             .any(|x| !x.is_finite() || x.abs() > 16_000_000.0)
                     })
                     || clip.frames.is_empty()
-                    || self.voices.len() >= MAX_VOICES
+                    || self.voices.len() >= MAX_CLIP_VOICES
                     || self.voices.iter().any(|v| v.id == id)
                 {
                     false
@@ -120,6 +149,7 @@ impl Mixer {
                         ears,
                         age: 0,
                         stop_remaining: None,
+                        obstruction: initial_obstruction.unwrap_or_default(),
                     });
                     true
                 }
@@ -144,6 +174,9 @@ impl Mixer {
                     .find(|v| v.id == id && v.stop_remaining.is_none())
                 {
                     voice.position = position;
+                    if position.is_none() {
+                        voice.obstruction = Obstruction::default();
+                    }
                     voice.target_gain = gain;
                     voice.target_pitch = pitch;
                     true
@@ -151,7 +184,25 @@ impl Mixer {
                     false
                 }
             }
-            Command::Click(_) => unreachable!("handled above"),
+            Command::Obstruction {
+                id,
+                gain,
+                lowpass_hz,
+            } => {
+                if id == 0 || !Obstruction::valid(gain, lowpass_hz) {
+                    false
+                } else {
+                    if let Some(voice) = self.voices.iter_mut().find(|voice| {
+                        voice.id == id && voice.position.is_some() && voice.stop_remaining.is_none()
+                    }) {
+                        voice.obstruction.set(gain, lowpass_hz);
+                    }
+                    // A worker result can arrive after a one-shot ended or a
+                    // stop/reset. It cannot create a voice or restart playback.
+                    true
+                }
+            }
+            Command::Click(_) | Command::PlayObstructed { .. } => unreachable!("handled above"),
             Command::Stop(id) => {
                 for voice in &mut self.voices {
                     if voice.id == id {
@@ -269,6 +320,7 @@ impl Mixer {
                 if voice.position.is_some() {
                     let mono = 0.5 * (sample[0] + sample[1]);
                     sample = [mono; 2];
+                    sample = voice.obstruction.next(sample);
                 }
                 let target = gains(voice.position, self.listener, self.yaw);
                 voice.gain += (voice.target_gain - voice.gain) / (0.02 * SAMPLE_RATE as f32);
