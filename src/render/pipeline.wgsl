@@ -54,8 +54,13 @@ fn shade(input: VertexOutput, surface: BgSurface) -> vec4<f32> {
     // Hooks see the same unshadowed input in both passes, so light-dependent
     // alpha stays identical. Apply sun visibility to the final lit component;
     // authored emission remains independent of occluders.
+    let sun_visibility = bg_sun_visibility(input.world_position);
+    if sun_visibility >= 1.0 {
+        return vec4f(bg_apply_fog(surface.albedo.rgb * surface.light + surface.emission,
+            input.world_position, input.sky_level), 1.0);
+    }
     let direct = bg_direct_light(input.normal, camera.sun, input.sky_level);
-    let shadowed = max(vec3f(0.0), input.light - direct * (1.0-bg_sun_visibility(input.world_position)));
+    let shadowed = max(vec3f(0.0), input.light - direct * (1.0-sun_visibility));
     let visibility = clamp(shadowed / max(input.light, vec3f(0.00001)), vec3f(0.0), vec3f(1.0));
     return vec4f(bg_apply_fog(surface.albedo.rgb * surface.light * visibility + surface.emission,
         input.world_position, input.sky_level), 1.0);

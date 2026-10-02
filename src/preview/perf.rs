@@ -440,12 +440,13 @@ pub(super) async fn run_perf_benchmark_async(
                     }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
-                    query_set: set,
-                    beginning_of_pass_write_index: (!sun_shadows.projection.enabled)
-                        .then_some(first_query),
-                    end_of_pass_write_index: None,
-                }),
+                timestamp_writes: frame_query_set
+                    .filter(|_| !sun_shadows.projection.enabled)
+                    .map(|set| wgpu::RenderPassTimestampWrites {
+                        query_set: set,
+                        beginning_of_pass_write_index: Some(first_query),
+                        end_of_pass_write_index: None,
+                    }),
                 ..Default::default()
             });
             pass.set_pipeline(&sky_pipeline);
@@ -708,7 +709,7 @@ pub(super) async fn run_perf_benchmark_async(
         vertex_count, cutout_vertex_count, index_count, cutout_index_count, generation_ms
     );
     eprintln!(
-        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
+        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
         PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done,
     );
     Ok(())
@@ -730,3 +731,6 @@ fn print_percentiles(label: &str, values: &[f64]) {
         percentile(99),
     );
 }
+
+#[cfg(test)]
+mod tests;
