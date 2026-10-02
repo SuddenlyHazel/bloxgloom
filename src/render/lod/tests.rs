@@ -263,3 +263,41 @@ fn refinement_requests_complete_sibling_families_at_negative_boundaries() {
         }
     }
 }
+
+#[test]
+fn coordinate_and_vertical_extremes_mesh_without_wrapping() {
+    let catalog = crate::content::catalog();
+    let colors = FaceColors::new(catalog);
+    let mut tile = fixture(TileKey {
+        level: 0,
+        x: i32::MIN / 32,
+        z: i32::MIN / 32,
+    });
+    tile.columns[0] = Column {
+        coverage: vec![Interval {
+            bottom: i32::MIN,
+            top: i32::MAX,
+        }],
+        spans: vec![Span {
+            bottom: i32::MIN,
+            top: i32::MAX,
+            state: STONE,
+            sky: 0,
+            glow: 0,
+        }],
+    };
+    assert!(mesh(&tile, &[], catalog, &colors).is_err());
+    tile.columns[0].spans[0].top = i32::MIN + 1;
+    tile.columns[0].spans.push(Span {
+        bottom: i32::MAX - 1,
+        top: i32::MAX,
+        state: STONE,
+        sky: 0,
+        glow: 0,
+    });
+    let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
+    assert_eq!(mesh.indices.len(), 72);
+    assert!(mesh.vertices.iter().all(|value| value.is_finite()));
+    assert!(mesh.vertices.chunks_exact(11).any(|v| v[1] > 0.0));
+    assert!(mesh.vertices.chunks_exact(11).any(|v| v[1] < 0.0));
+}

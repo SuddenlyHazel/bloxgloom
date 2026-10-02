@@ -85,17 +85,19 @@ pub(crate) fn mesh(
                             let mut neighbor = None;
                             if strip < w {
                                 let nx = if axis == 0 {
-                                    px + if side < 0 { -1 } else { w }
+                                    px.checked_add(if side < 0 { -1 } else { w })
                                 } else {
-                                    px + strip
+                                    px.checked_add(strip)
                                 };
                                 let nz = if axis == 2 {
-                                    pz + if side < 0 { -1 } else { w }
+                                    pz.checked_add(if side < 0 { -1 } else { w })
                                 } else {
-                                    pz + strip
+                                    pz.checked_add(strip)
                                 };
                                 intervals.push((span.bottom, span.top));
-                                neighbor = find_column(tile, neighbors, nx, nz);
+                                neighbor = nx
+                                    .zip(nz)
+                                    .and_then(|(nx, nz)| find_column(tile, neighbors, nx, nz));
                                 if let Some(nc) = neighbor {
                                     if !edge {
                                         for s in &nc.spans {
@@ -139,9 +141,17 @@ pub(crate) fn mesh(
                                         ]
                                     };
                                     let size = if axis == 0 {
-                                        [0, top - bottom, strip - start]
+                                        [
+                                            0,
+                                            i64::from(top) - i64::from(bottom),
+                                            i64::from(strip - start),
+                                        ]
                                     } else {
-                                        [strip - start, top - bottom, 0]
+                                        [
+                                            i64::from(strip - start),
+                                            i64::from(top) - i64::from(bottom),
+                                            0,
+                                        ]
                                     };
                                     quad(
                                         &mut m,
@@ -187,7 +197,7 @@ pub(crate) fn mesh(
                 quad(
                     &mut m,
                     [x as i32 * w, y, z as i32 * w],
-                    [dx as i32 * w, 0, dz as i32 * w],
+                    [dx as i64 * i64::from(w), 0, dz as i64 * i64::from(w)],
                     1,
                     side,
                     colors.face(catalog, state, 1, side),
@@ -271,7 +281,7 @@ fn subtract(source: Vec<(i32, i32)>, bottom: i32, top: i32) -> Vec<(i32, i32)> {
 fn quad(
     mesh: &mut Mesh,
     p: [i32; 3],
-    size: [i32; 3],
+    size: [i64; 3],
     axis: usize,
     side: i32,
     color: [f32; 3],
@@ -285,7 +295,7 @@ fn quad(
     let v = (axis + 2) % 3;
     let base = (mesh.vertices.len() / 11) as u32;
     for (a, b) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
-        let mut pos = p;
+        let mut pos = p.map(i64::from);
         pos[u] += a * size[u];
         pos[v] += b * size[v];
         let mut n = [0.0; 3];
