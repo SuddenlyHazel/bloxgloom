@@ -7134,9 +7134,9 @@
     "semantic_hash": ""
   },
   "docs/audio/FOUNDATION.md": {
-    "mtime": 1790898984.9174478,
-    "seen": 1790899002.3782332,
-    "ast_hash": "fc819eba59e50cc2790ce9510708ed0e",
+    "mtime": 1790899614.1998966,
+    "seen": 1790899638.214182,
+    "ast_hash": "6170879b94b14204dd13073efefe1f3b",
     "semantic_hash": ""
   },
   "third-party/README.md": {
@@ -7158,15 +7158,15 @@
     "semantic_hash": ""
   },
   "src/client/weather.rs": {
-    "mtime": 1790898653.9552016,
-    "seen": 1790898857.6476212,
-    "ast_hash": "1fd0a78afc23791b23624c2a632b5cf2",
+    "mtime": 1790899523.2820163,
+    "seen": 1790899638.213471,
+    "ast_hash": "fdb3b625e207db7b97eb379cb219115a",
     "semantic_hash": ""
   },
   "src/client/weather/tests.rs": {
-    "mtime": 1790897752.2126105,
-    "seen": 1790897792.6824691,
-    "ast_hash": "1c033e924ee5a1b6175642f94878c98e",
+    "mtime": 1790899579.217648,
+    "seen": 1790899638.2134771,
+    "ast_hash": "bf67db03b18a49e18967d18346bd366b",
     "semantic_hash": ""
   },
   "src/preview/weather.rs": {
@@ -7683,6 +7683,18 @@
     "mtime": 1790898168.6094384,
     "seen": 1790898857.647624,
     "ast_hash": "80b1e2f11ff5b27896b1994947010f61",
+    "semantic_hash": ""
+  },
+  "src/client/weather/acoustics.rs": {
+    "mtime": 1790899523.272725,
+    "seen": 1790899638.213473,
+    "ast_hash": "3949b7e39e64036c71fcc206c22044e2",
+    "semantic_hash": ""
+  },
+  "src/client/weather/acoustics/tests.rs": {
+    "mtime": 1790899579.2155287,
+    "seen": 1790899638.213474,
+    "ast_hash": "4bf52f38f3cb53ee7b9af5cfc5b65601",
     "semantic_hash": ""
   }
 }
