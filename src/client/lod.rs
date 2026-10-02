@@ -77,7 +77,7 @@ impl State {
     }
     pub(super) fn accept(&mut self, session: u64, request: u64, tile: LodTile) {
         let key = tile.key;
-        if session != self.session || !self.requests.get(&key).is_some_and(|r| r.id == request) {
+        if session != self.session || self.requests.get(&key).is_none_or(|r| r.id != request) {
             return;
         }
         self.requests.remove(&key);
