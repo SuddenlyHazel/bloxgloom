@@ -105,7 +105,7 @@ impl GameUi {
         catalog: &Catalog,
     ) -> Self {
         let context = themed_context();
-        let input = egui_winit::State::new(
+        let mut input = egui_winit::State::new(
             context.clone(),
             egui::ViewportId::ROOT,
             window,
@@ -113,6 +113,8 @@ impl GameUi {
             None,
             None,
         );
+        // Focus may have arrived while the renderer was being installed.
+        let _ = input.on_window_event(window, &WindowEvent::Focused(window.has_focus()));
         let mut renderer = egui_wgpu::Renderer::new(device, format, Default::default());
         let character_preview =
             super::character_preview::CharacterPreview::new(device, queue, catalog);

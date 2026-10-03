@@ -1,4 +1,5 @@
 use super::*;
+mod ui;
 
 impl ClientApp {
     /// Declared input is queued onto the presentation worker before native
@@ -136,6 +137,17 @@ impl ClientApp {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
             return;
         }
+        // egui's input state outlives menus. Keep focus, pointer location and
+        // releases current even while gameplay owns presses and camera input.
+        let ui_state_event = ui::is_state_event(&event);
+        if ui_state_event {
+            if let WindowEvent::CursorMoved { position, .. } = &event {
+                self.cursor = (position.x as f32, position.y as f32);
+            }
+            if let Some(renderer) = &mut self.renderer {
+                renderer.game_ui_event(&event);
+            }
+        }
         // Release must clear held gameplay input even if a menu consumes the event.
         if matches!(
             event,
@@ -268,7 +280,7 @@ impl ClientApp {
                 }
                 return;
             }
-            if let Some(renderer) = &mut self.renderer {
+            if !ui_state_event && let Some(renderer) = &mut self.renderer {
                 renderer.game_ui_event(&event);
             }
             if matches!(
@@ -298,26 +310,24 @@ impl ClientApp {
                     self.set_grab(false);
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = (position.x as f32, position.y as f32);
+            WindowEvent::CursorMoved { .. }
                 if self.screen != UiScreen::Playing
                     && !(self.screen == UiScreen::Inventory
-                        && self.focused_control == Some(UiControl::InventorySearch))
-                {
-                    self.focused_control = self
-                        .ui_layout
-                        .as_ref()
-                        .and_then(|layout| {
-                            if self.screen == UiScreen::Admin && self.admin_binding_mode {
-                                layout
-                                    .binding_hit(self.cursor.0, self.cursor.1)
-                                    .or_else(|| layout.hit_test(self.cursor.0, self.cursor.1))
-                            } else {
-                                layout.hit_test(self.cursor.0, self.cursor.1)
-                            }
-                        })
-                        .filter(|control| *control != UiControl::InventorySearch);
-                }
+                        && self.focused_control == Some(UiControl::InventorySearch)) =>
+            {
+                self.focused_control = self
+                    .ui_layout
+                    .as_ref()
+                    .and_then(|layout| {
+                        if self.screen == UiScreen::Admin && self.admin_binding_mode {
+                            layout
+                                .binding_hit(self.cursor.0, self.cursor.1)
+                                .or_else(|| layout.hit_test(self.cursor.0, self.cursor.1))
+                        } else {
+                            layout.hit_test(self.cursor.0, self.cursor.1)
+                        }
+                    })
+                    .filter(|control| *control != UiControl::InventorySearch);
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.shift_down = modifiers.state().shift_key();

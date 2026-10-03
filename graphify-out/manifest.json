@@ -708,9 +708,9 @@
     "semantic_hash": ""
   },
   "src/client/events.rs": {
-    "mtime": 1791048184.8328226,
-    "seen": 1791052677.813186,
-    "ast_hash": "c38f118badcdef76ae6bccbd5e6b2f7b",
+    "mtime": 1791059622.39948,
+    "seen": 1791059684.659255,
+    "ast_hash": "58018f50bcaac499283a0526683b0e74",
     "semantic_hash": ""
   },
   "src/client/fire.rs": {
@@ -1368,9 +1368,9 @@
     "semantic_hash": ""
   },
   "src/render/game_ui.rs": {
-    "mtime": 1791052597.7918258,
-    "seen": 1791052677.8133829,
-    "ast_hash": "b1903c2c2cfd396786ad344c8267a562",
+    "mtime": 1791059622.3991673,
+    "seen": 1791059684.6595168,
+    "ast_hash": "44300ec7baaad89ca6649d6170c9a3dd",
     "semantic_hash": ""
   },
   "src/render/game_ui/hud.rs": {
@@ -10263,6 +10263,18 @@
     "mtime": 1791056850.4436703,
     "seen": 1791057623.447608,
     "ast_hash": "c03d7e7b47f4bbd49222518dd9107277",
+    "semantic_hash": ""
+  },
+  "src/client/events/ui.rs": {
+    "mtime": 1791059530.076562,
+    "seen": 1791059585.242721,
+    "ast_hash": "14b7b6af2ecfe781ad8fe110ce1b8f62",
+    "semantic_hash": ""
+  },
+  "src/client/events/ui/tests.rs": {
+    "mtime": 1791059563.056799,
+    "seen": 1791059585.242722,
+    "ast_hash": "bc344a5d088f0f79d308cc21ba15ce43",
     "semantic_hash": ""
   }
 }
