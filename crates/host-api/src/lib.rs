@@ -14,6 +14,7 @@ pub mod icon;
 pub mod inventory;
 pub mod lifecycle;
 pub mod machine;
+pub mod model;
 pub mod motion;
 pub mod player;
 pub mod players;
@@ -43,6 +44,11 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn model_asset(&mut self, _model: model::ModelAsset) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "models unsupported by this registrar".into(),
+        ))
+    }
     fn sound(&mut self, _key: String) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "sounds unsupported by this registrar".into(),

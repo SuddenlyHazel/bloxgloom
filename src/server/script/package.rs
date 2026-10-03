@@ -460,8 +460,13 @@ impl PackageSnapshot {
             }
             let mut assets = BTreeMap::new();
             for (asset, path) in &manifest.assets {
+                let limit = match manifest.asset_kinds[asset] {
+                    11 => bloxgloom_host_api::model::MAX_GLB_BYTES,
+                    12 => bloxgloom_host_api::model::MAX_CONTROLS_BYTES,
+                    _ => MAX_ASSET_BYTES,
+                };
                 let bytes = directory
-                    .read_bytes(path, MAX_ASSET_BYTES.min(MAX_TOTAL_BYTES - total_bytes))
+                    .read_bytes(path, limit.min(MAX_TOTAL_BYTES - total_bytes))
                     .map_err(|e| error(&owner, format!("asset {asset} {path}: asset bytes/file or file bytes/installation: {e}")))?;
                 total_bytes += bytes.len();
                 assets.insert(asset.clone(), bytes);
@@ -530,6 +535,12 @@ impl PackageSnapshot {
 
     /// Only the entry package's explicitly declared texture asset, never a
     /// filesystem path or another package's bytes, may back a startup texture.
+    pub(super) fn model_asset(&self, package: &str, asset: &str, kind: u32) -> Option<&[u8]> {
+        let package = self.packages.get(package)?;
+        (matches!(kind, 11 | 12) && package.manifest.asset_kinds.get(asset) == Some(&kind))
+            .then(|| package.assets.get(asset).map(Vec::as_slice))?
+    }
+
     pub(super) fn texture_asset(&self, package: &str, asset: &str) -> Option<&[u8]> {
         let package = self.packages.get(package)?;
         (package.manifest.asset_kinds.get(asset) == Some(&1))

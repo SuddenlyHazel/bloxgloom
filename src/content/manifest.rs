@@ -367,6 +367,14 @@ impl ContentManifest {
                 .register_entity_type(entity)
                 .map_err(|_| invalid("invalid mapped entity type"))?;
         }
+        for entry in self.entries.iter().filter(|entry| entry.kind == b'M') {
+            let model = local
+                .model_by_key(&entry.key)
+                .ok_or_else(|| invalid("missing model definition"))?;
+            resolved
+                .bind_model(entry.id, entry.key.clone(), model.clone())
+                .map_err(|_| invalid("invalid mapped model"))?;
+        }
         resolved.gameplay_entities = local.gameplay_entities.clone();
         for (_, mobile) in local.mobile_entities() {
             let id = resolved
@@ -430,7 +438,7 @@ impl ContentManifest {
         for entry in &self.entries {
             if !matches!(
                 entry.kind,
-                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G' | b'O' | b'Q'
+                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G' | b'O' | b'Q' | b'M'
             ) || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }

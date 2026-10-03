@@ -137,6 +137,7 @@ pub struct ClientPackage {
     pub(crate) effect_assets: BTreeMap<String, (u32, Vec<u8>)>,
     pub(crate) material_assets: BTreeMap<String, (u32, Vec<u8>)>,
     pub(crate) sound_assets: BTreeMap<String, Vec<u8>>,
+    pub(crate) model_assets: BTreeMap<String, (u32, Vec<u8>)>,
 }
 
 /// Immutable bytes and decoded view, published together only after validation.
@@ -256,6 +257,12 @@ impl ClientBundle {
         if CacheKey(Sha256::digest(bytes).into()) != expected {
             return Err(error("<client-bundle>", "SHA-256 integrity mismatch"));
         }
+        if bytes.starts_with(declarations::creature_authored::MAGIC) {
+            return declarations::creature_authored::decode(bytes, expected);
+        }
+        if bytes.starts_with(declarations::models::MAGIC) {
+            return declarations::models::decode(bytes, expected);
+        }
         if bytes.starts_with(declarations::icons::MAGIC) {
             return declarations::icons::decode(bytes, expected);
         }
@@ -374,6 +381,7 @@ impl ClientBundle {
             let mut effect_assets = BTreeMap::new();
             let mut material_assets = BTreeMap::new();
             let mut sound_assets = BTreeMap::new();
+            let mut model_assets = BTreeMap::new();
             let mut previous = String::new();
             for _ in 0..count {
                 let key = reader.identifier()?;
@@ -381,7 +389,7 @@ impl ClientBundle {
                     return Err(invalid());
                 }
                 previous.clone_from(&key);
-                let kind = reader.count(10)? as u32;
+                let kind = reader.count(12)? as u32;
                 if kind == 0 {
                     return Err(invalid());
                 }
@@ -390,6 +398,8 @@ impl ClientBundle {
                     7 => crate::render::effects::MAX_DESCRIPTOR_BYTES,
                     8 => crate::render::custom::MAX_DESCRIPTOR_BYTES,
                     9 => crate::render::custom::MAX_SHADER_BYTES,
+                    11 => bloxgloom_host_api::model::MAX_GLB_BYTES,
+                    12 => bloxgloom_host_api::model::MAX_CONTROLS_BYTES,
                     _ => MAX_ASSET_BYTES,
                 };
                 let bytes = reader
@@ -406,6 +416,8 @@ impl ClientBundle {
                     ui_assets.insert(key, (kind, bytes.to_vec()));
                 } else if kind <= 7 {
                     effect_assets.insert(key, (kind, bytes.to_vec()));
+                } else if kind >= 11 {
+                    model_assets.insert(key, (kind, bytes.to_vec()));
                 } else if kind == 10 {
                     sound_assets.insert(key, bytes.to_vec());
                 } else {
@@ -423,6 +435,7 @@ impl ClientBundle {
                     effect_assets,
                     material_assets,
                     sound_assets,
+                    model_assets,
                 },
             );
         }

@@ -10,6 +10,7 @@ mod tests;
 #[derive(Default)]
 pub(crate) struct Registration {
     sounds: Vec<String>,
+    models: Vec<bloxgloom_host_api::model::ModelAsset>,
     player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
     gameplay_observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     gameplay_entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
@@ -28,6 +29,18 @@ pub(crate) struct Registration {
     pub(crate) generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 impl Registrar for Registration {
+    fn model_asset(
+        &mut self,
+        model: bloxgloom_host_api::model::ModelAsset,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        model.validate()?;
+        if self.models.len() >= crate::content::models::MAX_MODELS {
+            return Err(RegistrationError("too many model declarations".into()));
+        }
+        self.models.push(model);
+        Ok(())
+    }
     fn sound(&mut self, key: String) -> Result<(), RegistrationError> {
         self.room()?;
         if !bloxgloom_host_api::sound::key(&key) || self.sounds.len() >= 256 {
@@ -255,6 +268,7 @@ impl Registration {
     fn room(&self) -> Result<(), RegistrationError> {
         if self.content.len()
             + self.sounds.len()
+            + self.models.len()
             + self.gameplay_entities.len()
             + self.gameplay_handlers.len()
             + self.gameplay_observers.len()
@@ -310,6 +324,10 @@ impl Registration {
         registration
             .machines
             .sort_by(|a, b| a.entity.cmp(&b.entity));
+        registration.models.sort_by(|a, b| a.key.cmp(&b.key));
+        for model in &registration.models {
+            candidate.register_model_asset(model)?;
+        }
         for mobile in &registration.mobiles {
             candidate.register_mobile(mobile.clone())?;
         }

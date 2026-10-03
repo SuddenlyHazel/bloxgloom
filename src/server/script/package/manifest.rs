@@ -232,6 +232,8 @@ fn asset_path(kind: &str, path: &str) -> Option<u32> {
         "material" => (8, "assets/materials/", ".json"),
         "material-shader" => (9, "assets/shaders/", ".wgsl"),
         "sound" => (10, "assets/sounds/", ".wav"),
+        "model" => (11, "assets/models/", ".glb"),
+        "model-controls" => (12, "assets/models/", ".json"),
         _ => return None,
     };
     (public_path(path) && path.starts_with(directory) && path.ends_with(suffix)).then_some(tag)

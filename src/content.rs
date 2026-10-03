@@ -25,6 +25,7 @@ mod inventories;
 pub(crate) mod machines;
 mod manifest;
 mod mobile;
+pub(crate) mod models;
 pub(crate) mod moving;
 mod observers;
 mod owner_systems;
@@ -216,6 +217,8 @@ pub enum RegistrationError {
 pub struct Catalog {
     block_acoustics: HashMap<String, bloxgloom_host_api::content::Acoustics>,
     pub(crate) sounds: HashSet<String>,
+    models: std::collections::BTreeMap<u32, (String, std::sync::Arc<models::Prepared>)>,
+    model_keys: HashMap<String, u32>,
     player_appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_selection: Option<player::Selection>,
     player_rules: bloxgloom_host_api::player::PlayerRules,
@@ -283,6 +286,8 @@ impl Catalog {
     pub fn new() -> Self {
         Self {
             block_acoustics: Default::default(),
+            models: Default::default(),
+            model_keys: Default::default(),
             sounds: [
                 "bloxgloom:break",
                 "bloxgloom:place",
@@ -793,6 +798,11 @@ impl Catalog {
     /// Stable save identities, including schema and compiled behavior in each fingerprint.
     pub fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
         let mut entries = self.composition.identities();
+        entries.extend(
+            self.models
+                .iter()
+                .map(|(id, (key, model))| (b'M', *id, key.as_str(), model.fingerprint)),
+        );
         entries.extend(
             self.client_metadata
                 .identities

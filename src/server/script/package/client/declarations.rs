@@ -10,8 +10,10 @@ pub(super) mod anchored;
 mod appearance;
 mod components;
 mod creature;
+pub(super) mod creature_authored;
 pub(super) mod icons;
 mod machine;
+pub(super) mod models;
 pub(super) mod moving;
 mod runtime;
 mod states;
@@ -56,6 +58,7 @@ pub(super) struct Startup {
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
     icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
+    models: Vec<crate::server::script::startup::models::PackageModel>,
     tags: Vec<content::Tag>,
     textures: Vec<content::Texture>,
     blocks: Vec<content::Block>,
@@ -107,7 +110,12 @@ impl ClientBundle {
         let textures = &declarations.textures;
         let blocks = &declarations.blocks;
         let storage = &declarations.storage;
-        let creatures = &declarations.creatures;
+        let creatures = declarations
+            .creatures
+            .iter()
+            .filter(|c| c.authored_model.is_none())
+            .cloned()
+            .collect::<Vec<_>>();
         let machines = &declarations.machines;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
@@ -470,7 +478,7 @@ impl ClientBundle {
                 creature::encode(
                     &mut writer,
                     name,
-                    creatures,
+                    &creatures,
                     creature_options
                         || machine_recipes
                         || machine_ports
@@ -563,7 +571,9 @@ impl ClientBundle {
         let result = anchored::wrap(result, declarations)?;
         let result = moving::wrap(result, declarations)?;
         let result = acoustics::wrap(result, declarations)?;
-        icons::wrap(result, declarations)
+        let result = icons::wrap(result, declarations)?;
+        let result = models::wrap(result, declarations)?;
+        creature_authored::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.
@@ -599,6 +609,12 @@ impl ClientBundle {
                             catalog.register_item_icon(icon.clone())?;
                         }
                         catalog.refresh_builtin_fuels()?;
+                        for model in &startup.models {
+                            catalog.register_prepared_model(
+                                model.definition.key.clone(),
+                                model.prepared.clone(),
+                            )?;
+                        }
                         for creature in &startup.creatures {
                             catalog.register_mobile(creature.clone())?;
                         }
@@ -755,6 +771,7 @@ impl Startup {
         let mut has_machine_variants = false;
         let mut startup = Self {
             icons: Vec::new(),
+            models: Vec::new(),
             appearance: None,
             player_rules: None,
             packages: Vec::new(),
