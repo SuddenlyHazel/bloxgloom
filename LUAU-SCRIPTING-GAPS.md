@@ -1163,6 +1163,10 @@ feet positions; under sustained bounded-queue overload, intermediate edges may
 coalesce while membership converges. This does not promise a continuous path
 crossing detector or exactly-once advisory notifications.
 
+Performance and DRY work on shared terrain collision, character collision and
+Rapier reuse is also [parked](PHYSICS-CONSOLIDATION.md). Migration needs an
+equivalent-workload comparison; it is not required to close the scripting gaps.
+
 Implemented contracts and runnable fixtures are in [regions/chat](docs/modding/PLAYER-WORLD.md),
 [player modifiers](docs/modding/PLAYER-MODIFIERS.md), [player models](docs/modding/PLAYER-MODELS.md),
 and [moving entities](docs/modding/MOVING-ENTITIES.md). The default fresh save folder
