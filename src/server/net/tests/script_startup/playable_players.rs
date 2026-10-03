@@ -15,13 +15,15 @@ fn open(fixture: &Fixture, name: &str) -> Box<State> {
     )
 }
 
-fn notice(peer: &mut Peer, text: &str) {
+fn notices(peer: &mut Peer, texts: &[&str]) {
+    let mut pending = texts
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
     let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let ServerMessage::PlayerNotice { text: actual, .. } = peer.read(deadline)
-            && actual == text
-        {
-            return;
+    while !pending.is_empty() {
+        if let ServerMessage::PlayerNotice { text: actual, .. } = peer.read(deadline) {
+            pending.remove(actual.as_str());
         }
     }
 }
@@ -55,21 +57,30 @@ fn shipped_region_demo_reports_both_edges_and_moderates_chat_over_tcp() {
     let catalog = state.world.catalog_arc();
     serve(state, |address| {
         let mut peer = Peer::connect(address, catalog);
-        notice(&mut peer, "Entered demo:spawn");
+        notices(&mut peer, &["Entered demo:spawn", "Entered chunk 0,5,0"]);
         peer.write(&ClientMessage::Move {
             seq: 1,
             dx: 0.6,
             dy: 0.0,
             dz: 0.0,
         });
-        notice(&mut peer, "Left demo:spawn");
+        notices(
+            &mut peer,
+            &["Left demo:spawn", "Left chunk 0,5,0; entered chunk 1,5,0"],
+        );
         peer.write(&ClientMessage::Move {
             seq: 2,
             dx: -0.6,
             dy: 0.0,
             dz: 0.0,
         });
-        notice(&mut peer, "Entered demo:spawn");
+        notices(
+            &mut peer,
+            &[
+                "Entered demo:spawn",
+                "Left chunk 1,5,0; entered chunk 0,5,0",
+            ],
+        );
         peer.write(&ClientMessage::Chat {
             sequence: 1,
             text: "hello".into(),
@@ -89,6 +100,19 @@ fn shipped_region_demo_reports_both_edges_and_moderates_chat_over_tcp() {
             if let ServerMessage::ChatRejected { text } = peer.read(deadline) {
                 assert_eq!(text, "Please keep this demo spoiler free.");
                 break;
+            }
+        }
+        thread::sleep(Duration::from_millis(450));
+        peer.write(&ClientMessage::Ping { nonce: 101 });
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match peer.read(deadline) {
+                ServerMessage::Pong { nonce: 101 } => break,
+                ServerMessage::PlayerNotice { text, .. } => assert!(
+                    !text.starts_with("Left chunk"),
+                    "stationary chunk tracker repeated: {text}"
+                ),
+                _ => {}
             }
         }
     });

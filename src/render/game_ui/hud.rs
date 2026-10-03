@@ -3,10 +3,12 @@
 use super::view::slot::{self, SlotStyle};
 use crate::{content::Catalog, ui::UiFrame};
 use egui::{Align2, Color32, FontId, Stroke, Vec2};
+#[cfg(test)]
+mod tests;
 
 pub(super) fn draw(root: &mut egui::Ui, frame: &UiFrame<'_>, catalog: &Catalog) {
     if let Some(chat) = frame.chat {
-        crate::ui::chat::draw(root, chat);
+        crate::ui::chat::draw(root, chat, frame.debug.is_some());
     }
     let viewport = root.max_rect();
     let center = viewport.center();
@@ -82,16 +84,36 @@ pub(super) fn draw(root: &mut egui::Ui, frame: &UiFrame<'_>, catalog: &Catalog) 
         );
     }
     if let Some(debug) = frame.debug {
-        let line = format!(
+        let performance = format!(
             "{:.0} FPS  /  {:.1} ms  /  {} visible  /  {} cached",
             debug.fps, debug.frame_ms, debug.visible_chunks, debug.cached_chunks
         );
-        painter.text(
-            viewport.left_top() + Vec2::new(12.0, 12.0),
-            Align2::LEFT_TOP,
-            line,
-            FontId::monospace(12.0),
-            Color32::WHITE,
+        let [x, y, z] = debug.position;
+        let (chunk, _) =
+            crate::world::world_to_chunk(x.floor() as i32, y.floor() as i32, z.floor() as i32);
+        let lines = [
+            performance,
+            format!("XYZ: {x:.1} / {y:.1} / {z:.1}"),
+            format!("Chunk: {} / {} / {}", chunk.x, chunk.y, chunk.z),
+        ];
+        let width = (lines.iter().map(String::len).max().unwrap_or(0) as f32 * 7.0 + 16.0)
+            .min(viewport.width() - 16.0);
+        painter.rect_filled(
+            egui::Rect::from_min_size(
+                viewport.left_top() + Vec2::splat(8.0),
+                Vec2::new(width, 60.0),
+            ),
+            5.0,
+            Color32::from_black_alpha(190),
         );
+        for (index, line) in lines.iter().enumerate() {
+            painter.text(
+                viewport.left_top() + Vec2::new(12.0, 12.0 + index as f32 * 18.0),
+                Align2::LEFT_TOP,
+                line,
+                FontId::monospace(12.0),
+                Color32::WHITE,
+            );
+        }
     }
 }

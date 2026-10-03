@@ -14,10 +14,7 @@ pub(super) fn session(open: bool) -> crate::client::chat::Session {
             "Explorer",
             "A long message tests readable wrapping and clipping. ".repeat(8),
         ),
-        (
-            "Hazel",
-            "The spawn region grants exactly one reward per crossing.".to_owned(),
-        ),
+        ("Hazel", "Left chunk 0,5,0; entered chunk 1,5,0.".to_owned()),
         (
             "Builder",
             "Let's test another look and a faster movement modifier.".to_owned(),

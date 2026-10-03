@@ -1,6 +1,6 @@
 //! Compact bounded transcript, painted by the native gameplay HUD.
 use crate::client::chat::Session;
-pub(crate) fn draw(root: &mut egui::Ui, chat: &Session) {
+pub(crate) fn draw(root: &mut egui::Ui, chat: &Session, debug: bool) {
     if chat.lines().is_empty() && !chat.open {
         return;
     }
@@ -11,7 +11,8 @@ pub(crate) fn draw(root: &mut egui::Ui, chat: &Session) {
     let width = (viewport.width() * 0.45)
         .clamp(230., 520.)
         .min(viewport.width() - 24.);
-    let height = (if chat.open { 220.0_f32 } else { 140.0_f32 }).min(viewport.height() - 100.);
+    let height = (if chat.open { 220.0_f32 } else { 140.0_f32 })
+        .min((viewport.height() - if debug { 164. } else { 100. }).max(20.));
     let rect = egui::Rect::from_min_size(
         viewport.left_bottom() + egui::vec2(12., -height - 88.),
         egui::vec2(width, height),
