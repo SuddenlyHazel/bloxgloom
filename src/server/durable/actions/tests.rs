@@ -32,6 +32,56 @@ use std::fs;
 use std::net::{TcpListener, TcpStream};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[test]
+fn noop_block_writes_keep_authority_fences_without_invalid_commit_deltas() {
+    let path = temp_save_dir("noop-world-publication");
+    let mut state = server_state(19, path.clone()).unwrap();
+    let stone = crate::world::STONE;
+    state.world.edit(3, 80, 0, stone).unwrap();
+    state.world.edit(35, 80, 0, stone).unwrap();
+    let noop = [(3, 80, 0, stone), (35, 80, 0, stone)];
+    let prepared = state.world.prepare_edits(&noop).unwrap();
+    assert_eq!(
+        prepared.len(),
+        2,
+        "no-op edits retain their authority fences"
+    );
+    assert!(prepared.iter().all(|edit| !edit.changed));
+    assert!(prepared_deltas(&noop, &prepared).is_empty());
+
+    // One real write in another chunk must still publish its revision, without
+    // including the unchanged chunk in the atomic world commit group.
+    let mixed = [(3, 80, 0, crate::world::SAND), (35, 80, 0, stone)];
+    let prepared = state.world.prepare_edits(&mixed).unwrap();
+    let deltas = prepared_deltas(&mixed, &prepared);
+    assert_eq!(deltas.len(), 1);
+    let delta = &deltas[0];
+    let changed = prepared.iter().find(|edit| edit.changed).unwrap();
+    assert_eq!(delta.key, changed.key);
+    assert_eq!(delta.version, changed.expected_version + 1);
+    let message =
+        crate::protocol::ServerMessage::WorldCommitPart(crate::protocol::WorldCommitPart {
+            commit_id: 1,
+            part_index: 0,
+            part_count: 1,
+            key: delta.key,
+            epoch: 1,
+            block_from: changed.expected_version,
+            block_to: delta.version,
+            entity_from: 0,
+            entity_to: 0,
+            blocks: vec![crate::protocol::BlockCellChange {
+                local: delta.local,
+                block: delta.block,
+            }],
+            entities: vec![],
+        });
+    crate::protocol::write_server_with_catalog(Vec::new(), &message, state.world.catalog())
+        .unwrap();
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
 fn temp_save_dir(label: &str) -> std::path::PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

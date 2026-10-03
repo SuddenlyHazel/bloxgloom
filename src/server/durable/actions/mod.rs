@@ -711,7 +711,13 @@ fn prepared_deltas(
         .iter()
         .filter_map(|&(x, y, z, block)| {
             let (key, local) = world_to_chunk(x, y, z);
-            let version = prepared.iter().find(|edit| edit.key == key)?.new_version;
+            // A staged set_block can already equal the authoritative value.
+            // Keep its prepared edit as a commit/read fence, but an unchanged
+            // chunk has no revision advance and must not publish block deltas.
+            let version = prepared
+                .iter()
+                .find(|edit| edit.key == key && edit.changed)?
+                .new_version;
             Some(BlockDelta {
                 key,
                 version,
