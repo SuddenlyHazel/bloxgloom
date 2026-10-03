@@ -1176,9 +1176,9 @@
     "semantic_hash": "837f3e8ac0a0fb19014a03c8d615a877"
   },
   "src/preview/egui_ui.rs": {
-    "mtime": 1791044028.085465,
-    "seen": 1791045685.748807,
-    "ast_hash": "c7ee5f8161c224498eaf4c5b2808e5c4",
+    "mtime": 1791047815.555099,
+    "seen": 1791047878.382288,
+    "ast_hash": "178d73f811f5dea269bf3ed7268bcc9b",
     "semantic_hash": ""
   },
   "src/preview/perf.rs": {
@@ -1374,9 +1374,9 @@
     "semantic_hash": ""
   },
   "src/render/game_ui/hud.rs": {
-    "mtime": 1791043973.7541502,
-    "seen": 1791045685.7489011,
-    "ast_hash": "9a1c66beb093d5cd5481006b7a212fc7",
+    "mtime": 1791047638.9248652,
+    "seen": 1791047696.8232472,
+    "ast_hash": "d8cb4665b8dfd447f0a5bd021e9db56f",
     "semantic_hash": ""
   },
   "src/render/game_ui/menus.rs": {
@@ -4704,9 +4704,9 @@
     "semantic_hash": ""
   },
   "LUAU-SCRIPTING-GAPS.md": {
-    "mtime": 1791045709.8971083,
-    "seen": 1791046971.351993,
-    "ast_hash": "45be42fcecd2d5f84651a34851061631",
+    "mtime": 1791047205.7243614,
+    "seen": 1791047696.82395,
+    "ast_hash": "ded32e7d6b59285646a478e064c1256a",
     "semantic_hash": ""
   },
   "docs/README.md": {
@@ -9480,9 +9480,9 @@
     "semantic_hash": ""
   },
   "fixtures/player-world/packages/demo/players.luau": {
-    "mtime": 1791047014.92251,
-    "seen": 1791047075.893166,
-    "ast_hash": "ff28c9862cd62e14e149ce40f65d5624",
+    "mtime": 1791047562.1918414,
+    "seen": 1791047696.822878,
+    "ast_hash": "f328ac089a459d1df27eaf82b78bccfa",
     "semantic_hash": ""
   },
   "fixtures/rigid-bodies/packages/rigid/server/body.luau": {
@@ -9540,9 +9540,9 @@
     "semantic_hash": ""
   },
   "src/preview/egui_ui/chat.rs": {
-    "mtime": 1791044214.6367745,
-    "seen": 1791045685.7488089,
-    "ast_hash": "f45fe42647305dc90e0c488304d12323",
+    "mtime": 1791047594.4325402,
+    "seen": 1791047696.823157,
+    "ast_hash": "efc634fa958054336466ad8944a365fb",
     "semantic_hash": ""
   },
   "src/protocol/chat.rs": {
@@ -9672,9 +9672,9 @@
     "semantic_hash": ""
   },
   "src/ui/chat.rs": {
-    "mtime": 1791045397.1415699,
-    "seen": 1791045685.749575,
-    "ast_hash": "0f6b83a6d193088a3d7b63ba07968479",
+    "mtime": 1791047638.925424,
+    "seen": 1791047696.823908,
+    "ast_hash": "c1754fce50ce91c69133e0a030991833",
     "semantic_hash": ""
   },
   "docs/modding/PLAYER-MODELS.md": {
@@ -9744,15 +9744,21 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/playable_players.rs": {
-    "mtime": 1791046834.9450305,
-    "seen": 1791046971.351656,
-    "ast_hash": "a2ec0b481ca56f6c037e45ad52ecfa56",
+    "mtime": 1791047620.0694225,
+    "seen": 1791047696.823627,
+    "ast_hash": "5bde80fe5dc23f1a61b82f9440010324",
     "semantic_hash": ""
   },
   "fixtures/player-world/README.md": {
-    "mtime": 1791046745.803065,
-    "seen": 1791046971.352114,
-    "ast_hash": "583aa4f3a9ed0e34871f4ab6646310d2",
+    "mtime": 1791047562.1924872,
+    "seen": 1791047696.8240662,
+    "ast_hash": "e311eebf7db903b6ce4481fbca64d8e3",
+    "semantic_hash": ""
+  },
+  "src/render/game_ui/hud/tests.rs": {
+    "mtime": 1791047594.6294472,
+    "seen": 1791047696.823248,
+    "ast_hash": "d990084aa75ee5dc9c6b31190c4b2951",
     "semantic_hash": ""
   }
 }

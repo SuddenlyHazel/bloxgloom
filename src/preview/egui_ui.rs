@@ -122,7 +122,9 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
     }
     let screens = [
         (UiScreen::Playing, "playing"),
+        (UiScreen::Playing, "playing-debug"),
         (UiScreen::Playing, "chat-open"),
+        (UiScreen::Playing, "chat-open-debug"),
         (UiScreen::Playing, "chat-closed"),
         (UiScreen::Container, "container"),
         (UiScreen::Pause, "pause"),
@@ -201,9 +203,21 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
             &package_session
         };
         let preview = preview_frame(screen_kind, None, 1.0);
-        let chat_preview = chat::session(label == "chat-open");
+        let chat_preview = chat::session(label.starts_with("chat-open"));
         let frame = UiFrame {
             chat: label.starts_with("chat-").then_some(&chat_preview),
+            debug: if label.ends_with("-debug") {
+                Some(crate::ui::UiDebug {
+                    position: [-0.1, 80.5, -16.1],
+                    fps: 60.0,
+                    frame_ms: 16.6,
+                    visible_chunks: 80,
+                    cached_chunks: 120,
+                    latency_ms: Some(24),
+                })
+            } else {
+                preview.debug
+            },
             admin_enabled: screen_kind != UiScreen::Admin || label != "admin",
             flying: label != "admin-walking",
             flying_pending: label == "admin-flight-pending",
