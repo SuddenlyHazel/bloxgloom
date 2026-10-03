@@ -47,3 +47,17 @@ the complete candidate; it does not publish earlier contributors or fallback air
 Physical VM/compiled-code reuse preserves fresh mutable authoritative attempts.
 See [farming scale](../../fixtures/farming-scale/README.md) for two named terrain
 contributors and [package composition](PACKAGE-COMPOSITION.md) for capacity.
+
+## Persisted algorithm identity
+
+`world.meta` records each contributor key, declared revision and optional frozen
+source digest. Native contributors default to no digest and must bump their
+revision when the algorithm changes. Authored contributors can implement
+`Contributor::source_identity()` with a precomputed `[u8; 32]`; the host captures
+it when installing the generator. The method must not read files.
+
+Luau contributors provide SHA-256 over their entry and all server/shared source
+in the declaring package and transitive dependencies, including relevant manifest
+contracts. Client-only code and visual assets are excluded. Changed source at an
+unchanged revision still rejects an existing world, so newly explored terrain
+cannot silently switch algorithms. See [save compatibility](SAVE-COMPATIBILITY.md).

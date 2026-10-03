@@ -5,12 +5,12 @@ contributors without a dispatcher or artificial dependency packages. The Lua
 registration signatures are unchanged. Repeated calls require distinct keys in
 the declaring package's namespace. Registrations are canonicalized before
 installation, preserving numeric catalog identity when only declaration order
-changes. Canonical catalog identity does not remove existing source-sensitive
-persistent fingerprints: changing startup/source bytes may still reject an
-existing save even when declarations describe the same catalog. Fresh saves
-remain the prerelease path for incompatible installations; save conversion
-remains excluded. Compatible manual development reload is now available;
-see [package development](PACKAGE-DEVELOPMENT.md).
+changes. Saved contracts also remain stable under ordinary behavior source edits;
+explicit schema/revision/layout and relevant dependency metadata remain fences.
+Scripted generation additionally protects its exact server/shared source closure.
+Fresh saves remain the prerelease path for incompatible installations; save
+conversion remains excluded. See [package development](PACKAGE-DEVELOPMENT.md)
+and [save compatibility](SAVE-COMPATIBILITY.md).
 
 ## Independent systems
 

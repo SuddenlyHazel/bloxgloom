@@ -1003,13 +1003,14 @@ filesystem service.
 
 World state, edits, movement, finite inventories, drops and durable scheduling
 remain server-owned. `content.map` preserves save/wire identities; generators
-also participate in `world.meta`. Several script schemas/handler identities
-fingerprint the entire frozen installation, so editing even dependency sources
-can make a save incompatible. Use a fresh save for incompatible changes; no
-world/entity migration is provided. Manual development reload keeps startup
-save identities fixed only for the running process; it does not make changed
-sources reopen an existing save after restart. Do not treat client procedural
-fallback terrain or local presentation state as authoritative.
+also participate in `world.meta`. Saved handler/schema identities use explicit
+registration contracts and the declaring package's transitive dependency metadata,
+without hashing behavior source. Ordinary code edits can reopen a save when
+those contracts remain equal. Generator identities additionally include server/shared
+source SHA-256 digests, preventing changed code from mixing old and newly generated
+terrain. Incompatible errors identify the affected key and saved/current identity;
+no world/entity migration is provided. See [save compatibility](docs/modding/SAVE-COMPATIBILITY.md).
+Client procedural fallback terrain and local presentation state are not authoritative.
 
 ## Features requiring engine work or native extensions
 

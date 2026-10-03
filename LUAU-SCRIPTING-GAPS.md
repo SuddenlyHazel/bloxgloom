@@ -12,8 +12,8 @@ mods and new game modes. This document records those gaps and their practical
 impact. Sections 1–4 record the completed runtime tools, player-services,
 dynamic UI and general anchored-entity goals. Typed client observations are also
 complete within their stated scope. VM reuse and retained advisory/client state
-are implemented in section 6; save continuity remains open. Their limitations
-and the remaining sections remain open gaps. Section 7 records the completed
+and save continuity are implemented in section 6 within declared contracts.
+Their limitations and the remaining sections remain open gaps. Section 7 records the completed
 composition/capacity scope.
 
 See [SCRIPTING.md](SCRIPTING.md) for the implemented Luau API and
@@ -796,7 +796,7 @@ retry and generation determinism. Supported client and readonly observer realms
 retain module locals, imported exports and manually resumed coroutines.
 
 The complete author contract, runnable example and measurements are in
-[VM lifetime](docs/modding/VM-LIFETIME.md). Save continuity remains a separate gap.
+[VM lifetime](docs/modding/VM-LIFETIME.md). Save continuity is implemented below.
 
 #### Implemented runtime ownership and state policy
 
@@ -874,21 +874,32 @@ locals/imports, context expiry, deterministic RNG, budget failures, realm resets
 and worker lifecycle. Final verification evidence is recorded with the runtime
 implementation rather than treating a microbenchmark speed ratio as completion.
 
-#### Save continuity remains a separate follow-up
+#### Save continuity and compatibility diagnostics implemented
 
-Content registrations freeze at startup. Compatible manual development reload
-now swaps behavior sources and client resources while the server remains live;
-script schema migration remains excluded. Several schema/handler identities fingerprint the entire frozen
-installation, so even a dependency source edit can make a save incompatible.
+Saved Luau handler/schema identities now depend on explicit schema, revision,
+layout and the declaring package's transitive dependency metadata. Ordinary
+behavior edits, helper extraction and unrelated package additions preserve these
+identities. Compatible manual reload and process restart both use this contract;
+there is no process-only identity pinning.
 
-**Impact:** developing a larger mod can require restarts and fresh test worlds
-for changes that authors would like to test against existing progress.
+Terrain contributors retain an exact SHA-256 identity of all server/shared modules
+in their package and transitive dependencies. This conservative closure protects
+dynamic imports and rejects even same-revision source changes before opening a
+save. Client-only edits remain compatible. Native generators retain explicit
+revision fencing. Save metadata is format 8; the default directory is `world-v24/`.
+Older formats require a fresh directory and remain untouched.
 
-**Save-compatibility direction:** improve compatibility diagnostics and distinguish
-behavior changes from actual persistent-schema incompatibilities where sound.
-Live reload pins those identities for the current process; it does not close
-restart compatibility. Save converters are expressly excluded during
-this prerelease; this gap does not authorize implementing them now.
+Errors name the affected content kind/key/namespace and saved ID plus old/new
+contract hashes, or the specific generator revision/source change. Content maps
+store hashes rather than individual fields, so diagnostics do not invent field
+diffs. Failed compatibility validation leaves saved files unchanged.
+
+Real nonblocking TCP restart coverage exercises changed behavior with preserved
+finite inventory, entity identity/private state, owner bytes and scheduled
+deadlines. Explicit owner/entity/action/content changes and generator source
+changes remain rejected. Authors must declare a new schema/revision when changing
+binary state interpretation; the host cannot infer semantic changes from code.
+No save converters are included. See [save compatibility](docs/modding/SAVE-COMPATIBILITY.md).
 
 Evidence: [shared invocation runner](src/server/script.rs),
 [runtime setup](src/server/script/runtime.rs),
@@ -916,10 +927,9 @@ acceptance record live in
   whole installation, including errors caught by `pcall`.
 - Startup canonicalizes blocks, items, textures, systems and contributors before
   assigning identities. Reordering declaration calls preserves numeric block,
-  item and texture assignments and ordered generation identities. Existing
-  source-sensitive owner compatibility fingerprints still change with source
-  edits; this work does not redesign those fingerprints or convert saves.
-  Existing single-registration packages remain valid.
+  item and texture assignments and ordered generation identities. Saved owner contracts now survive ordinary source edits within declared
+  schema/revision/layout and dependency metadata. Existing single-registration
+  packages remain valid; no save conversion is provided.
 - System `after` edges may reference the same package or an explicit direct
   dependency. Missing targets, foreign references, self-edges and cycles fail
   before world open, with the involved keys and cycle path.
@@ -1074,12 +1084,12 @@ with fresh resources while world, inventories and durable owners stay live.
 An older in-progress handshake is fenced into another refresh on admission.
 
 Manifest/dependency changes, registered content/model/texture changes, state
-schemas, owner seeds and generation packages/dependencies require restart.
+schemas and owner seeds require restart; changed generation server/shared
+sources require a fresh save.
 Changed client UI/audio assets and behavior sources can reload when these
 contracts remain equal. Client/session locals reset; persistent script data is
-not migrated. Existing whole-installation save fingerprints still mean source
-edits may prevent reopening that save after a process restart. Save continuity
-and compatibility diagnostics therefore remain open in section 6.
+not migrated. Compatible behavior edits now preserve saved contracts across
+process restarts, with detailed rejection diagnostics as described in section 6.
 
 See [package development](docs/modding/PACKAGE-DEVELOPMENT.md),
 [reload coordinator](src/server/reload.rs),
@@ -1095,8 +1105,7 @@ See [package development](docs/modding/PACKAGE-DEVELOPMENT.md),
 VM lifetime and retained runtime state are implemented in section 6; larger-package
 composition is implemented in section 7.
 
-Compatibility diagnostics should improve alongside those changes. Imported
-models and manual development reload are implemented. Native fire migration
+Compatibility diagnostics, imported models and manual development reload are implemented. Native fire migration
 remains deferred; save conversion remains excluded during this prerelease. Filesystem/HTTP access, raw GPU access
 and marketplace/CDN infrastructure are separate product decisions, not assumed
 requirements for closing the gaps above.

@@ -82,4 +82,4 @@ superseded proposals, foundation plans and original baseline parity audit.
 They preserve design decisions and historical results; they are not active
 implementation instructions or a current list of missing capabilities.
 
-[Package development and persistent caching](PACKAGE-DEVELOPMENT.md) describes the native manual reload command, validation and restart boundaries.
+[Package development and persistent caching](PACKAGE-DEVELOPMENT.md) describes the native manual reload command and validation. [Save compatibility](SAVE-COMPATIBILITY.md) explains behavior-only restarts, generation protection and rejection diagnostics.

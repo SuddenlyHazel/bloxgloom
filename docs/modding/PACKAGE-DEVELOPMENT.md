@@ -27,7 +27,7 @@ current code/resources active. Only one reload can be pending at a time.
 | Package identity/version, module/asset manifest or dependencies | Restart required |
 | Registered blocks/items, IDs, physics, palettes, state schema, owner plan/seeds, creature defaults | Restart required |
 | Catalog-bound PNG textures and GLB models or their controls | Restart required |
-| Terrain generator package or any declared transitive dependency source | Restart required; generation retains startup sources |
+| Terrain generator package or transitive dependency server/shared source | Fresh save required; generation retains startup sources |
 
 Successful reload switches one immutable revision at a coordinator boundary
 after accepted WAL work has applied. Each callback and all its imports retain
@@ -45,11 +45,14 @@ and terrain stay authoritative. Reconnect creates a new session/action epoch;
 client UI/module locals, session-only state and movement mode reset normally.
 An in-flight readonly callback can finish on the previous immutable revision.
 
-Reload does not convert saved schemas or fix restart compatibility. It pins
-startup save fingerprints for this running process. Several existing identities
-hash the entire installation, so changed sources can still make reopening that
-save incompatible after a full process restart. Use disposable development
-saves; save-compatibility diagnostics remain separate follow-up work.
+Compatible behavior edits also survive process restarts: saved identities depend
+on explicit registration contracts and relevant package/dependency metadata,
+without hashing ordinary source. Client-only source edits do not change terrain
+identity. Generator server/shared sources remain protected even at an unchanged
+revision, including every module in their transitive package closure. Explicit
+schema, layout, revision or content changes can still require a fresh save;
+restart alone does not make them compatible. See [save compatibility](SAVE-COMPATIBILITY.md)
+for the complete boundaries and error evidence. No save conversion is provided.
 
 ## Persistent client package cache
 

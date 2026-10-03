@@ -133,7 +133,9 @@ module returns a chunk function using chunk coordinates,
 and `set_block`. `random_at(x,y,z,salt?)` returns a deterministic sample in
 `[0,1)`; its optional integer salt is `0..4294967295` and defaults to zero.
 The host consumes the exact world seed internally. Bump the declared revision whenever its output changes;
-`world.meta` rejects incompatible restarts. Scripts run in isolated bounded attempts
+`world.meta` records the revision and a SHA-256 digest of the server/shared
+source closure, rejecting changed generation even without a revision bump.
+See [save compatibility](SAVE-COMPATIBILITY.md). Scripts run in isolated bounded attempts
 on generation workers and never write neighboring chunks directly.
 Local packages may register up to 32 semantic actions under the actions capability:
 
