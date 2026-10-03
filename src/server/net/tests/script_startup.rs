@@ -50,6 +50,8 @@ mod player;
 mod recipe_browser;
 #[path = "script_startup/reload.rs"]
 mod reload;
+#[path = "script_startup/save_compatibility.rs"]
+mod save_compatibility;
 #[path = "script_startup/showcase.rs"]
 mod showcase;
 #[path = "script_startup/sprint.rs"]
@@ -93,6 +95,10 @@ impl Fixture {
 
     fn startup(&self, catalog: Arc<Catalog>) -> io::Result<ServerStartup> {
         ServerStartup::new(catalog).with_local_packages(&self.0.join("packages"))
+    }
+
+    fn reopen(&self) {
+        drop(self.open().unwrap());
     }
 
     fn open(&self) -> io::Result<State> {

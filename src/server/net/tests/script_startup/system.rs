@@ -45,25 +45,30 @@ fn luau_owner_after_dependencies_are_resolved_before_save_creation() {
 }
 
 #[test]
-fn luau_system_legacy_identity() {
+fn luau_system_schema_identity_survives_behavior_edits() {
     let fixture = Fixture::new();
-    // Source bytes participate in the identity. Keep this historical fixture
-    // exact even though runnable fixtures now assert the expanded runtime.
-    let legacy = SOURCE.replace(
-        "assert(os.clock == nil and os.time == nil and os.date == nil and type(print) == 'function' and require == nil)",
-        "assert(os == nil and print == nil and require == nil)",
-    );
-    fixture.system(REGISTER, &legacy);
+    fixture.system(REGISTER, SOURCE);
     let state = fixture.open().unwrap();
     let manifest = crate::content::ContentManifest::from_catalog(state.world.catalog());
-    let entry = manifest
+    let expected = manifest
         .entries
         .iter()
         .find(|e| e.key == "demo:clock" && e.kind == b'Y')
-        .unwrap();
-    // Captured from the pre-neighborhood binding; no opt-in must retain the
-    // old persisted public manifest identity, not merely agree with itself.
-    assert_eq!(entry.schema_fingerprint, 11_737_664_622_596_684_975);
+        .unwrap()
+        .schema_fingerprint;
+    drop(state);
+    fixture.system(REGISTER, "return function(c) return c.data, 200000 end");
+    let state = fixture.open().unwrap();
+    let manifest = crate::content::ContentManifest::from_catalog(state.world.catalog());
+    assert_eq!(
+        manifest
+            .entries
+            .iter()
+            .find(|e| e.key == "demo:clock" && e.kind == b'Y')
+            .unwrap()
+            .schema_fingerprint,
+        expected
+    );
 }
 
 const KEY: ChunkKey = ChunkKey { x: 0, y: 5, z: 0 };
@@ -407,14 +412,14 @@ impl Fixture {
     }
 }
 
-fn value(state: &State, system: &str) -> (u64, Vec<u8>) {
+pub(super) fn value(state: &State, system: &str) -> (u64, Vec<u8>) {
     state
         .system_runtime
         .owner_value::<Vec<u8>>(&SystemId::new(system).unwrap(), OwnerKey::Chunk(KEY))
         .unwrap()
 }
 
-fn stage(
+pub(super) fn stage(
     state: &mut State,
     system: &str,
     tick: u64,
@@ -447,7 +452,7 @@ fn stage(
     Ok((wave, missing))
 }
 
-fn commit(state: &mut State, system: &str, tick: u64) {
+pub(super) fn commit(state: &mut State, system: &str, tick: u64) {
     let (wave, missing) = stage(state, system, tick).unwrap();
     assert!(missing.is_empty());
     complete_barrier(state, wave.expect("runnable script owner").barrier()).unwrap();

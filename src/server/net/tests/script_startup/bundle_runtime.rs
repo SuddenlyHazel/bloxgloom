@@ -50,7 +50,7 @@ fn mixed_runtime_catalog_joins_restarts_and_remaps_saved_identities_without_exec
     let mut manifest = ContentManifest::from_catalog(&initial.world.catalog_arc());
     // Deliberately persist a legal non-default numeric assignment before any
     // custom entity/item exists. Tests all remap paths without altering sources
-    // (which rightly changes script compatibility and rejects saved worlds).
+    // (the remap must not depend on behavior edits to select identities).
     for entry in &mut manifest.entries {
         if entry.key.starts_with("demo:") && matches!(entry.kind, b'E' | b'I' | b'G' | b'Y') {
             entry.id += 1000;

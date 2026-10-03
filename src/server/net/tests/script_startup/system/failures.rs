@@ -29,13 +29,17 @@ fn luau_system_registration_and_persisted_identity_fail_closed() {
 
     fixture.package("helper", "", "return function(_) end");
     fixture.system(REGISTER, SOURCE);
-    drop(fixture.open().unwrap());
+    fixture.reopen();
     let files = ["content.map", "server.wal"];
     let original = files.map(|file| std::fs::read(fixture.0.join("save").join(file)).unwrap());
+    fixture.system(REGISTER, &format!("{SOURCE}\n-- changed module"));
+    fixture.reopen();
     for (register, source) in [
-        (REGISTER.to_owned(), format!("{SOURCE}\n-- changed module")),
-        (REGISTER.replace("schema=1", "schema=2"), SOURCE.into()),
-        (REGISTER.replace("revision=1", "revision=2"), SOURCE.into()),
+        (REGISTER.replace("schema=1", "schema=2"), SOURCE.to_owned()),
+        (
+            REGISTER.replace("revision=1", "revision=2"),
+            SOURCE.to_owned(),
+        ),
     ] {
         fixture.system(&register, &source);
         assert!(
@@ -55,9 +59,9 @@ fn luau_system_registration_and_persisted_identity_fail_closed() {
         "",
         "return function(_) end -- changed installation",
     );
-    assert!(fixture.open().is_err());
+    fixture.reopen();
     fixture.package("helper", "", "return function(_) end");
-    drop(fixture.open().unwrap());
+    fixture.reopen();
 }
 
 #[test]

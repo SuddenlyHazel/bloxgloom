@@ -327,7 +327,7 @@ fn luau_action_loopback_rollbacks_exact_transfer_receipts_and_restart() {
 }
 
 #[test]
-fn luau_action_registration_and_persisted_source_identity_fail_closed() {
+fn luau_action_registration_and_explicit_revision_fail_closed() {
     let fixture = Fixture::new();
     for register in [
         REGISTER.replace("demo:shift", "other:shift"),
@@ -349,34 +349,28 @@ fn luau_action_registration_and_persisted_source_identity_fail_closed() {
     assert!(!fixture.0.join("save").exists());
     fixture.package("helper", "", "return function(_) end");
     fixture.action(REGISTER, SOURCE);
-    drop(fixture.open().unwrap());
+    fixture.reopen();
     let manifest = std::fs::read(fixture.0.join("save/content.map")).unwrap();
-    for (register, source) in [
-        (REGISTER.to_owned(), format!("{SOURCE}\n-- changed source")),
-        (REGISTER.replace(", 1,", ", 2,"), SOURCE.to_owned()),
-    ] {
-        fixture.action(&register, &source);
-        assert!(
-            fixture.open().is_err(),
-            "changed handler identity reopened save"
-        );
-        assert_eq!(
-            std::fs::read(fixture.0.join("save/content.map")).unwrap(),
-            manifest
-        );
-    }
-    fixture.action(REGISTER, SOURCE);
-    fixture.package("helper", "", "return function(_) end -- changed helper");
+    fixture.action(REGISTER, &format!("{SOURCE}\n-- changed source"));
+    fixture.reopen();
+    fixture.action(&REGISTER.replace(", 1,", ", 2,"), SOURCE);
     assert!(
         fixture.open().is_err(),
-        "installation source identity ignored"
+        "changed declared action revision reopened save"
     );
     assert_eq!(
         std::fs::read(fixture.0.join("save/content.map")).unwrap(),
         manifest
     );
+    fixture.action(REGISTER, SOURCE);
+    fixture.package("helper", "", "return function(_) end -- changed helper");
+    fixture.reopen();
+    assert_eq!(
+        std::fs::read(fixture.0.join("save/content.map")).unwrap(),
+        manifest
+    );
     fixture.package("helper", "", "return function(_) end");
-    drop(fixture.open().unwrap());
+    fixture.reopen();
 }
 
 #[test]

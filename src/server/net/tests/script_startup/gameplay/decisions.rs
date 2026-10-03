@@ -386,13 +386,14 @@ fn luau_decisions_registration_ownership_bounds_and_source_identity() {
     assert!(fixture.open().is_err(), "undeclared capability accepted");
     assert!(!fixture.0.join("save").exists());
     fixture.action(BLOCK_REGISTER, BLOCK_SOURCE);
-    drop(fixture.open().unwrap());
+    fixture.reopen();
     let manifest = std::fs::read(fixture.0.join("save/content.map")).unwrap();
+    fixture.action(
+        BLOCK_REGISTER,
+        &format!("{BLOCK_SOURCE}\n-- changed decision"),
+    );
+    fixture.reopen();
     for (register, source) in [
-        (
-            BLOCK_REGISTER.to_owned(),
-            format!("{BLOCK_SOURCE}\n-- changed decision"),
-        ),
         (
             BLOCK_REGISTER.replace("removed',1", "removed',2"),
             BLOCK_SOURCE.to_owned(),
@@ -413,5 +414,5 @@ fn luau_decisions_registration_ownership_bounds_and_source_identity() {
         );
     }
     fixture.action(BLOCK_REGISTER, BLOCK_SOURCE);
-    drop(fixture.open().unwrap());
+    fixture.reopen();
 }

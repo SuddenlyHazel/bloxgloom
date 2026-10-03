@@ -50,9 +50,9 @@ fn negotiated_visuals_parameters_switch_and_restart_without_global_state() {
     let fingerprint = state.world.catalog().fingerprint();
     let other_state = open_boxed(&other);
     let other_fingerprint = other_state.world.catalog().fingerprint();
-    // Creature schema identity includes the package source identity. A server
-    // with different startup source must negotiate its own exact catalog.
-    assert_ne!(fingerprint, other_fingerprint);
+    // Client source changes select a different bundle, while persistent
+    // creature contracts and the negotiated catalog remain compatible.
+    assert_eq!(fingerprint, other_fingerprint);
     let mut identity = None;
     gameplay::serve(state, |first| {
         gameplay::serve(other_state, |second| {

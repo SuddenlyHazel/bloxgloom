@@ -369,15 +369,19 @@ fn luau_entity_schema_declaration_validation_and_identity() {
     assert!(fixture.open().is_err(), "undeclared capability accepted");
     assert!(!fixture.0.join("save").exists());
 
-    // No handler exists: entity schema identity itself must fence source changes.
+    // Suspended entities retain their explicit schema across behavior-only edits.
     fixture.action(&suspended, SOURCE);
-    drop(fixture.open().unwrap());
+    fixture.reopen();
     let manifest = std::fs::read(fixture.0.join("save/content.map")).unwrap();
+    fixture.action(&suspended, &format!("{SOURCE}\n-- changed source"));
+    fixture.reopen();
     for (register, source) in [
-        (suspended.clone(), format!("{SOURCE}\n-- changed source")),
-        (suspended.replace("marker',1", "marker',2"), SOURCE.into()),
-        (suspended.replace(",3,1,", ",4,1,"), SOURCE.into()),
-        (suspended.replace(",3,1,", ",3,0,"), SOURCE.into()),
+        (
+            suspended.replace("marker',1", "marker',2"),
+            SOURCE.to_owned(),
+        ),
+        (suspended.replace(",3,1,", ",4,1,"), SOURCE.to_owned()),
+        (suspended.replace(",3,1,", ",3,0,"), SOURCE.to_owned()),
     ] {
         fixture.action(&register, &source);
         assert!(fixture.open().is_err(), "changed schema reopened save");
@@ -387,7 +391,7 @@ fn luau_entity_schema_declaration_validation_and_identity() {
         );
     }
     fixture.action(&suspended, SOURCE);
-    drop(fixture.open().unwrap());
+    fixture.reopen();
 }
 
 #[test]

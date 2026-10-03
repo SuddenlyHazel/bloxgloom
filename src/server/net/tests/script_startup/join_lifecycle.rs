@@ -148,9 +148,8 @@ fn dormant_client_and_shared_syntax_errors_fail_before_play_and_allow_retry() {
             "return function() error('dormant module must not execute') end",
         )
         .unwrap();
-        // Changed source changes save schema identity; this prerelease uses a
-        // fresh save rather than converting the failed candidate's world.
-        std::fs::remove_dir_all(fixture.0.join("save")).unwrap();
+        // Repair client behavior and retry the existing save without changing
+        // its declared persistent contracts.
         gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
             crate::client::connect_bundle_probe(&address.to_string(), 0xface).unwrap();
         });

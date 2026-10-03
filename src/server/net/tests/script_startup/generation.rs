@@ -7,7 +7,7 @@ const REGISTER: &str =
 const MARKER: &str = "local calls = 0; return function(c) calls += 1; assert(calls == 1); c.set_block(0,0,0,'bloxgloom:glowstone') end";
 
 impl Fixture {
-    fn generator(&self, register: &str, source: &str) {
+    pub(super) fn generator(&self, register: &str, source: &str) {
         self.package("demo", GENERATION, register);
         std::fs::write(self.0.join("packages/demo/terrain.luau"), source).unwrap();
     }
@@ -223,6 +223,7 @@ fn luau_generation_rejects_bad_registration_and_caught_output_errors() {
             "memory",
         ),
     ] {
+        let fixture = Fixture::new();
         fixture.generator(REGISTER, source);
         let mut world = fixture.generation_world().unwrap();
         let key = ChunkKey { x: -1, y: 8, z: -1 };
