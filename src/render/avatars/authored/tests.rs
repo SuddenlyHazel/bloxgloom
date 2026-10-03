@@ -9,6 +9,14 @@ fn model() -> Model {
     )
     .unwrap()
 }
+#[test]
+fn authored_front_follows_authoritative_game_heading() {
+    for (yaw, expected) in [(0.0, Vec3::Z), (std::f32::consts::FRAC_PI_2, Vec3::X)] {
+        // Match WGSL's x*c+z*s, z*c-x*s rotation around Y.
+        let front = glam::Mat4::from_rotation_y(model_yaw(yaw)).transform_vector3(Vec3::NEG_Z);
+        assert!(front.abs_diff_eq(expected, 1e-5));
+    }
+}
 fn playback(model: &Model, name: &str) -> animation::Playback {
     animation::Playback {
         clip: Some(model.clips.iter().position(|c| c.name == name).unwrap()),
@@ -151,8 +159,10 @@ pub(in crate::render::avatars) fn avatar(
     x: f32,
     color: [u8; 3],
 ) -> VisualAvatar {
-    let mut visual = VisualState::default();
-    visual.transition_s = 0.0;
+    let mut visual = VisualState {
+        transition_s: 0.0,
+        ..VisualState::default()
+    };
     visual.tints[0] = Some(bloxgloom_host_api::entity::Tint {
         rgb: color,
         mode: TintMode::Replace,
@@ -192,6 +202,14 @@ fn gpu_packaged_creatures_share_asset_but_keep_independent_looks_and_authored_cl
         super::super::tests::render_avatars(&device, &queue, &catalog, a, None)
     };
     let original = render(&avatars);
+    assert!(
+        original
+            .chunks_exact(4)
+            .filter(|p| p[1] > 10 && p[1] > p[0].saturating_mul(2) && p[1] > p[2].saturating_mul(2))
+            .count()
+            >= 2,
+        "yaw-zero GLB creatures must show their green iris geometry toward game +Z"
+    );
     let mut multiplied = avatars;
     multiplied[0].model_pose.as_mut().unwrap().tints[0]
         .as_mut()
@@ -326,5 +344,22 @@ fn authored_palette_admission_is_bounded_and_completed_clips_do_not_restart() {
     assert_eq!(
         renderer.actors[&0].completed, None,
         "explicit restart identity must retrigger the same clip"
+    );
+    actor
+        .model_pose
+        .as_mut()
+        .unwrap()
+        .playback
+        .as_mut()
+        .unwrap()
+        .clip = u16::MAX;
+    renderer.set_at(&queue, &[actor], 0.1);
+    assert!(
+        renderer.actors[&0]
+            .animator
+            .matrices
+            .iter()
+            .all(|m| m.is_finite()),
+        "invalid public clip indices must fall back without indexing outside the shared asset"
     );
 }

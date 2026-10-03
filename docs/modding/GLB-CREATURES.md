@@ -54,6 +54,11 @@ host.register_creature {
 creature scales multiply. The separate `body` defines collision and reach;
 animation never changes physics. Cuboid declarations continue to work.
 
+Author GLB creatures facing **-Z**, with **+Y** up. Creature rendering applies
+one 180° yaw correction to map that front to game **+Z** at yaw zero and **+X**
+at yaw π/2. The same correction applies to sun casters. Keep it out of exported
+animation tracks and scripts.
+
 Asset keys belong to the declaring package. Frozen manifest identities include
 exact GLB/controls bytes and scale; creature bindings also affect compatibility.
 Clients download verified bytes through the existing package path and never run
@@ -83,7 +88,7 @@ Overrides persist and replicate. `c.visual` provides a readonly summary of the
 current explicit clip, speed and looping selection.
 
 Speed defaults to 1 (0–8), crossfade to 200 ms (0–5000), and looping to the controls
-JSON, or true when absent. Selecting the same clip/speed/loop choice preserves
+JSON, or false when absent. Locomotion mappings loop automatically. Selecting the same clip/speed/loop choice preserves
 phase; `restart = true` retriggers it. Stopping or completing a nonloop clip
 returns visually to idle/walk/run from presented grounded movement. Interrupted
 fades start from the current pose. Playback uses committed server ticks so joining

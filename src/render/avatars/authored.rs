@@ -74,6 +74,11 @@ fn look(model: &Model, visual: &VisualState) -> Look {
 fn same_look(a: &VisualState, b: &VisualState) -> bool {
     a.variants == b.variants && a.layers == b.layers && a.tints == b.tints
 }
+fn model_yaw(game_yaw: f32) -> f32 {
+    // GLB authoring faces -Z; authoritative yaw zero faces +Z. Apply this
+    // basis correction once to both color and shadow instances.
+    game_yaw + std::f32::consts::PI
+}
 impl Renderer {
     pub fn new(
         device: &wgpu::Device,
@@ -202,7 +207,14 @@ impl Renderer {
                     looping: true,
                     fade_s: visual.transition_s,
                 };
-                if let Some(playback) = visual.playback {
+                if let Some(playback) = visual.playback.filter(|p| {
+                    (p.clip as usize) < model.clips.len()
+                        && p.speed.is_finite()
+                        && (0.0..=8.0).contains(&p.speed)
+                        && p.crossfade_s.is_finite()
+                        && (0.0..=5.0).contains(&p.crossfade_s)
+                        && p.started_tick <= visual.sample_tick
+                }) {
                     let identity = (playback.started_tick, playback.sequence);
                     if actor.visual.playback != visual.playback {
                         actor.completed = None;
@@ -252,7 +264,7 @@ impl Renderer {
                     ));
                 self.instances.push(gpu::Instance {
                     origin: avatar.position.to_array(),
-                    yaw_scale: [avatar.pose[0], binding.scale],
+                    yaw_scale: [model_yaw(avatar.pose[0]), binding.scale],
                     light_levels: avatar.light_levels,
                     bounce: avatar.bounce,
                     glow_bounce: avatar.glow_bounce,

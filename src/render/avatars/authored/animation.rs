@@ -38,7 +38,8 @@ impl Animator {
         self.current.is_some_and(|p| {
             !p.looping
                 && p.clip
-                    .is_some_and(|index| self.time >= model.clips[index].duration)
+                    .and_then(|index| model.clips.get(index))
+                    .is_some_and(|clip| self.time >= clip.duration)
         })
     }
     pub fn step(&mut self, model: &Model, target: Playback, dt: f32) {
