@@ -150,3 +150,37 @@ start/completion cycle. Client/mixer tests cover live controls, entity following
 voice limits, cleanup, stop retries under queue pressure and whole-session batch
 deduplication. Decoder/protocol tests reject malformed/truncated data and validate
 wire lengths and exact entity IDs.
+
+## Mixer verification — October 3, 2026
+
+The complete workspace suite passed 1,816 tests (1,756 game and 60 host API),
+with 12 opt-in tests skipped. Format checking, strict all-target/all-feature
+Clippy and the release build passed. Real nonblocking TCP tests exercise explicit
+Music routing, committed publication, receipt replay suppression and a caught
+unknown-bus operation rolling back both sound and world edits. Client tests retain
+routing through delayed obstruction admission; mixer/output tests verify bus
+isolation and restoration of local mix settings after reset under queue pressure.
+DSP tests verify stereo balance, attack/release timing, soft-knee continuity,
+transparent bypass, makeup-aware mute gates and envelope reset.
+
+Native expanded mixer previews were generated and inspected at 1280×720 and
+640×360. Clipboard export and reset are exercised by the real egui controls.
+Subjective audio balance remains a listening check using the timer fixture.
+
+An optimized probe compiled the actual bus DSP modules on M1 Pro: bypass cost
+16.28 ns/stereo frame, enabled quiet buses 19.56 ns/frame and all five compressors
+actively processing 103.96 ns/frame. The latter is 0.106 ms per 1,024 frames,
+about 0.458% of one core at 44.1 kHz. These figures cover bus DSP only, excluding
+procedural synthesis, voice mixing, obstruction, resampling and device output.
+The ignored `sample_processing_cost_probe` test repeats the measurement.
+No renderer/mesh implementation changed, so renderer performance was not used
+as evidence for audio cost. The AST code graph was refreshed.
+
+```sh
+cargo test --workspace -- --test-threads=4
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo build --release
+cargo run --release -- egui-preview /tmp/bloxgloom-audio-mixer-ui
+cargo test --release audio::buses::tests::sample_processing_cost_probe -- --ignored --nocapture
+```

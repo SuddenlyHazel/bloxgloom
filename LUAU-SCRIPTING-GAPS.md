@@ -530,7 +530,10 @@ and cleanup on removal. Dedicated process-machine/creature callback signatures,
 geometry-derived reverb, streamed music and device recovery are
 separate remaining work. Fixed native mixer buses and stereo-linked compression
 are implemented, with package routing and local listener controls; see the
-[audio mixer contract](docs/audio/SCRIPTING.md). No save conversion or imported models are introduced.
+[audio mixer contract](docs/audio/SCRIPTING.md). The mixer extension passed
+1,816 workspace tests (1,756 game and 60 host API), strict Clippy, format checking,
+a release build and inspected compact/full native UI previews. Compression remains
+bypassed by default; room reverb, streaming and device recovery stay open. No save conversion or imported models are introduced.
 
 #### Implemented extension: weather and acoustic authoring
 
