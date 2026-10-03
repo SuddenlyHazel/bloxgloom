@@ -1,0 +1,12 @@
+format 2
+package sprout
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:mobile_entities/v1
+module server main server/main.luau
+module server creature server/creature.luau
+module client client_startup client/client_startup.luau
+module client visuals client/visuals.luau
+asset model sprout assets/models/sprout.glb
+asset model-controls looks assets/models/looks.json

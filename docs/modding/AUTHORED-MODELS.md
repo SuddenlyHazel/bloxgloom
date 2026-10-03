@@ -12,10 +12,9 @@ all authored animation targets survive. Public body/hair choices and colors rema
 server-authoritative and persist under stable profile IDs. The current export has
 one eye design and no mouth variants, so no alternate face selectors appear.
 
-Generic creature model registration through Luau, arbitrary runtime model packages
-and additional appearance controls still require catalog/network integration. The
-builtin installation uses a fixed checked-in GLB, recipe v3 and world-v23; it does
-not expose filesystem paths or arbitrary geometry over the wire.
+[Packaged GLB creatures](GLB-CREATURES.md) now expose startup registration through
+Luau, verified model delivery, named appearance controls and clip playback.
+The builtin player still uses its fixed checked-in GLB, recipe v3 and world-v23.
 
 ## Blockbench authoring
 

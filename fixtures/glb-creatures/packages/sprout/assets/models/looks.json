@@ -1,0 +1,18 @@
+{
+  "variants": [{
+    "name": "eyes", "default": "classic",
+    "options": [
+      {"name": "classic", "nodes": ["eyes_classic"]},
+      {"name": "sleepy", "nodes": ["eyes_sleepy"]}
+    ]
+  }],
+  "layers": [
+    {"name": "mouth", "nodes": ["mouth"], "visible": true},
+    {"name": "hat", "nodes": ["hat"], "visible": false}
+  ],
+  "tints": [
+    {"name": "body", "materials": ["body"], "color": {"rgb": [120, 190, 225], "mode": "multiply"}},
+    {"name": "iris", "materials": ["eye"], "color": {"rgb": [100, 220, 120], "mode": "replace"}}
+  ],
+  "loops": {"idle": true, "bounce": true, "nod": false}
+}

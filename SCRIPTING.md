@@ -570,6 +570,12 @@ to an empty binary string.
 - `model` contains 1–16 colored cuboids with three-component `min`, `max`
   coordinates in −4–4 and linear RGB `color` in 0–1. Optional part `motion` is
   `body` (default), `left_foot`, or `right_foot`.
+- Alternatively, `model` names a previously registered package GLB, or is
+  `{key,scale?,idle?,walk?,run?}`. `host.register_model {key,asset,controls?,scale?}`
+  requires declared `model`/`model-controls` assets and content/v1. GLB callbacks
+  expose `play_animation`, `stop_animation`, `set_variant`, `set_layer` and
+  `set_tint`; see [packaged GLB creatures](docs/modding/GLB-CREATURES.md) for the
+  verified delivery, bounded options, persistence and blending contract.
 - Optional `animation` fields are `stride_rate` (0–40), `stride_amplitude`
   (0–3), `idle_rate` (0–20), `idle_bob` (0–0.1), `walk_bob` (0–0.2),
   `fall_stretch` and `landing_squash` (0–0.5). Omitted fields keep stock defaults.
@@ -996,7 +1002,7 @@ anchored behavior is available through `register_anchored`; storage and machines
 retain their specialized inventory and recipe contracts.
 
 There is no bound API for arbitrary block meshes, partial collision shapes,
-translucent/liquid physics, imported models, custom player models, per-stack
+translucent/liquid physics, custom player model registration, per-stack
 render callbacks, arbitrary renderer/GPU access, direct network messages,
 filesystem/HTTP access, unrestricted world/player administration, runtime catalog
 mutation, script state migration, or hot reload. Client replicas offer bounded

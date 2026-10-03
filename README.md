@@ -2,6 +2,9 @@
 
 Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedural, editable world; the desktop client renders streamed chunks with `wgpu` and uses `winit` for input.
 
+Content packs can now use [native GLB creatures](docs/modding/GLB-CREATURES.md)
+with embedded textures, baked animations, and replicated appearance controls.
+
 The current client/server execution paths are documented in the
 [architecture diagrams below](#current-execution-architecture).
 

@@ -32,6 +32,8 @@ mod farming;
 mod gameplay;
 #[path = "script_startup/generation.rs"]
 mod generation;
+#[path = "script_startup/glb_creature.rs"]
+mod glb_creature;
 #[path = "script_startup/icons.rs"]
 mod icons;
 #[path = "script_startup/join_lifecycle.rs"]

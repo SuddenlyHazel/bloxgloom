@@ -78,6 +78,8 @@ export type BloxItemVisualCallback = (BloxItemVisualInput) -> BloxItemVisual
 --- Startup registration services. Definitions are frozen before gameplay; methods use dot calls.
 --- Registration methods expire when startup returns; never retain this host.
 export type BloxStartupHost = {
+    --- Eight/package; self-contained GLB and optional JSON controls declared in package.txt.
+    register_model: (declaration: BloxModelDeclaration) -> (),
     --- At most 256/package; encoded and decoded asset limits remain independent.
     register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
     --- At most 256/package; each block also consumes one of 512 total item slots.
@@ -152,7 +154,13 @@ export type BloxStorageOptions = {
     groups: {{label: string, count: number}}?,
 }
 
---- Ground creature declaration. Bodies and model cuboids are host validated; no imported models.
+export type BloxModelDeclaration = {
+    key: string, asset: string, controls: string?, scale: number?,
+}
+export type BloxAuthoredCreatureModel = {
+    key: string, scale: number?, idle: string?, walk: string?, run: string?,
+}
+--- Ground creature declaration. Model registration precedes the creature; collision uses body.
 export type BloxCreatureDeclaration = {
     key: string, module: string, schema: number, revision: number,
     max_state_bytes: number, initial_state: string?, interval: number,
@@ -163,7 +171,7 @@ export type BloxCreatureDeclaration = {
         stride_rate: number?, stride_amplitude: number?, idle_rate: number?,
         idle_bob: number?, walk_bob: number?, fall_stretch: number?, landing_squash: number?,
     }?,
-    model: {{min: BloxTriple, max: BloxTriple, color: BloxTriple,
+    model: string | BloxAuthoredCreatureModel | {{min: BloxTriple, max: BloxTriple, color: BloxTriple,
         motion: ("body" | "left_foot" | "right_foot")?}},
 }
 
@@ -785,7 +793,17 @@ export type BloxReplicaCommand =
         r: number, g: number, b: number, size: number?, lifetime_ms: number? }
 
 --- Creature callback input. Tick services read captured terrain; interaction requests carry binary bytes.
-export type BloxCreatureContext = (BloxTagQueries & BloxEnvironmentQueries & {
+export type BloxCreatureVisualControls = {
+    --- Present only for a registered GLB creature. Invalid calls abort the whole callback.
+    play_animation: (options: {clip: string, speed: number?, looping: boolean?, crossfade_ms: number?, restart: boolean?}) -> (),
+    stop_animation: (crossfade_ms: number?) -> (),
+    set_variant: (group: string, option: string) -> (),
+    set_layer: (name: string, visible: boolean) -> (),
+    --- RGB bytes are 0..255. Multiply preserves painted shading; replace substitutes texture RGB.
+    set_tint: (name: string, color: {rgb: {number}, mode: ("multiply" | "replace")?}) -> (),
+    visual: {clip: string?, speed: number?, looping: boolean?},
+}
+export type BloxCreatureContext = BloxCreatureVisualControls & ((BloxTagQueries & BloxEnvironmentQueries & {
     event: "tick",
     data: string,
     id: BloxEntityId,
@@ -801,7 +819,7 @@ export type BloxCreatureContext = (BloxTagQueries & BloxEnvironmentQueries & {
     event: "interact",
     data: string,
     request: string,
-}
+})
 --- Public neighbour snapshot. No private state or authority to mutate the neighbour.
 export type BloxCreatureNeighbour = {
     id: BloxEntityId,

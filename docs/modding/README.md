@@ -4,8 +4,8 @@
 implementation are done. The
 [Phase 8 acceptance record](PHASE-8-ACCEPTANCE.md) contains the production parity
 audit and integrated verification evidence. [SCRIPTING.md](../../SCRIPTING.md)
-is the implemented Luau API inventory. Native fire migration, imported custom
-models and live hot reload remain deferred; the native Rust extension API has
+is the implemented Luau API inventory. Native fire migration, custom player
+model registration and live hot reload remain deferred; the native Rust extension API has
 additional interfaces that are not Luau bindings.
 [Current Luau gaps](../../LUAU-SCRIPTING-GAPS.md) records the limitations and their
 impact on larger mods.
@@ -16,8 +16,9 @@ impact on larger mods.
 - [Commands](COMMANDS.md): bounded text/numeric arguments and canonical aliases.
 - [Custom machine processing](MACHINE-PROCESSING.md): atomic exact-stack transformations.
 - [Item visuals](item-visuals.md): bitmap icons and per-stack presentation callbacks.
-- [Native GLB models](AUTHORED-MODELS.md): authored clips, appearance layers and
-  color controls in the import/preview foundation; in-game registration follows.
+- [Native GLB models](AUTHORED-MODELS.md): authored clips, appearance layers and color controls.
+- [Packaged GLB creatures](GLB-CREATURES.md): verified model delivery, replicated
+  appearance and clip controls, with a runnable multiplayer fixture.
 
 - [Package composition](PACKAGE-COMPOSITION.md): larger content budgets, multiple
   owner systems and contributors, with the runnable

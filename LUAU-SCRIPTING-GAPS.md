@@ -454,7 +454,7 @@ Evidence: [Rust anchored contract](crates/host-api/src/anchored.rs),
 ### 5. Flexible entities, motion and presentation
 
 Script creatures support terrain-aware ground movement toward horizontal
-targets and models built from colored cuboids. Moving entities now add free
+targets, colored cuboids and packaged native GLB models. Moving entities now add free
 velocity/acceleration controls, swept collision and rigid cuboid presentation;
 the approved scope is implemented. A [native audio foundation](docs/audio/FOUNDATION.md)
 now provides device output, mixing, procedural weather synthesis, voxel-material
@@ -468,8 +468,8 @@ running, interaction and completion sounds.
 with captured script weather reads, advisory target-transition hooks, authenticated
 admin controls and readonly client observations. Packages declare block rain
 materials, bounded custom impact profiles and insect habitats. The
-[rain collector fixture](fixtures/rain-collector/README.md) combines these contracts. There are no imported
-models or custom player geometry. Client presentation offers bounded replica windows, pose/tint overrides, sparks and embers rather than a general
+[rain collector fixture](fixtures/rain-collector/README.md) combines these contracts. Custom player geometry
+registration remains deferred. Client presentation offers bounded replica windows, pose/tint overrides, sparks and embers rather than a general
 scene/entity renderer.
 
 The native player kit now has authored character styles, first/third-person
@@ -480,17 +480,19 @@ model imports, animation controllers, arbitrary motion or per-player physics.
 The [native GLB model pipeline](docs/modding/AUTHORED-MODELS.md) loads
 embedded textures and baked clips in Rust and renders them through wgpu. The
 revised builtin player is installed in gameplay and the Character menu, with
-server-authoritative appearance persistence. Generic Luau creature registration,
-arbitrary model packages and animation-controller APIs remain outside this
-builtin installation.
+server-authoritative appearance persistence. [Packaged GLB creatures](docs/modding/GLB-CREATURES.md)
+now register verified self-contained models at startup, map idle/walk/run clips,
+blend interrupted transitions, and expose named layer/variant/color controls plus
+explicit looping/nonlooping playback through Luau. Their bounded visual state is
+server-owned, durable and public; movement/collision remain authoritative.
 
-**Remaining impact:** vehicles, per-player physics, rich animation and advanced audio
+**Remaining impact:** vehicles, per-player physics, arbitrary animation graphs and advanced audio
 need additional engine services. Simple projectiles and guided flying objects
 use the moving-entity contract rather than private-state position emulation.
 
 **Closure direction:** introduce public motion/physics contracts for specific
-supported behaviors, richer public projections and audio. Imported model
-authoring remains explicitly deferred and needs a separate scope decision.
+supported behaviors, richer public projections and audio. Custom player model
+registration and live model hot reload remain separate scope decisions.
 
 Evidence: [gameplay entities](SCRIPTING.md#persistent-gameplay-entities-and-exact-handles),
 [creatures](SCRIPTING.md#mobile-creatures) and

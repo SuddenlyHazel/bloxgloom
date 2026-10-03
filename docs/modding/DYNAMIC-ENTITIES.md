@@ -8,6 +8,9 @@ The public `bloxgloom-host-api::entity` module exposes the current ground-creatu
 capabilities. Mossbun consumes the same declarations, behavior hooks, movement
 services, and presentation contract as the independent Copperling fixture.
 
+Creatures also support [packaged native GLB models](GLB-CREATURES.md) with embedded
+textures, baked animations, and server-controlled layers, variants and colors.
+
 ## Registration and identity
 
 `Registrar::mobile_entity(MobileEntity { ... })` declares a namespaced type with:
