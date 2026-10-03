@@ -8,6 +8,32 @@ pub(super) fn pair(
     buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
     alpha_cutout: bool,
 ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    pair_with_cull(
+        device,
+        shader,
+        layout,
+        format,
+        buffers,
+        (
+            alpha_cutout,
+            if alpha_cutout {
+                None
+            } else {
+                Some(wgpu::Face::Back)
+            },
+        ),
+    )
+}
+
+pub(super) fn pair_with_cull(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    layout: &wgpu::PipelineLayout,
+    format: wgpu::TextureFormat,
+    buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
+    options: (bool, Option<wgpu::Face>),
+) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    let (alpha_cutout, cull_mode) = options;
     let targets = [Some(wgpu::ColorTargetState {
         format,
         blend: None,
@@ -28,11 +54,7 @@ pub(super) fn pair(
                 buffers,
             },
             primitive: wgpu::PrimitiveState {
-                cull_mode: if alpha_cutout {
-                    None
-                } else {
-                    Some(wgpu::Face::Back)
-                },
+                cull_mode,
                 ..Default::default()
             },
             depth_stencil: Some(if shadow {

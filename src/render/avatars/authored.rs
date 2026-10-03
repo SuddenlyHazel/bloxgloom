@@ -1,0 +1,277 @@
+//! Packaged GLB creatures share immutable CPU/GPU assets. Per-actor clocks and
+//! appearance palettes are presentation-only, bounded by nearest-first admission.
+mod animation;
+mod gpu;
+mod material;
+#[cfg(test)]
+pub(super) mod tests;
+use super::{AvatarModel, MAX_AVATARS, VisualAvatar};
+use crate::render::model_asset::{Appearance, Look, Model};
+use bloxgloom_host_api::entity::{TintMode, VisualState};
+use glam::Vec3;
+use std::{collections::HashMap, sync::Arc, time::Instant};
+struct Asset {
+    model: Arc<Model>,
+    // Keep the decoded-memory admission alive as long as GPU/CPU actors use it.
+    _prepared: Arc<crate::content::models::Prepared>,
+}
+struct Binding {
+    asset: usize,
+    scale: f32,
+    clips: [Option<usize>; 3],
+    run_speed: f32,
+}
+struct Actor {
+    asset: usize,
+    animator: animation::Animator,
+    visual: VisualState,
+    appearance: Appearance,
+    position: Vec3,
+    completed: Option<(u64, u32)>,
+    seen: u64,
+}
+pub(super) struct Renderer {
+    gpu: gpu::Gpu,
+    assets: Vec<Asset>,
+    bindings: HashMap<crate::content::EntityTypeId, Binding>,
+    actors: HashMap<u64, Actor>,
+    clock: Instant,
+    frame: u64,
+    instances: Vec<gpu::Instance>,
+    joints: Vec<[f32; 16]>,
+    parts: Vec<gpu::Part>,
+    ranges: Vec<std::ops::Range<u32>>,
+}
+fn look(model: &Model, visual: &VisualState) -> Look {
+    let mut look = Look::default();
+    for (group, selected) in model.controls.variants.iter().zip(visual.variants) {
+        if let Some(option) = group.options.get(selected as usize) {
+            look.variants
+                .insert(group.name.clone(), option.name.clone());
+        }
+    }
+    for (layer, visible) in model.controls.layers.iter().zip(visual.layers) {
+        if visible >= 0 {
+            look.layers.insert(layer.name.clone(), visible != 0);
+        }
+    }
+    for (tint, value) in model.controls.tints.iter().zip(visual.tints) {
+        if let Some(value) = value {
+            look.tints.insert(
+                tint.name.clone(),
+                crate::render::model_asset::Color {
+                    rgb: value.rgb,
+                    mode: match value.mode {
+                        TintMode::Multiply => crate::render::model_asset::TintMode::Multiply,
+                        TintMode::Replace => crate::render::model_asset::TintMode::Replace,
+                    },
+                },
+            );
+        }
+    }
+    look
+}
+fn same_look(a: &VisualState, b: &VisualState) -> bool {
+    a.variants == b.variants && a.layers == b.layers && a.tints == b.tints
+}
+impl Renderer {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        camera: &wgpu::BindGroupLayout,
+        catalog: &crate::content::Catalog,
+    ) -> Self {
+        let mut assets = Vec::<Asset>::new();
+        let mut keys = HashMap::new();
+        let mut bindings = HashMap::new();
+        for (id, definition) in catalog.mobile_entities() {
+            let Some(authored) = &definition.authored_model else {
+                continue;
+            };
+            let Some(prepared) = catalog.model_by_key(&authored.key) else {
+                continue;
+            };
+            let asset = *keys.entry(authored.key.clone()).or_insert_with(|| {
+                let index = assets.len();
+                assets.push(Asset {
+                    model: prepared.model.clone(),
+                    _prepared: prepared.clone(),
+                });
+                index
+            });
+            let clip = |name: &Option<String>| {
+                name.as_ref()
+                    .and_then(|name| prepared.model.clips.iter().position(|c| &c.name == name))
+            };
+            bindings.insert(
+                id,
+                Binding {
+                    asset,
+                    scale: prepared.scale * authored.scale,
+                    clips: [
+                        clip(&authored.idle),
+                        clip(&authored.walk),
+                        clip(&authored.run),
+                    ],
+                    run_speed: definition.body.speed * 0.75,
+                },
+            );
+        }
+        let gpu = gpu::Gpu::new(device, queue, format, camera, &assets);
+        let ranges = vec![0..0; assets.len()];
+        Self {
+            gpu,
+            assets,
+            bindings,
+            actors: HashMap::new(),
+            clock: Instant::now(),
+            frame: 0,
+            instances: Vec::new(),
+            joints: Vec::new(),
+            parts: Vec::new(),
+            ranges,
+        }
+    }
+    pub fn has_model(&self, id: crate::content::EntityTypeId) -> bool {
+        self.bindings.contains_key(&id)
+    }
+    pub fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
+        let now = Instant::now();
+        let dt = now.duration_since(self.clock).as_secs_f32().min(0.1);
+        self.clock = now;
+        self.set_at(queue, avatars, dt);
+    }
+    fn set_at(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar], dt: f32) {
+        self.frame = self.frame.wrapping_add(1);
+        self.instances.clear();
+        self.joints.clear();
+        self.parts.clear();
+        for (asset_id, asset) in self.assets.iter().enumerate() {
+            let first = self.instances.len() as u32;
+            for avatar in avatars.iter().take(MAX_AVATARS) {
+                let AvatarModel::Registered(id) = avatar.model else {
+                    continue;
+                };
+                let Some(binding) = self.bindings.get(&id).filter(|b| b.asset == asset_id) else {
+                    continue;
+                };
+                let model = &asset.model;
+                let visual = avatar.model_pose.unwrap_or_default();
+                if self
+                    .actors
+                    .get(&avatar.id)
+                    .is_some_and(|actor| actor.asset != asset_id)
+                {
+                    self.actors.remove(&avatar.id);
+                }
+                let actor = self.actors.entry(avatar.id).or_insert_with(|| Actor {
+                    asset: asset_id,
+                    animator: animation::Animator::new(model),
+                    visual,
+                    appearance: model
+                        .appearance(&look(model, &visual))
+                        .expect("validated model look"),
+                    position: avatar.position,
+                    completed: None,
+                    seen: self.frame,
+                });
+                if !same_look(&actor.visual, &visual) {
+                    actor.appearance = model
+                        .appearance(&look(model, &visual))
+                        .expect("validated model look");
+                }
+                let distance = (avatar.position - actor.position).with_y(0.0).length();
+                let speed = if dt > 0.0 { distance / dt } else { 0.0 };
+                // Interpolation teleports and airborne movement do not invent a
+                // grounded running gait. Explicit clips remain independent.
+                let moving = speed > 0.03 && distance < 2.0 && !avatar.airborne;
+                let auto = if !moving {
+                    0
+                } else if speed >= binding.run_speed && binding.clips[2].is_some() {
+                    2
+                } else {
+                    1
+                };
+                let clip = binding.clips[auto].or(binding.clips[0]);
+                let mut target = animation::Playback {
+                    clip,
+                    serial: None,
+                    start_s: 0.0,
+                    speed: 1.0,
+                    looping: true,
+                    fade_s: visual.transition_s,
+                };
+                if let Some(playback) = visual.playback {
+                    let identity = (playback.started_tick, playback.sequence);
+                    if actor.visual.playback != visual.playback {
+                        actor.completed = None;
+                    }
+                    if actor.completed != Some(identity) {
+                        if actor.visual.playback == visual.playback
+                            && actor.animator.finished(model)
+                        {
+                            actor.completed = Some(identity);
+                        } else {
+                            let elapsed = visual.sample_tick.saturating_sub(playback.started_tick)
+                                as f64
+                                * 0.02
+                                * f64::from(playback.speed);
+                            let duration = f64::from(model.clips[playback.clip as usize].duration);
+                            let start_s = if playback.looping && duration > 0.0 {
+                                elapsed.rem_euclid(duration)
+                            } else {
+                                elapsed.min(duration)
+                            } as f32;
+                            target = animation::Playback {
+                                clip: Some(playback.clip as usize),
+                                serial: Some(identity),
+                                start_s,
+                                speed: playback.speed,
+                                looping: playback.looping,
+                                fade_s: playback.crossfade_s,
+                            };
+                        }
+                    }
+                } else {
+                    actor.completed = None;
+                }
+                actor.animator.step(model, target, dt);
+                actor.visual = visual;
+                actor.position = avatar.position;
+                actor.seen = self.frame;
+                let offsets = [self.joints.len() as u32, self.parts.len() as u32];
+                self.joints
+                    .extend(actor.animator.matrices.iter().map(|m| m.to_cols_array()));
+                self.parts
+                    .extend(model.primitives.iter().zip(&actor.appearance.colors).map(
+                        |(primitive, &color)| gpu::Part {
+                            color,
+                            flags: [u32::from(actor.appearance.visible[primitive.node]), 0, 0, 0],
+                        },
+                    ));
+                self.instances.push(gpu::Instance {
+                    origin: avatar.position.to_array(),
+                    yaw_scale: [avatar.pose[0], binding.scale],
+                    light_levels: avatar.light_levels,
+                    bounce: avatar.bounce,
+                    glow_bounce: avatar.glow_bounce,
+                    tint: avatar.tint,
+                    offsets,
+                });
+            }
+            self.ranges[asset_id] = first..self.instances.len() as u32;
+        }
+        self.actors.retain(|_, actor| actor.seen == self.frame);
+        self.gpu
+            .set(queue, &self.instances, &self.joints, &self.parts);
+    }
+    pub fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        camera: &wgpu::BindGroup,
+        shadow: bool,
+    ) -> usize {
+        self.gpu.draw(pass, camera, &self.ranges, shadow)
+    }
+}

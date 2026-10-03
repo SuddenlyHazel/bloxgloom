@@ -63,6 +63,7 @@ impl Track {
             || previous.avatar.airborne != avatar.airborne
             || previous.avatar.cosmetics != avatar.cosmetics
             || previous.avatar.character_recipe != avatar.character_recipe
+            || previous.avatar.model_pose != avatar.model_pose
         {
             if now.duration_since(previous.at) > Duration::from_millis(200) {
                 self.samples.clear();

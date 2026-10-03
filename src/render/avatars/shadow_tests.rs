@@ -12,6 +12,7 @@ fn avatar(model: AvatarModel) -> VisualAvatar {
         animation: Default::default(),
         model,
         pose: [0.0; 4],
+        model_pose: None,
         character_pose: [0.3, 0.2, 0.7, 0.4],
         character_look: [0.2, -0.1],
         character_crouch: 0.0,
@@ -467,4 +468,51 @@ fn gpu_public_casters_share_creature_and_rigid_animated_geometry() {
     rigid.motion.as_mut().unwrap().orientation =
         Quat::from_rotation_z(std::f32::consts::FRAC_PI_2).to_array();
     assert_ne!(horizontal, scene.render(&[rigid], true, false, true));
+}
+
+#[test]
+fn gpu_packaged_glb_casters_and_receivers_preserve_layers_clips_and_indirect_light() {
+    let (catalog, id) = authored::tests::catalog();
+    let mut scene = Scene::new(&catalog);
+    let mut actor = authored::tests::avatar(91, id, 0.0, [240, 180, 100]);
+    let resting = scene.render(&[actor], true, false, true);
+    actor.model_pose.as_mut().unwrap().layers[1] = 1;
+    let hat = scene.render(&[actor], true, false, true);
+    assert_ne!(
+        resting, hat,
+        "visible hat must cast its authored silhouette"
+    );
+    actor.model_pose.as_mut().unwrap().playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: 2,
+        speed: 1.0,
+        looping: false,
+        crossfade_s: 0.0,
+        started_tick: 0,
+        sequence: 1,
+    });
+    actor.model_pose.as_mut().unwrap().sample_tick = 20;
+    actor.model_pose.as_mut().unwrap().sequence = 1;
+    assert_ne!(
+        hat,
+        scene.render(&[actor], true, false, true),
+        "baked animation must also change caster geometry"
+    );
+    // Recreate the presentation clock for deterministic static receiver checks.
+    let mut scene = Scene::new(&catalog);
+    actor.model_pose.as_mut().unwrap().playback = None;
+    for levels in [[15, 0, 0, 0], [0; 4], [0, 15, 0, 0]] {
+        actor.light_levels = levels;
+        actor.bounce = [30, 40, 20, 0];
+        actor.glow_bounce = [20, 15, 10, 0];
+        let lit = scene.render(&[actor], false, false, true);
+        let shaded = scene.render(&[actor], false, true, true);
+        let off = scene.render(&[actor], false, true, false);
+        assert_eq!(lit, off);
+        if levels[0] == 0 {
+            assert_eq!(lit, shaded);
+        } else {
+            assert_ne!(lit, shaded);
+            assert!(lit.iter().zip(shaded).all(|(a, b)| *a >= b));
+        }
+    }
 }

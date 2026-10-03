@@ -64,6 +64,27 @@ impl Model {
         time: f32,
         pose: &mut [Transform],
     ) -> Result<()> {
+        let index = name
+            .map(|name| {
+                self.clips
+                    .iter()
+                    .position(|clip| clip.name == name)
+                    .ok_or_else(|| format!("unknown model clip: {name}"))
+            })
+            .transpose()?;
+        let looping =
+            name.is_some_and(|name| self.controls.loops.get(name).copied().unwrap_or(false));
+        self.local_pose_index_into(index, time, looping, pose)
+    }
+    /// Index-based sampling avoids name lookup and lets an actor override loop
+    /// intent without changing the immutable shared asset.
+    pub(crate) fn local_pose_index_into(
+        &self,
+        index: Option<usize>,
+        time: f32,
+        looping: bool,
+        pose: &mut [Transform],
+    ) -> Result<()> {
         ensure(
             pose.len() == self.nodes.len(),
             "local pose has the wrong node count",
@@ -75,13 +96,8 @@ impl Model {
         for (p, n) in pose.iter_mut().zip(&self.nodes) {
             *p = n.rest;
         }
-        if let Some(name) = name {
-            let clip = self
-                .clips
-                .iter()
-                .find(|c| c.name == name)
-                .ok_or_else(|| format!("unknown model clip: {name}"))?;
-            let looping = self.controls.loops.get(name).copied().unwrap_or(false);
+        if let Some(index) = index {
+            let clip = self.clips.get(index).ok_or("unknown model clip index")?;
             let time = if looping && clip.duration > 0.0 {
                 time.rem_euclid(clip.duration)
             } else {
@@ -134,7 +150,23 @@ impl Model {
     }
     pub(crate) fn matrices(&self, pose: Vec<Transform>) -> Result<Vec<Mat4>> {
         let mut worlds = vec![Mat4::IDENTITY; pose.len()];
-        for (i, local) in pose.into_iter().enumerate() {
+        let mut bindings = vec![Mat4::IDENTITY; self.bindings.len()];
+        self.matrices_into(&pose, &mut worlds, &mut bindings)?;
+        Ok(bindings)
+    }
+    pub(crate) fn matrices_into(
+        &self,
+        pose: &[Transform],
+        worlds: &mut [Mat4],
+        bindings: &mut [Mat4],
+    ) -> Result<()> {
+        ensure(
+            pose.len() == self.nodes.len()
+                && worlds.len() == self.nodes.len()
+                && bindings.len() == self.bindings.len(),
+            "pose scratch has the wrong size",
+        )?;
+        for (i, local) in pose.iter().copied().enumerate() {
             ensure(
                 local.translation.is_finite()
                     && local.scale.is_finite()
@@ -150,17 +182,15 @@ impl Model {
                 "sampled model hierarchy is singular",
             )?;
         }
-        self.bindings
-            .iter()
-            .map(|binding| {
-                let matrix = worlds[binding.node] * binding.inverse_bind;
-                ensure(
-                    matrix.is_finite() && matrix.determinant().abs() > 1e-12,
-                    "sampled skin matrix is singular",
-                )?;
-                Ok(matrix)
-            })
-            .collect()
+        for (output, binding) in bindings.iter_mut().zip(&self.bindings) {
+            let matrix = worlds[binding.node] * binding.inverse_bind;
+            ensure(
+                matrix.is_finite() && matrix.determinant().abs() > 1e-12,
+                "sampled skin matrix is singular",
+            )?;
+            *output = matrix;
+        }
+        Ok(())
     }
 }
 

@@ -45,6 +45,7 @@ fn predicted_local_player_is_not_delayed_and_faces_the_current_look_heading() {
 pub(super) fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
         motion: None,
+        model_pose: None,
         character_pose: [0.0; 4],
         character_look: [0.0; 2],
         character_crouch: 0.0,
@@ -231,4 +232,29 @@ fn crouch_and_head_pitch_ease_and_teleport_resets_the_presentation_history() {
     assert_eq!(teleported.character_pose[3], 0.0);
     assert_eq!(teleported.character_crouch, 0.0);
     assert_eq!(teleported.character_look, [0.0; 2]);
+}
+
+#[test]
+fn stationary_authored_creature_accepts_replicated_look_and_clip_updates() {
+    let now = Instant::now();
+    let initial = avatar(0.0);
+    let mut track = Track::new(initial, now);
+    let mut changed = initial;
+    let mut visual = bloxgloom_host_api::entity::VisualState::default();
+    visual.layers[0] = 1;
+    visual.playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: 0,
+        speed: 1.0,
+        looping: true,
+        crossfade_s: 0.2,
+        started_tick: 40,
+        sequence: 1,
+    });
+    visual.sample_tick = 40;
+    visual.sequence = 1;
+    changed.model_pose = Some(visual);
+    track.update(changed, now + STEP);
+    let presented = track.update(changed, now + STEP * 4);
+    assert_eq!(presented.position, initial.position);
+    assert_eq!(presented.model_pose, changed.model_pose);
 }

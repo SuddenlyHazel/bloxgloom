@@ -2,6 +2,7 @@
 //! Cosmetics and lighting are public presentation state; no profile/inventory data.
 
 mod appearance;
+mod authored;
 mod character;
 pub(crate) use character::first_person::View as FirstPersonView;
 mod character_asset;
@@ -38,6 +39,8 @@ pub(crate) struct VisualAvatar {
     pub model: AvatarModel,
     /// Yaw, stride, body bob, squash. Never used for authoritative movement.
     pub pose: [f32; 4],
+    /// Validated, public packaged-model appearance and clip selection.
+    pub model_pose: Option<bloxgloom_host_api::entity::VisualState>,
     /// Presentation-only walk seconds, idle seconds, walk blend and run blend.
     pub character_pose: [f32; 4],
     /// Local head yaw/pitch in radians, clamped to the hair-tested envelope.
@@ -100,6 +103,7 @@ impl From<&VisualAvatar> for AvatarInstance {
 
 pub(crate) struct AvatarRenderer {
     characters: character::CharacterRenderer,
+    authored: authored::Renderer,
     pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     camera_group: wgpu::BindGroup,
@@ -223,8 +227,10 @@ impl AvatarRenderer {
         });
         let characters =
             character::CharacterRenderer::new(device, queue, format, &camera_layout, catalog);
+        let authored = authored::Renderer::new(device, queue, format, &camera_layout, catalog);
         Self {
             characters,
+            authored,
             pipeline,
             shadow_pipeline,
             camera_group,
@@ -252,6 +258,7 @@ impl AvatarRenderer {
     /// with world/entity population or modded entity count.
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
         self.characters.set(queue, avatars);
+        self.authored.set(queue, avatars);
         let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
         for (index, (model, _)) in self.models.iter().enumerate() {
             let start = instances.len();
@@ -261,6 +268,7 @@ impl AvatarRenderer {
                     .take(MAX_AVATARS)
                     .filter(|a| {
                         a.model == *model
+                            && !matches!(a.model, AvatarModel::Registered(id) if self.authored.has_model(id))
                             && self
                                 .characters
                                 .first_person
@@ -278,7 +286,9 @@ impl AvatarRenderer {
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
         let character_triangles = self.characters.draw(pass, &self.camera_group);
-        character_triangles + self.draw_instances(pass, &self.pipeline, &self.camera_group)
+        character_triangles
+            + self.authored.draw(pass, &self.camera_group, false)
+            + self.draw_instances(pass, &self.pipeline, &self.camera_group)
     }
 
     pub(crate) fn draw_shadow<'a>(
@@ -287,7 +297,9 @@ impl AvatarRenderer {
         caster_camera_group: &'a wgpu::BindGroup,
     ) -> usize {
         let character_triangles = self.characters.draw_shadow(pass, caster_camera_group);
-        character_triangles + self.draw_instances(pass, &self.shadow_pipeline, caster_camera_group)
+        character_triangles
+            + self.authored.draw(pass, caster_camera_group, true)
+            + self.draw_instances(pass, &self.shadow_pipeline, caster_camera_group)
     }
 
     fn draw_instances<'a>(

@@ -3,7 +3,7 @@
 mod animation;
 mod controls;
 mod load;
-pub(crate) use controls::{Appearance, Controls, Look};
+pub(crate) use controls::{Appearance, Color, Controls, Look, TintMode};
 use glam::{Mat4, Quat, Vec3};
 
 pub(crate) type Result<T> = std::result::Result<T, String>;
@@ -16,7 +16,7 @@ pub(crate) struct Transform {
     pub scale: Vec3,
 }
 impl Transform {
-    fn matrix(self) -> Mat4 {
+    pub(crate) fn matrix(self) -> Mat4 {
         Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.translation)
     }
 }
