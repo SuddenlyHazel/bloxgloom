@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 
-SIZE = (128, 128)
+SIZE = (256, 256)
 
 
 def main():

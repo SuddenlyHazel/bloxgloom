@@ -7,8 +7,8 @@ use crate::content;
 use crate::items::ItemId;
 use crate::world::BlockId;
 
-pub(super) const TEXTURE_SIZE: u32 = 128;
-pub(super) const TEXTURE_MIPS: u32 = 8;
+pub(super) const TEXTURE_SIZE: u32 = 256;
+pub(super) const TEXTURE_MIPS: u32 = TEXTURE_SIZE.ilog2() + 1;
 #[cfg(test)]
 pub(super) fn texture_layers() -> u32 {
     content::catalog().textures().len() as u32

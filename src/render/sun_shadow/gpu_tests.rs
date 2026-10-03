@@ -263,15 +263,17 @@ fn gpu_terrain_shadow_edits_cutouts_and_sky_glow_invariance() {
         "removed occluders must not retain old depth"
     );
     let pixels = crate::render::material::material_tiles_for(crate::content::catalog());
-    let leaves = &pixels[12 * 128 * 128 * 4..13 * 128 * 128 * 4];
+    let tile_size = crate::render::material::TEXTURE_SIZE as usize;
+    let tile_bytes = tile_size * tile_size * 4;
+    let leaves = &pixels[12 * tile_bytes..13 * tile_bytes];
     for transparent in [true, false] {
         let texel = leaves
             .chunks_exact(4)
             .position(|p| if transparent { p[3] == 0 } else { p[3] >= 128 })
             .unwrap();
         let uv = [
-            ((texel % 128) as f32 + 0.5) / 128.0,
-            ((texel / 128) as f32 + 0.5) / 128.0,
+            ((texel % tile_size) as f32 + 0.5) / tile_size as f32,
+            ((texel / tile_size) as f32 + 0.5) / tile_size as f32,
         ];
         let cutout = Fixture::quad(&scene.device, 0.6, 2.0, 0.0, 12.0, uv, 1.0, 0.0);
         let image = scene.render(Some((&cutout, true)), time, SunShadowQuality::Low);

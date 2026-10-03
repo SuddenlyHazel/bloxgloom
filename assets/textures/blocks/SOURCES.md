@@ -10,7 +10,8 @@ Grass uses a fixed green tint (RGB 145, 189, 89); its tinted alpha overlay is
 composited over the supplied dirt side before resizing. Source `moss_block.png`
 maps to our `moss.png`. Normal (`_n`) and specular (`_s`) companions are imported
 as linear data with box filtering and registered after the existing builtin
-texture IDs. All three maps remain at the renderer's 128×128 resolution.
+texture IDs. These imported NAPP assets remain 128×128; the current 256×256
+renderer tiles sample them at their existing source detail.
 
 `wood_side.png` and `wood_top.png` now come from NAPP's `oak_log.png` and
 `oak_log_top.png`, with their normal/specular companions. The existing wood
@@ -61,7 +62,7 @@ The previous terrain PNGs remain available in Git before this import.
 
 `stone.png`, `stone_n.png` and `stone_s.png` now use the user-provided
 `Downloads/Rock030_1K-PNG` pack. Its 1024×1024 color is filtered to the renderer's
-128×128 tiles with Lanczos. DirectX normal RGB matches the existing image-down
+256×256 tiles with Lanczos. DirectX normal RGB matches the existing image-down
 green convention. Normal alpha stores displacement, filtered as independent
 linear float data from the original 16-bit range before conversion to 8-bit.
 Roughness becomes oldPBR smoothness in specular red; metallic green is zero.

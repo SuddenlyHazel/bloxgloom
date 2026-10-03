@@ -1296,9 +1296,9 @@
     "semantic_hash": ""
   },
   "src/render/custom/tests.rs": {
-    "mtime": 1790903987.1067436,
-    "seen": 1791052677.813369,
-    "ast_hash": "3eb458797debb5a2393b0482f472ec3d",
+    "mtime": 1791053788.1203578,
+    "seen": 1791053822.8741639,
+    "ast_hash": "e9e00dd45a2622d5a5f9f425b9069721",
     "semantic_hash": ""
   },
   "src/render/drops.rs": {
@@ -1410,9 +1410,9 @@
     "semantic_hash": "bf0109bbe457dbf78da0f36486f55af5"
   },
   "src/render/material.rs": {
-    "mtime": 1790909406.2022676,
-    "seen": 1791052677.813406,
-    "ast_hash": "f693a8eeccbef8a9342cab23e545e850",
+    "mtime": 1791053692.1710503,
+    "seen": 1791053822.874212,
+    "ast_hash": "6efb3e9723e44dbd19060806e04b9609",
     "semantic_hash": ""
   },
   "src/render/mesh.rs": {
@@ -4038,9 +4038,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/SOURCES.md": {
-    "mtime": 1791053405.6379714,
-    "seen": 1791053478.957502,
-    "ast_hash": "6145dac4b5ada0b8208101efc6c6a3fe",
+    "mtime": 1791053692.1727257,
+    "seen": 1791053822.874936,
+    "ast_hash": "60a1dd81c524bbf85f012764be85eddc",
     "semantic_hash": ""
   },
   "assets/textures/foliage/SOURCES.md": {
@@ -4398,9 +4398,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone.png": {
-    "mtime": 1791053406.2287314,
-    "seen": 1791053478.957758,
-    "ast_hash": "680fbea98d93dbd09454c81925350a52",
+    "mtime": 1791053692.8099313,
+    "seen": 1791053822.8751612,
+    "ast_hash": "c93288abfce3887ba4be9ee3f64be025",
     "semantic_hash": ""
   },
   "assets/textures/blocks/wood_side.png": {
@@ -4704,9 +4704,9 @@
     "semantic_hash": ""
   },
   "LUAU-SCRIPTING-GAPS.md": {
-    "mtime": 1791052918.0801039,
-    "seen": 1791052946.654975,
-    "ast_hash": "f69c111b338794d8165cb6f5b249ddac",
+    "mtime": 1791053519.934621,
+    "seen": 1791053822.874927,
+    "ast_hash": "e946f11c4b66ae2b93fbf3644731f4cb",
     "semantic_hash": ""
   },
   "docs/README.md": {
@@ -6540,15 +6540,15 @@
     "semantic_hash": ""
   },
   "src/render/material/resources.rs": {
-    "mtime": 1790909297.3500443,
-    "seen": 1791052677.813411,
-    "ast_hash": "556205bafa60b7661182b5bd5648d35f",
+    "mtime": 1791053692.1718018,
+    "seen": 1791053822.874217,
+    "ast_hash": "e9f5c3b135b295e29392f47e9aff0e91",
     "semantic_hash": ""
   },
   "src/render/material/resources/tests.rs": {
-    "mtime": 1790909297.3504355,
-    "seen": 1791052677.8134122,
-    "ast_hash": "0ec2b106ed31567ba376448dd5d98cb0",
+    "mtime": 1791053692.1720273,
+    "seen": 1791053822.874218,
+    "ast_hash": "db9909d428503048a4f1fad5d8fdd760",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/farming.rs": {
@@ -6618,9 +6618,9 @@
     "semantic_hash": ""
   },
   "docs/modding/PACKAGE-COMPOSITION.md": {
-    "mtime": 1791042542.4040904,
-    "seen": 1791052677.8140302,
-    "ast_hash": "f2a6f9544c049a1f0551503a5f991efb",
+    "mtime": 1791053692.1731794,
+    "seen": 1791053822.874984,
+    "ast_hash": "7aec2d9f26e992b78029dff22994cbe7",
     "semantic_hash": ""
   },
   "fixtures/farming-scale/README.md": {
@@ -8190,9 +8190,9 @@
     "semantic_hash": ""
   },
   "src/render/sun_shadow/gpu_tests.rs": {
-    "mtime": 1790911414.4727163,
-    "seen": 1791052677.8134341,
-    "ast_hash": "d35c57988bbce21db3dbef7bbb26576d",
+    "mtime": 1791053788.1207929,
+    "seen": 1791053822.8742452,
+    "ast_hash": "6c78f38faf82f4a2b29da0862b8e5c8b",
     "semantic_hash": ""
   },
   "src/render/sun_shadow/tests.rs": {
@@ -8400,15 +8400,15 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone_n.png": {
-    "mtime": 1791053406.2307441,
-    "seen": 1791053478.957759,
-    "ast_hash": "e3b7e68a0908c8224f122614fb991841",
+    "mtime": 1791053692.8184888,
+    "seen": 1791053822.8751621,
+    "ast_hash": "4a444fd160375b6b1ae5f6bd20ea4f55",
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone_s.png": {
-    "mtime": 1791053406.2393253,
-    "seen": 1791053478.95776,
-    "ast_hash": "a337d3f2777a3078c8c7fc05ba1549b3",
+    "mtime": 1791053692.8591657,
+    "seen": 1791053822.8751628,
+    "ast_hash": "594e6000cb5824bc5db762bf96658952",
     "semantic_hash": ""
   },
   "src/render/material/companions/tests/parallax.rs": {
@@ -9966,9 +9966,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/source/import_rock030.py": {
-    "mtime": 1791053405.6374166,
-    "seen": 1791053478.9557729,
-    "ast_hash": "8ed2d76e0372b4538d464806862618aa",
+    "mtime": 1791053692.1723416,
+    "seen": 1791053822.873499,
+    "ast_hash": "8a7616e5bb28cfa94b4d89543bcc9912",
     "semantic_hash": ""
   }
 }

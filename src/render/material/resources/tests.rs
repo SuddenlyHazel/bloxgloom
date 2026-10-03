@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn counts_every_mipmap_and_enforces_the_array_byte_boundary() {
-    assert_eq!(BYTES_PER_LAYER, 87_380 * 3);
+    assert_eq!(BYTES_PER_LAYER, 349_524 * 3);
     let admitted = validate(MAX_ARRAY_LAYERS as usize, u32::MAX).unwrap();
     assert!(admitted.mip_bytes <= MAX_ARRAY_BYTES);
     let error = validate(MAX_ARRAY_LAYERS as usize + 1, u32::MAX).unwrap_err();
@@ -41,7 +41,7 @@ fn rejects_unsupported_dimensions_before_resource_creation() {
     assert!(
         required_limits(adapter, 1)
             .unwrap_err()
-            .contains("dimensions/device: attempted 128; maximum 64")
+            .contains("dimensions/device: attempted 256; maximum 64")
     );
 }
 

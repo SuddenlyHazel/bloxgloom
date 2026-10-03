@@ -172,15 +172,17 @@ fn material_fragment(input: BgSurface) -> BgSurface {
     // samples transparent alpha, the other opaque alpha; cutout must still
     // discard exactly as it did before customization.
     let pixels = crate::render::material::material_tiles_for(&catalog);
-    let leaf = &pixels[12 * 128 * 128 * 4..13 * 128 * 128 * 4];
+    let tile_size = crate::render::material::TEXTURE_SIZE as usize;
+    let tile_bytes = tile_size * tile_size * 4;
+    let leaf = &pixels[12 * tile_bytes..13 * tile_bytes];
     for patch in 0..2 {
         let texel = leaf
             .chunks_exact(4)
             .position(|p| if patch == 0 { p[3] == 0 } else { p[3] >= 128 })
             .unwrap();
         let uv = [
-            ((texel % 128) as f32 + 0.5) / 128.0,
-            ((texel / 128) as f32 + 0.5) / 128.0,
+            ((texel % tile_size) as f32 + 0.5) / tile_size as f32,
+            ((texel / tile_size) as f32 + 0.5) / tile_size as f32,
         ];
         let x0 = -1.0 + patch as f32 * 0.5;
         let x1 = x0 + 0.5;

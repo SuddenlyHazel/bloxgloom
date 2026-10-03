@@ -37,7 +37,8 @@ fn bg_material_coordinates(input: VertexOutput, parallax: bool) -> MaterialCoord
     let distance = length(eye);
     let frame = bg_texture_frame(input.normal, px, py, dx, dy);
     let view = transpose(frame) * (eye / max(distance, 0.0001));
-    let mip = log2(max(1.0, max(length(dx), length(dy)) * 128.0));
+    let tile_size = f32(textureDimensions(material_normal, 0).x);
+    let mip = log2(max(1.0, max(length(dx), length(dy)) * tile_size));
     let ray = bg_parallax_ray(view, distance, mip, camera.parallax);
     if dot(ray, ray) < 0.000000000001 { return unchanged; }
     let steps = u32(mix(camera.parallax.z, 12.0, clamp(view.z, 0.0, 1.0)));

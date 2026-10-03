@@ -65,7 +65,7 @@ startup declaration collection and client bundle verification.
 | Script execution per candidate chunk | 100 ms across contributors |
 | Native content declaration collection | 4,096 declarations and 64 MiB estimated bytes |
 | Registered PNG copies | 64 MiB per package and installation |
-| Material texture array | 128 MiB / 1,536 layers, further constrained by adapter |
+| Material texture arrays | 512 MiB across albedo/normal/specular / 512 layers, further constrained by adapter |
 
 Block registration also consumes a total-item slot: 256 blocks leave room for
 256 standalone items. Installation-wide catalog ceilings and builtin consumption
@@ -136,10 +136,10 @@ Decoded resources retain their existing bounds: the authored UI atlas is
 1,024×1,024 RGBA (4 MiB), aggregate UI image area is 262,144 pixels, and at most
 four fonts admit 128 glyphs each with 512 points per glyph. Effect/custom shader
 and pass budgets remain independently enforced. World PNG decode is serial,
-with a 16 MiB decoded-image ceiling and resampling to 128×128 texture layers.
-Each full RGBA mip chain occupies 87,380 bytes per texture; array-layer support
+with a 16 MiB decoded-image ceiling and resampling to 256×256 texture layers.
+Each full RGBA mip chain occupies 349,524 bytes per texture; array-layer support
 and aggregate GPU allocation are checked separately from encoded PNG size.
-The array is capped at 128 MiB/1,536 layers, including builtin layers, and the
+The three arrays are capped together at 512 MiB/512 layers, including builtin layers, and the
 actual adapter may permit fewer. Device creation requests supported array limits
 explicitly; expanding a package beyond the default 256 device layers no longer
 relies on a later validation failure. Admission precedes pixels/mip allocation.
