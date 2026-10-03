@@ -10,6 +10,7 @@ use crate::server::script::{Limits, ScriptInput, ScriptWorker};
 
 mod capacity;
 mod client;
+mod identity;
 
 struct Fixture(PathBuf);
 

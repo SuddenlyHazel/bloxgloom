@@ -115,6 +115,7 @@
 
 pub mod client;
 mod files;
+mod identity;
 pub(super) mod manifest;
 mod reload;
 mod residency;
@@ -135,7 +136,6 @@ pub use super::capacity::{
 pub struct PackageSnapshot {
     _residency: residency::Reservation,
     live: RwLock<Option<Arc<PackageSnapshot>>>,
-    compatibility: Option<std::sync::Weak<PackageSnapshot>>,
     generation_packages: Mutex<std::collections::BTreeSet<String>>,
     packages: BTreeMap<String, Package>,
     client: Arc<client::ClientBundle>,
@@ -323,9 +323,9 @@ impl PackageSnapshot {
         })
     }
 
-    /// Conservative installation identity, persisted as the public handler
-    /// version. Includes every frozen source (including dependency helpers), not
-    /// just the entry. Like catalog fingerprints this is not an authenticity hash.
+    /// Explicit persisted contract. Source edits do not imply a state format
+    /// change: authors must advance declared schemas/revisions when changing
+    /// interpretation of saved data. Bundle hashes still identify exact code.
     pub(super) fn gameplay_version(&self, entry: &str, revision: u16) -> u64 {
         self.execution_identity(b"luau-action-v1", entry, &revision.to_le_bytes())
     }
@@ -366,46 +366,6 @@ impl PackageSnapshot {
         // Zero is not a valid delay, so it unambiguously denotes suspension.
         identity.extend(delay.unwrap_or(0).to_le_bytes());
         self.execution_identity(b"luau-entity-fixed-bytes-v1", key, &identity)
-    }
-
-    fn execution_identity(&self, domain: &[u8], entry: &str, revision: &[u8]) -> u64 {
-        if let Some(original) = self
-            .compatibility
-            .as_ref()
-            .and_then(std::sync::Weak::upgrade)
-        {
-            return original.execution_identity(domain, entry, revision);
-        }
-        let mut hash = 0xcbf2_9ce4_8422_2325u64;
-        let mut field = |bytes: &[u8]| {
-            for byte in (bytes.len() as u64).to_le_bytes().iter().chain(bytes) {
-                hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
-            }
-        };
-        field(domain);
-        field(entry.as_bytes());
-        field(revision);
-        field(&(self.packages.len() as u64).to_le_bytes());
-        for (name, package) in &self.packages {
-            field(name.as_bytes());
-            field(package.manifest.version.to_string().as_bytes());
-            field(package.manifest.entry.as_bytes());
-            field(&(package.manifest.dependencies.len() as u64).to_le_bytes());
-            for (name, version) in &package.manifest.dependencies {
-                field(name.as_bytes());
-                field(version.to_string().as_bytes());
-            }
-            field(&(package.manifest.requires.len() as u64).to_le_bytes());
-            for capability in &package.manifest.requires {
-                field(capability.as_bytes());
-            }
-            field(&(package.sources.len() as u64).to_le_bytes());
-            for (module, source) in &package.sources {
-                field(module.as_bytes());
-                field(source.as_bytes());
-            }
-        }
-        hash
     }
 
     /// Read immediate package directories in lexical order. The host must call
@@ -514,7 +474,6 @@ impl PackageSnapshot {
         Ok(Self {
             _residency: residency::Reservation::acquire(total_bytes)?,
             live: RwLock::new(None),
-            compatibility: None,
             generation_packages: Mutex::default(),
             packages,
             client,

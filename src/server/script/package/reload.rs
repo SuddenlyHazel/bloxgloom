@@ -20,29 +20,18 @@ impl PackageSnapshot {
             .generation_packages
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let mut pending = vec![module.split(':').next().unwrap().to_owned()];
-        while let Some(package) = pending.pop() {
-            if protected.insert(package.clone()) {
-                pending.extend(
-                    self.packages[&package]
-                        .manifest
-                        .dependencies
-                        .keys()
-                        .cloned(),
-                );
-            }
-        }
+        protected.extend(self.dependency_closure(module));
     }
 
-    /// Pin saved contracts to startup for this process. Structural declarations
-    /// still undergo full startup validation and comparison before publication.
+    /// Prepare an independent revision with the same explicit saved contracts.
+    /// Structural declarations still undergo startup validation and comparison.
     pub(in crate::server) fn replacement(
         self: &Arc<Self>,
         root: &Path,
     ) -> Result<Arc<Self>, ScriptError> {
         let deadline =
             std::time::Instant::now() + crate::server::script::capacity::INSTALLATION_WALL_TIME;
-        let mut candidate = Self::discover(root)?;
+        let candidate = Self::discover(root)?;
         if candidate.packages.keys().ne(self.packages.keys()) {
             return Err(error("reload", "restart required: package set changed"));
         }
@@ -56,7 +45,12 @@ impl PackageSnapshot {
             if original.manifest != new.manifest {
                 return Err(error(name, "restart required: package manifest changed"));
             }
-            if protected.contains(name) && original.sources != new.sources {
+            if protected.contains(name)
+                && original.sources.iter().any(|(module, source)| {
+                    original.manifest.sides[module] != manifest::SourceSide::Client
+                        && new.sources[module] != *source
+                })
+            {
                 return Err(error(
                     name,
                     "restart required: generation package or dependency changed",
@@ -75,7 +69,6 @@ impl PackageSnapshot {
                     .map_err(|e| error(&format!("{name}:{module}"), e.to_string()))?;
             }
         }
-        candidate.compatibility = Some(Arc::downgrade(self));
         Ok(Arc::new(candidate))
     }
 }

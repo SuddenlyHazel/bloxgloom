@@ -11,8 +11,8 @@
 //! random calls return deterministic [0,1) samples. Coordinates are exact
 //! integers in public Context bounds.
 //!
-//! The existing persisted key/revision identity is authoritative, not a source
-//! hash. Authors must bump revision for any algorithm/dependency/config change
+//! Persisted key/revision and a digest of all reachable server/shared package
+//! sources fence restarts. Authors must bump revision for algorithm/config changes
 //! and obey Contributor purity (including not using object identity or table
 //! iteration order for decisions). Restart rediscovers sources; retries reuse
 //! frozen sources and isolated attempts. Persistent failure does not fall back to air.
@@ -105,6 +105,10 @@ struct ScriptContributor {
 }
 
 impl Contributor for ScriptContributor {
+    fn source_identity(&self) -> Option<[u8; 32]> {
+        Some(self.snapshot.generation_source_identity(&self.module))
+    }
+
     fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
         self.execute(context, output, Limits::default())
     }
