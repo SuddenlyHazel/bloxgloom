@@ -154,7 +154,13 @@ pub(super) async fn run_perf_benchmark_async(
         .map(|mesh| mesh.cutout_indices.len())
         .sum::<usize>();
 
-    let post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
+    let mut post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
+    let temporal = std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1");
+    post.enable_temporal(&device, temporal);
+    eprintln!(
+        "temporal AA: {}",
+        if post.temporal_enabled() { "on" } else { "off" }
+    );
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
@@ -206,7 +212,7 @@ pub(super) async fn run_perf_benchmark_async(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: render::DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let color_view = color.create_view(&Default::default());
@@ -228,7 +234,6 @@ pub(super) async fn run_perf_benchmark_async(
         pitch: direction.y.asin(),
         fov_y_radians: 70.0f32.to_radians(),
     };
-    let matrix = render::view_projection(camera, PERF_WIDTH, PERF_HEIGHT);
     let mut lod_gpu = render::lod::Gpu::new(&device, render::post::HDR_FORMAT);
     lod_gpu.set_horizon(lod_horizon);
     let (lod_meshes, lod_summary_bytes) = if lod_horizon > 0 {
@@ -348,6 +353,8 @@ pub(super) async fn run_perf_benchmark_async(
                 return Err("LOD benchmark upload stalled".into());
             }
         }
+        let (matrix, jitter) = post.prepare_temporal(&queue, camera);
+        lod_gpu.set_jitter(jitter);
         lod_gpu.prepare(
             &queue,
             camera,
@@ -428,7 +435,9 @@ pub(super) async fn run_perf_benchmark_async(
         queue.write_buffer(
             &target_camera_buffer,
             0,
-            bytemuck::cast_slice(&matrix.to_cols_array()),
+            bytemuck::cast_slice(
+                &render::view_projection(camera, PERF_WIDTH, PERF_HEIGHT).to_cols_array(),
+            ),
         );
         queue.write_buffer(
             &target_vertices,
@@ -478,15 +487,11 @@ pub(super) async fn run_perf_benchmark_async(
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &post.scene,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(render::SKY_COLOR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &render::scene_ao::attachments(
+                    &post.scene,
+                    &post.ambient.indirect,
+                    render::SKY_COLOR,
+                ),
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &depth_view,
                     depth_ops: Some(wgpu::Operations {
@@ -540,6 +545,9 @@ pub(super) async fn run_perf_benchmark_async(
                 }
             }
         }
+        post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
+        post.draw_motion(&queue, &mut encoder, &depth_view, None);
+        post.resolve_temporal(&device, &mut encoder, &depth_view);
         post.encode(&device, &queue, &mut encoder, &color_view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -591,6 +599,7 @@ pub(super) async fn run_perf_benchmark_async(
             ui_renderer.encode(&mut pass);
         }
         last_submission = Some(queue.submit(Some(encoder.finish())));
+        post.submitted();
         let cpu_ms = start.elapsed().as_secs_f64() * 1_000.0;
         total_uploaded += uploaded_chunks;
         total_upload_bytes += uploaded_bytes;

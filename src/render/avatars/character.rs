@@ -38,6 +38,8 @@ pub(super) struct CharacterRenderer {
     asset: &'static CharacterAsset,
     pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
+    motion_pipeline: wgpu::RenderPipeline,
+    pub(super) motion: super::motion::Palette,
     group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -189,6 +191,7 @@ impl CharacterRenderer {
                 },
             ],
         });
+        let motion = super::motion::Palette::new(device, MAX_AVATARS * JOINTS);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("authored character shader"),
             source: wgpu::ShaderSource::Wgsl(super::character_shader(catalog).into()),
@@ -199,36 +202,40 @@ impl CharacterRenderer {
             immediate_size: 0,
         });
         let vertex_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint32, 8 => Float32x2, 11 => Uint32, 15 => Uint32];
-        let mut instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4, 14 => Uint8x4];
+        let mut instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint32x2, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4, 14 => Uint8x4];
         // Actor instances also carry a rigid-object quaternion, which this
         // character shader ignores. Recipe bytes follow the entire actor.
         instance_attributes[7].offset = std::mem::offset_of!(CharacterInstance, recipe) as u64;
         instance_attributes[8].offset = std::mem::offset_of!(CharacterInstance, iris) as u64;
         instance_attributes[9].offset =
             std::mem::offset_of!(CharacterInstance, hair_color_body) as u64;
-        let (pipeline, shadow_pipeline) = super::pipeline::pair(
-            device,
-            &shader,
-            &pipeline_layout,
-            format,
-            &[
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &vertex_attributes,
-                }),
-                Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<CharacterInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &instance_attributes,
-                }),
-            ],
-            true,
-        );
+        let buffers = [
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &vertex_attributes,
+            }),
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<CharacterInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &instance_attributes,
+            }),
+        ];
+        let (pipeline, shadow_pipeline) =
+            super::pipeline::pair(device, &shader, &pipeline_layout, format, &buffers, true);
+        let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("character motion layout"),
+            bind_group_layouts: &[Some(camera_layout), Some(&layout), Some(&motion.layout)],
+            immediate_size: 0,
+        });
+        let motion_pipeline =
+            super::motion::pipeline(device, &shader, &motion_layout, &buffers, None);
         Self {
             asset,
             pipeline,
             shadow_pipeline,
+            motion_pipeline,
+            motion,
             group,
             vertices,
             indices,
@@ -248,6 +255,7 @@ impl CharacterRenderer {
 
     pub(super) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
         self.count = 0;
+        self.motion.history.clear_pending();
         self.style_counts.fill(0);
         let mut instances = Vec::new();
         let mut joints = Vec::new();
@@ -308,6 +316,21 @@ impl CharacterRenderer {
                     view.prepare_pose(&mut pose, avatar.character_tool);
                     first_person_joints = Some(pose.map(|matrix| matrix.to_cols_array()));
                 }
+                if self.motion.enabled {
+                    let world = glam::Mat4::from_translation(avatar.position)
+                        * glam::Mat4::from_rotation_y(avatar.pose[0]);
+                    let identity = super::motion::fingerprint((
+                        recipe,
+                        avatar.cosmetics,
+                        first_person.is_some(),
+                    ));
+                    self.motion.history.stage(
+                        avatar.id,
+                        identity,
+                        avatar.position,
+                        pose.iter().map(|matrix| world * *matrix).collect(),
+                    );
+                }
             }
             self.style_counts[group] = (instances.len() - start) as u32;
         }
@@ -347,6 +370,15 @@ impl CharacterRenderer {
         camera: &'a wgpu::BindGroup,
     ) -> usize {
         self.draw_instances(pass, camera, &self.pipeline)
+    }
+
+    pub(super) fn draw_motion<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        camera: &'a wgpu::BindGroup,
+    ) {
+        pass.set_bind_group(2, &self.motion.group, &[]);
+        self.draw_instances(pass, camera, &self.motion_pipeline);
     }
 
     pub(super) fn draw_shadow<'a>(

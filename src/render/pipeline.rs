@@ -122,13 +122,21 @@ fn create_voxel_pipeline_source(
     wgpu::BindGroup,
     wgpu::BindGroup,
 ) {
+    let source = if visual_layout.is_some() {
+        source.replace(
+            "const BG_MATERIAL_HISTORY_SIGN: f32 = 1.0;",
+            "const BG_MATERIAL_HISTORY_SIGN: f32 = -1.0;",
+        )
+    } else {
+        source.to_owned()
+    };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(super::daylight::shader(source).into()),
+        source: wgpu::ShaderSource::Wgsl(super::daylight::shader(&source).into()),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
-        size: 144,
+        size: 208,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -333,7 +341,7 @@ fn create_voxel_pipeline_source(
         bind_group_layouts: &layouts,
         immediate_size: 0,
     });
-    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32, 6 => Float32];
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32, 6 => Float32, 7 => Float32, 8 => Float32];
     let make_pipeline = |label, cull_mode, fragment_entry| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(label),
@@ -364,11 +372,7 @@ fn create_voxel_pipeline_source(
                 module: &shader,
                 entry_point: Some(fragment_entry),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &super::scene_ao::color_targets(format, None),
             }),
             multiview_mask: None,
             cache: None,
@@ -414,7 +418,7 @@ pub(crate) fn create_sun_shadow_pipelines(
         bind_group_layouts: &layouts,
         immediate_size: 0,
     });
-    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32, 6 => Float32];
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32, 6 => Float32, 7 => Float32, 8 => Float32];
     let pipeline = |label, cull_mode, cutout| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(label),
@@ -435,16 +439,16 @@ pub(crate) fn create_sun_shadow_pipelines(
             },
             depth_stencil: Some(super::sun_shadow::depth_state()),
             multisample: Default::default(),
-            fragment: if cutout {
-                Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_shadow"),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                })
-            } else {
-                None
-            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some(if cutout {
+                    "fs_shadow"
+                } else {
+                    "fs_shadow_opaque"
+                }),
+                compilation_options: Default::default(),
+                targets: &[],
+            }),
             multiview_mask: None,
             cache: None,
         })

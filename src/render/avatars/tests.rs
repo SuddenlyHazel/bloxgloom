@@ -152,6 +152,8 @@ fn render_recipe(
         cosmetics,
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
+        glow_color: [0; 3],
+        glow_direction: [0; 3],
         glow_bounce: [0; 4],
         tint: if x > 0.0 { tint } else { [1.0; 3] },
     });

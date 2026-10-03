@@ -294,3 +294,163 @@ fn bound_texture_asset_must_decode_and_match_owned_canonical_metadata() {
     let bad = texture_metadata(&huge, "jade:tile", "tile");
     assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
 }
+
+#[test]
+fn environment_lighting_survives_verified_bundle_and_defaults_to_identity() {
+    let shader = "fn material_fragment(input: BgSurface) -> BgSurface { return input; }";
+    for (selection, expected) in [
+        ("{}", crate::config::lighting::Lighting::default()),
+        (
+            r#"{"sun_intensity":0,"ambient_intensity":0.4,"environment_intensity":4}"#,
+            crate::config::lighting::Lighting {
+                sun_intensity: 0.0,
+                ambient_intensity: 0.4,
+                environment_intensity: 4.0,
+                local_directionality: 1.0,
+            },
+        ),
+        (
+            r#"{"ambient_intensity":0.25,"local_directionality":0.4}"#,
+            crate::config::lighting::Lighting {
+                ambient_intensity: 0.25,
+                local_directionality: 0.4,
+                ..Default::default()
+            },
+        ),
+    ] {
+        let descriptor = lighting_descriptor(selection);
+        let bytes = bundle(&["jade"], &descriptor, shader, false);
+        let verified = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+        assert_eq!(
+            verified.material().unwrap().environment_lighting,
+            Some(expected)
+        );
+        assert_eq!(verified.material().unwrap().materials[0].owner, "jade:tint");
+        assert_eq!(verified.bytes(), bytes);
+        let prepared = verified
+            .material()
+            .unwrap()
+            .resolve(&crate::content::Catalog::builtins())
+            .unwrap();
+        assert_eq!(prepared.environment_lighting, Some(expected));
+    }
+    let bytes = bundle(&["jade"], DESCRIPTOR, SHADER, false);
+    let legacy = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+    assert_eq!(legacy.material().unwrap().environment_lighting, None);
+}
+
+#[test]
+fn environment_lighting_rejects_malformed_legacy_and_conflicting_selections() {
+    let shader = "fn material_fragment(input: BgSurface) -> BgSurface { return input; }";
+    for selection in [
+        r#"{"sun_intensity":-0.01}"#,
+        r#"{"local_directionality":4.01}"#,
+        r#"{"ambient_intensity":4.01}"#,
+        r#"{"environment_intensity":1e100}"#,
+        r#"{"environment_intensity":"1"}"#,
+        r#"{"sun_intensity":null}"#,
+        r#"{"owner":"foreign:theme"}"#,
+        r#"{"sun_intensity":1,"sun_intensity":2}"#,
+        r#"[]"#,
+    ] {
+        let bytes = bundle(&["jade"], &lighting_descriptor(selection), shader, false);
+        let error = ClientBundle::decode_verify(&bytes, key(&bytes))
+            .err()
+            .unwrap_or_else(|| panic!("accepted invalid lighting: {selection}"));
+        assert!(format!("{error:?}").contains("jade:tint"), "{selection}");
+    }
+    let legacy = DESCRIPTOR.replace('}', r#", "environment_lighting":{}}"#);
+    let bytes = bundle(&["jade"], &legacy, SHADER, false);
+    assert!(ClientBundle::decode_verify(&bytes, key(&bytes)).is_err());
+
+    let bytes = bundle(
+        &["jade", "zebra"],
+        &lighting_descriptor("{}"),
+        shader,
+        false,
+    );
+    let error = format!(
+        "{:?}",
+        ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap_err()
+    );
+    assert!(error.contains("zebra:tint"));
+    assert!(error.contains("environment lighting already selected by jade:tint"));
+}
+
+fn lighting_descriptor(selection: &str) -> String {
+    format!(
+        r#"{{"version":2,"shader":"jade","targets":["bloxgloom:stone"],"textures":["bloxgloom:stone"],"environment_lighting":{selection}}}"#
+    )
+}
+
+#[test]
+fn local_shadows_survive_verified_bundle_and_resolve() {
+    let shader = "fn material_fragment(input: BgSurface) -> BgSurface { return input; }";
+    for selection in [
+        "{}",
+        r#"{"count":0}"#,
+        r#"{"count":4,"resolution":1024,"range":32,"updates":4}"#,
+    ] {
+        let descriptor =
+            lighting_descriptor(selection).replace("environment_lighting", "local_shadows");
+        let bytes = bundle(&["jade"], &descriptor, shader, false);
+        let verified = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+        let expected =
+            serde_json::from_str::<crate::render::local_shadow::Settings>(selection).unwrap();
+        assert_eq!(verified.material().unwrap().local_shadows, Some(expected));
+        let prepared = verified
+            .material()
+            .unwrap()
+            .resolve(&crate::content::Catalog::builtins())
+            .unwrap();
+        assert_eq!(prepared.local_shadows, Some(expected));
+        assert_eq!(verified.bytes(), bytes);
+    }
+    let bytes = bundle(&["jade"], DESCRIPTOR, SHADER, false);
+    assert_eq!(
+        ClientBundle::decode_verify(&bytes, key(&bytes))
+            .unwrap()
+            .material()
+            .unwrap()
+            .local_shadows,
+        None
+    );
+}
+
+#[test]
+fn local_shadows_reject_invalid_legacy_and_conflicting_selections() {
+    let shader = "fn material_fragment(input: BgSurface) -> BgSurface { return input; }";
+    for selection in [
+        r#"{"count":5}"#,
+        r#"{"count":-1}"#,
+        r#"{"resolution":63}"#,
+        r#"{"resolution":1025}"#,
+        r#"{"range":1}"#,
+        r#"{"range":33}"#,
+        r#"{"range":1e100}"#,
+        r#"{"updates":0}"#,
+        r#"{"updates":5}"#,
+        r#"{"count":null}"#,
+        r#"{"enabled":true}"#,
+        r#"{"count":1,"count":2}"#,
+        "[]",
+        "[2,256,16,2]",
+    ] {
+        let descriptor =
+            lighting_descriptor(selection).replace("environment_lighting", "local_shadows");
+        let bytes = bundle(&["jade"], &descriptor, shader, false);
+        let error = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap_err();
+        assert!(format!("{error:?}").contains("jade:tint"), "{selection}");
+    }
+    let legacy = DESCRIPTOR.replace('}', r#", "local_shadows":{}}"#);
+    let bytes = bundle(&["jade"], &legacy, SHADER, false);
+    assert!(ClientBundle::decode_verify(&bytes, key(&bytes)).is_err());
+    let descriptor = lighting_descriptor("{}").replace("environment_lighting", "local_shadows");
+    let bytes = bundle(&["jade", "zebra"], &descriptor, shader, false);
+    let error = format!(
+        "{:?}",
+        ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap_err()
+    );
+    assert!(error.contains("zebra:tint"));
+    assert!(error.contains("local shadows already selected by jade:tint"));
+}

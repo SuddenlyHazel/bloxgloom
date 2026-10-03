@@ -157,6 +157,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &gpu,
             &sky,
             &sky_group,
+            camera,
             width,
             height,
             &directory.join(format!("{name}.png")),
@@ -228,6 +229,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &gpu,
             &sky,
             &sky_group,
+            camera,
             width,
             height,
             &directory.join(format!("{name}.png")),
@@ -310,11 +312,12 @@ fn draw_image(
     gpu: &Gpu,
     sky: &wgpu::RenderPipeline,
     sky_group: &wgpu::BindGroup,
+    camera: Camera,
     width: u32,
     height: u32,
     path: &Path,
 ) -> Result<(), Box<dyn Error>> {
-    let post = render::post::PostProcess::new(device, width, height, FORMAT);
+    let mut post = render::post::PostProcess::new(device, width, height, FORMAT);
     let color = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("LOD preview image"),
         size: wgpu::Extent3d {
@@ -341,7 +344,7 @@ fn draw_image(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: render::DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let depth = depth_texture.create_view(&Default::default());
@@ -349,15 +352,11 @@ fn draw_image(
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("LOD preview"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &post.scene,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(render::SKY_COLOR),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &render::scene_ao::attachments(
+                &post.scene,
+                &post.ambient.indirect,
+                render::SKY_COLOR,
+            ),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &depth,
                 depth_ops: Some(wgpu::Operations {
@@ -373,6 +372,13 @@ fn draw_image(
         pass.draw(0..3, 0..1);
         gpu.draw(&mut pass);
     }
+    post.resolve_ambient(
+        device,
+        queue,
+        &mut encoder,
+        &depth,
+        render::view_projection(camera, width, height),
+    );
     post.encode(device, queue, &mut encoder, &view);
     queue.submit(Some(encoder.finish()));
     super::capture::save_texture(device, queue, &color, width, height, path)

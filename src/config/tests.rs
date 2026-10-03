@@ -13,7 +13,7 @@ fn test_directory(label: &str) -> PathBuf {
 fn config_round_trips_through_explicit_path() {
     let directory = test_directory("config-roundtrip");
     let path = directory.join("settings/config");
-    let config = Config {
+    let mut config = Config {
         sensitivity: 0.006,
         fov_degrees: 92.5,
         view_distance: 5,
@@ -23,11 +23,23 @@ fn config_round_trips_through_explicit_path() {
         fullscreen: true,
         bounced_gi: true,
         sun_shadow_quality: SunShadowQuality::High,
+        local_shadows: crate::render::local_shadow::Settings {
+            count: 3,
+            resolution: 512,
+            range: 24.0,
+            updates: 1,
+        },
         parallax: parallax::Parallax {
             enabled: false,
             depth: 0.085,
             distance: 64.0,
             steps: 48,
+        },
+        lighting: lighting::Lighting {
+            sun_intensity: 0.8,
+            ambient_intensity: 1.2,
+            environment_intensity: 0.6,
+            local_directionality: 0.8,
         },
         exposure: 1.25,
         post_processing: false,
@@ -47,6 +59,10 @@ fn config_round_trips_through_explicit_path() {
         },
         named_bindings: NamedBindings::default(),
     };
+
+    config.audio_mix.buses[0].gain = 0.3;
+    config.audio_mix.buses[2].compressor.enabled = true;
+    config.audio_mix.master.release_ms = 250.0;
 
     config.save(&path).unwrap();
 
@@ -326,6 +342,55 @@ fn live_rain_tuning_persists_and_old_configs_keep_native_defaults() {
         Default::default()
     );
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn lighting_settings_preserve_defaults_and_bound_invalid_values() {
+    assert_eq!(
+        parse_config("version=1\n").lighting,
+        lighting::Lighting::default()
+    );
+    let value = parse_config("version=1\nlighting_sun_intensity=NaN\nlighting_ambient_intensity=-9\nlighting_environment_intensity=99\n").lighting;
+    assert_eq!(value.sun_intensity, 1.0);
+    assert_eq!(value.ambient_intensity, 0.0);
+    assert_eq!(value.environment_intensity, 4.0);
+    let value = lighting::Lighting {
+        sun_intensity: f32::INFINITY,
+        ambient_intensity: f32::NAN,
+        environment_intensity: -1.0,
+        local_directionality: f32::INFINITY,
+    }
+    .sanitized();
+    assert_eq!(
+        value,
+        lighting::Lighting {
+            sun_intensity: 1.0,
+            ambient_intensity: 1.0,
+            environment_intensity: 0.0,
+            local_directionality: 1.0
+        }
+    );
+}
+
+#[test]
+fn local_shadow_settings_are_bounded_and_off_round_trips() {
+    let config = parse_config(
+        "version=1\nlocal_shadows={\"count\":100,\"resolution\":99999,\"range\":100,\"updates\":100}\n",
+    );
+    assert_eq!(config.local_shadows.count, 4);
+    assert_eq!(config.local_shadows.resolution, 1024);
+    assert_eq!(config.local_shadows.range, 32.0);
+    assert_eq!(config.local_shadows.updates, 4);
+    let off = parse_config("version=1\nlocal_shadows={\"count\":0,\"resolution\":512}\n");
+    assert_eq!(off.local_shadows.count, 0);
+    assert_eq!(off.local_shadows.resolution, 512);
+    assert_eq!(
+        parse_config(&off.serialize()).local_shadows,
+        off.local_shadows
+    );
+    off.local_shadows.validate().unwrap();
+    let bad = parse_config("version=1\nlocal_shadows={\"unknown\":true}\n");
+    assert_eq!(bad.local_shadows, Default::default());
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # Regions and chat
 
-Run `cargo run --release -- local-packages fixtures/player-world/packages /tmp/bloxgloom-region-test-v25`.
+Run `cargo run --release -- local-packages fixtures/player-world/packages /tmp/bloxgloom-region-test-v26`.
 
 Close menus, then press T or Enter to open chat. Type `hello` and press Enter;
 your own message appears in the transcript. `spoiler` is rejected by the demo

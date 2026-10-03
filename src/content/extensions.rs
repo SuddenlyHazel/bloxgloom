@@ -18,6 +18,7 @@ impl Catalog {
             supports_plant: false,
             flammable: false,
             emission: 0,
+            sky_attenuation: 0,
             reflectance: [140, 90, 45],
             properties: vec![],
             states: vec![BlockState::default()],

@@ -31,7 +31,34 @@ struct Descriptor {
     parameters: Vec<Definition>,
     #[serde(default)]
     vertex_offset: f32,
+    #[serde(default, deserialize_with = "deserialize_optional_object")]
+    environment_lighting: Option<crate::config::lighting::Lighting>,
+    #[serde(default, deserialize_with = "deserialize_optional_object")]
+    local_shadows: Option<super::local_shadow::Settings>,
 }
+// A JSON object is required: derived struct deserializers otherwise also accept
+// positional arrays, which are not part of the authored asset contract.
+fn deserialize_optional_object<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    struct Selection<T>(std::marker::PhantomData<T>);
+    impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Selection<T> {
+        type Value = Option<T>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a settings object or null")
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+        fn visit_map<M: serde::de::MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
+            T::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(Some)
+        }
+    }
+    deserializer.deserialize_any(Selection(std::marker::PhantomData))
+}
+
 fn legacy_version() -> u8 {
     1
 }
@@ -49,6 +76,9 @@ pub(crate) struct MaterialSource {
 #[derive(Debug)]
 pub(crate) struct Source {
     pub materials: Vec<MaterialSource>,
+    /// One explicit package-owned global lighting selection for this session.
+    pub environment_lighting: Option<crate::config::lighting::Lighting>,
+    pub local_shadows: Option<super::local_shadow::Settings>,
 }
 
 pub(crate) fn prepare_assets(
@@ -68,6 +98,10 @@ fn prepare_assets_inner(
     packages: &BTreeMap<String, ClientPackage>,
 ) -> Result<Option<Source>, String> {
     let mut materials = Vec::new();
+    let mut environment_lighting = None;
+    let mut local_shadows = None;
+    let mut local_shadow_owner: Option<String> = None;
+    let mut environment_owner: Option<String> = None;
     let mut targets = BTreeSet::new();
     for (package, data) in packages {
         let mut used = BTreeSet::new();
@@ -102,6 +136,8 @@ fn prepare_assets_inner(
                         || !descriptor.textures.is_empty()
                         || !descriptor.parameters.is_empty()
                         || descriptor.vertex_offset != 0.0
+                        || descriptor.environment_lighting.is_some()
+                        || descriptor.local_shadows.is_some()
                     {
                         return Err(fail("extended material fields require version 2".into()));
                     }
@@ -123,6 +159,26 @@ fn prepare_assets_inner(
                         || !(0.0..=0.25).contains(&descriptor.vertex_offset)
                     {
                         return Err(fail("invalid version-2 material targets, texture inputs or vertex offset (0..0.25)".into()));
+                    }
+                    if let Some(lighting) = descriptor.environment_lighting {
+                        lighting.validate().map_err(fail)?;
+                        if let Some(previous) = &environment_owner {
+                            return Err(fail(format!(
+                                "environment lighting already selected by {previous}"
+                            )));
+                        }
+                        environment_owner = Some(owner.clone());
+                        environment_lighting = Some(lighting);
+                    }
+                    if let Some(settings) = descriptor.local_shadows {
+                        settings.validate().map_err(fail)?;
+                        if let Some(previous) = &local_shadow_owner {
+                            return Err(fail(format!(
+                                "local shadows already selected by {previous}"
+                            )));
+                        }
+                        local_shadow_owner = Some(owner.clone());
+                        local_shadows = Some(settings);
                     }
                     parameters::defaults(&descriptor.parameters).map_err(fail)?;
                     shader::validate(source).map_err(fail)?;
@@ -162,7 +218,11 @@ fn prepare_assets_inner(
             return Err(format!("{package}: orphan material shader"));
         }
     }
-    Ok(Some(Source { materials }))
+    Ok(Some(Source {
+        materials,
+        environment_lighting,
+        local_shadows,
+    }))
 }
 impl Source {
     pub(crate) fn resolve(&self, catalog: &Catalog) -> Result<Prepared, String> {
@@ -199,7 +259,11 @@ impl Source {
                 vertex_offset: source.vertex_offset,
             });
         }
-        Ok(Prepared { materials })
+        Ok(Prepared {
+            materials,
+            environment_lighting: self.environment_lighting,
+            local_shadows: self.local_shadows,
+        })
     }
 }
 #[derive(Debug, Clone)]
@@ -215,6 +279,8 @@ pub(crate) struct Material {
 #[derive(Debug, Clone)]
 pub(crate) struct Prepared {
     pub materials: Vec<Material>,
+    pub environment_lighting: Option<crate::config::lighting::Lighting>,
+    pub local_shadows: Option<super::local_shadow::Settings>,
 }
 #[cfg(test)]
 impl Prepared {
@@ -237,6 +303,8 @@ pub(crate) fn prepare(
     let source = std::str::from_utf8(source).map_err(|e| format!("{owner}: {e}"))?;
     legacy::validate(source).map_err(|e| format!("{owner}: {e}"))?;
     Ok(Prepared {
+        environment_lighting: None,
+        local_shadows: None,
         materials: vec![Material {
             owner: owner.into(),
             layers: vec![layer],
