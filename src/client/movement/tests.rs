@@ -1,4 +1,30 @@
 use super::*;
+
+#[test]
+fn walking_prediction_keeps_horizontal_input_and_ignores_free_flight_height() {
+    let catalog = crate::content::Catalog::builtins();
+    let key = ChunkKey { x: 0, y: 0, z: 0 };
+    let chunks = HashMap::from([(
+        key,
+        Arc::new(Chunk::from_blocks(
+            key,
+            1,
+            vec![crate::world::AIR; crate::world::CHUNK_VOLUME],
+        )),
+    )]);
+    let position = Vec3::new(1.5, 1.0, 1.5);
+    assert_eq!(
+        predict_player_movement_with_mode(
+            &chunks,
+            &catalog,
+            position,
+            Vec3::new(0.1, 1.0, 0.0),
+            false,
+            false
+        ),
+        Vec3::new(1.6, 1.0, 1.5)
+    );
+}
 use crate::world::{AIR, CHUNK_VOLUME, STONE};
 
 #[test]

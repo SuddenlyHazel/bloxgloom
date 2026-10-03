@@ -5,6 +5,7 @@ use crate::world::{Chunk, ChunkKey};
 use glam::Vec3;
 use std::collections::HashMap;
 use std::sync::Arc;
+pub(super) mod flight;
 mod teleport;
 
 #[cfg(test)]
@@ -17,6 +18,7 @@ pub(super) fn predict_player_movement(
     predict_player_movement_with_stance(chunks, catalog, position, delta, false)
 }
 
+#[cfg(test)]
 pub(super) fn predict_player_movement_with_stance(
     chunks: &HashMap<ChunkKey, Arc<Chunk>>,
     catalog: &Catalog,
@@ -24,8 +26,24 @@ pub(super) fn predict_player_movement_with_stance(
     delta: Vec3,
     crouching: bool,
 ) -> Vec3 {
+    predict_player_movement_with_mode(chunks, catalog, position, delta, crouching, true)
+}
+
+pub(super) fn predict_player_movement_with_mode(
+    chunks: &HashMap<ChunkKey, Arc<Chunk>>,
+    catalog: &Catalog,
+    position: Vec3,
+    mut delta: Vec3,
+    crouching: bool,
+    flying: bool,
+) -> Vec3 {
+    let mut body = catalog.player_rules().for_stance(crouching).body();
+    if !flying {
+        body.foot_inset = 0.0;
+        delta.y = 0.0;
+    }
     crate::physics::resolve_player_movement(
-        catalog.player_rules().for_stance(crouching).body(),
+        body,
         position.to_array(),
         delta.to_array(),
         |x, y, z| {

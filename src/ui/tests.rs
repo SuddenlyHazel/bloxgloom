@@ -508,6 +508,8 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
                 kiln: None,
                 kiln_source: None,
                 admin_enabled: true,
+                flying: true,
+                flying_pending: false,
                 admin_page: 0,
                 admin_input: "give bloxgloom:stone 128",
                 target: Some([10, 20, -30]),

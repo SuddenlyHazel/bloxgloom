@@ -46,6 +46,22 @@ impl UiBuilder<'_> {
             30,
         );
         let binding_mode = frame.admin_input.starts_with(UiFrame::BINDING_VIEW_PREFIX);
+        if frame.admin_enabled
+            && let Some(rect) = layout.rect(UiControl::AdminFlying)
+        {
+            self.button(
+                rect,
+                if frame.flying_pending {
+                    "WAITING..."
+                } else if frame.flying {
+                    "FLYING: ON"
+                } else {
+                    "FLYING: OFF"
+                },
+                frame.hovered == Some(UiControl::AdminFlying),
+                false,
+            );
+        }
         if let Some(rect) = layout.rect(UiControl::AdminBindings) {
             self.button(
                 rect,

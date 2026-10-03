@@ -16,7 +16,11 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
     let rules = state.world.catalog().player_rules();
     let mut active = Vec::new();
     for (&id, client) in &mut state.clients {
-        if client.pending_moves.is_empty() && !client.movement.stance_pending() {
+        if client.movement_reset.pending
+            || (client.pending_moves.is_empty()
+                && !client.movement.stance_pending()
+                && client.movement.flying())
+        {
             client.movement.advance_idle_tick(rules);
         } else {
             active.push(id);
@@ -141,6 +145,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             if client.movement.crouching() != batch.state.crouching() {
                 stance_changes.push((id, batch.state.crouching()));
             }
+            let before = client.position();
             client.movement = batch.state;
             let [x, y, z] = client.position();
             client.center = world_to_chunk(x.floor() as i32, y.floor() as i32, z.floor() as i32).0;
@@ -149,12 +154,12 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             // final position acknowledges every earlier command in this tick.
             // Sending each intermediate correction needlessly fills a
             // reliable outbound queue when a client is rendering chunks.
-            if let Some(acknowledgment) = batch.acknowledgments.last() {
-                let [x, y, z] = acknowledgment.position;
+            if !batch.acknowledgments.is_empty() || before != client.position() {
+                let [x, y, z] = client.position();
                 position_messages.push((
                     id,
                     ServerMessage::Position {
-                        ack_seq: acknowledgment.seq,
+                        ack_seq: client.movement.last_seq(),
                         x,
                         y,
                         z,

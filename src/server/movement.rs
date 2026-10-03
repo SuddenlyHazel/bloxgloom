@@ -10,6 +10,8 @@ use bloxgloom_host_api::player::PlayerRules;
 use std::time::Duration;
 
 mod coordinator;
+mod ground;
+pub(super) use ground::set_flying;
 mod stance;
 pub(super) use stance::clear as clear_stance;
 mod teleport;
@@ -52,6 +54,9 @@ pub struct MovementState {
     credit_nanoblocks: u32,
     crouching: bool,
     requested_crouch: bool,
+    flying: bool,
+    vertical_velocity: f32,
+    jump_requested: bool,
 }
 
 impl MovementState {
@@ -62,6 +67,9 @@ impl MovementState {
             credit_nanoblocks: 0,
             crouching: false,
             requested_crouch: false,
+            flying: true,
+            vertical_velocity: 0.0,
+            jump_requested: false,
         }
     }
 
@@ -72,6 +80,14 @@ impl MovementState {
 
     pub fn crouching(self) -> bool {
         self.crouching
+    }
+    pub fn flying(self) -> bool {
+        self.flying
+    }
+    pub(super) fn request_jump(&mut self) {
+        if !self.flying {
+            self.jump_requested = true;
+        }
     }
     pub(super) fn stance_pending(self) -> bool {
         self.crouching != self.requested_crouch
@@ -167,6 +183,24 @@ pub fn process_movement_batch(
         };
     }
     state.advance_idle_tick(view.player_rules());
+    let mut batch = process_commands(view, state, commands);
+    if !batch.state.flying
+        && let Err(missing) = ground::advance(view, &mut batch.state)
+    {
+        batch.first_missing_chunk = Some(missing);
+        batch.stop_reason = StopReason::MissingChunk(missing);
+    }
+    if let Some(ack) = batch.acknowledgments.last_mut() {
+        ack.position = batch.state.position;
+    }
+    batch
+}
+
+fn process_commands(
+    view: &VoxelView,
+    mut state: MovementState,
+    commands: &[MovementCommand],
+) -> MovementBatch {
     let rules = view.player_rules().for_stance(state.crouching);
 
     let work_count = commands.len().min(MAX_COMMANDS_PER_TICK);
@@ -201,33 +235,36 @@ pub fn process_movement_batch(
             };
         }
 
-        let next_position = match super::voxel_view::resolve_player_movement_with_body(
-            view,
-            rules.body(),
-            position,
-            command.delta,
-        ) {
-            Ok(position) => position,
-            Err(MovementError::MissingChunk(missing)) => {
-                return MovementBatch {
-                    state,
-                    acknowledgments,
-                    consumed,
-                    first_missing_chunk: Some(missing),
-                    stop_reason: StopReason::MissingChunk(missing),
-                };
-            }
-            Err(MovementError::InvalidCoordinates | MovementError::OutOfBounds) => {
-                state.last_seq = command.seq;
-                acknowledgments.push(MovementAck {
-                    seq: command.seq,
-                    position,
-                    kind: AckKind::Rejected,
-                });
-                consumed += 1;
-                continue;
-            }
-        };
+        let mut body = rules.body();
+        let mut delta = command.delta;
+        if !state.flying {
+            body.foot_inset = 0.0;
+            delta[1] = 0.0;
+        }
+        let next_position =
+            match super::voxel_view::resolve_player_movement_with_body(view, body, position, delta)
+            {
+                Ok(position) => position,
+                Err(MovementError::MissingChunk(missing)) => {
+                    return MovementBatch {
+                        state,
+                        acknowledgments,
+                        consumed,
+                        first_missing_chunk: Some(missing),
+                        stop_reason: StopReason::MissingChunk(missing),
+                    };
+                }
+                Err(MovementError::InvalidCoordinates | MovementError::OutOfBounds) => {
+                    state.last_seq = command.seq;
+                    acknowledgments.push(MovementAck {
+                        seq: command.seq,
+                        position,
+                        kind: AckKind::Rejected,
+                    });
+                    consumed += 1;
+                    continue;
+                }
+            };
 
         // Charge requested distance even if a wall prevents all or part of the
         // movement. Repeatedly pushing into a wall must not preserve allowance.

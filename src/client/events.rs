@@ -523,7 +523,12 @@ impl ClientApp {
                         KeyCode::KeyS => self.keys.back = pressed,
                         KeyCode::KeyA => self.keys.left = pressed,
                         KeyCode::KeyD => self.keys.right = pressed,
-                        KeyCode::Space => self.keys.up = pressed,
+                        KeyCode::Space => {
+                            self.keys.up = pressed;
+                            if pressed && !event.repeat {
+                                self.jump();
+                            }
+                        }
                         KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.down = pressed,
                         _ => {}
                     }

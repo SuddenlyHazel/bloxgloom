@@ -42,9 +42,11 @@ pub(in crate::server) fn teleport(
     client.pending_moves.clear();
     let crouching = client.movement.crouching;
     let requested = client.movement.requested_crouch;
+    let flying = client.movement.flying;
     client.movement = MovementState::new(position, floor);
     client.movement.crouching = crouching;
     client.movement.requested_crouch = requested;
+    client.movement.flying = flying;
     client.center = world_to_chunk(
         position[0].floor() as i32,
         position[1].floor() as i32,
@@ -96,9 +98,11 @@ pub(in crate::server) fn ready(
     }
     let crouching = client.movement.crouching;
     let requested = client.movement.requested_crouch;
+    let flying = client.movement.flying;
     client.movement = MovementState::new(client.position(), next_seq - 1);
     client.movement.crouching = crouching;
     client.movement.requested_crouch = requested;
+    client.movement.flying = flying;
     client.movement_reset.pending = false;
     Ok(())
 }

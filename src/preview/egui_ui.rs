@@ -133,6 +133,9 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         (UiScreen::Audio, "audio-weather"),
         (UiScreen::Character, "character"),
         (UiScreen::Admin, "admin"),
+        (UiScreen::Admin, "admin-flying"),
+        (UiScreen::Admin, "admin-walking"),
+        (UiScreen::Admin, "admin-flight-pending"),
         (UiScreen::Package, "package"),
         (UiScreen::Package, "package-updated"),
         (UiScreen::Joining, "joining"),
@@ -196,6 +199,9 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         };
         let preview = preview_frame(screen_kind, None, 1.0);
         let frame = UiFrame {
+            admin_enabled: screen_kind != UiScreen::Admin || label != "admin",
+            flying: label != "admin-walking",
+            flying_pending: label == "admin-flight-pending",
             character: (screen_kind == UiScreen::Character).then_some(crate::ui::CharacterPanel {
                 cosmetics: [0; 4],
                 recipe: Some(crate::appearance::CharacterRecipe {

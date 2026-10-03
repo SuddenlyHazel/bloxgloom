@@ -305,6 +305,30 @@ fn admin(ui: &mut egui::Ui, frame: &UiFrame<'_>, catalog: &Catalog, intents: &mu
         intents.push(Intent::Control(UiControl::AdminBindings));
     }
     ui.add_space(6.0);
+    if frame.admin_enabled {
+        let mut flying = frame.flying;
+        if ui
+            .add_enabled(
+                !frame.flying_pending,
+                egui::Checkbox::new(&mut flying, "Flying"),
+            )
+            .changed()
+        {
+            intents.push(Intent::Control(UiControl::AdminFlying));
+        }
+        ui.label(
+            RichText::new(if frame.flying_pending {
+                "Waiting for server…"
+            } else if frame.flying {
+                "Space rises · Ctrl descends"
+            } else {
+                "Walking · Space jumps · Shift crouches"
+            })
+            .size(11.0)
+            .color(MUTED),
+        );
+        ui.add_space(6.0);
+    }
     if bindings {
         ui.label(
             RichText::new("Choose a row, then press a free letter. Escape cancels.")

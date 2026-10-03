@@ -708,6 +708,16 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             }
             Ok(())
         }
+        ClientMessage::SetFlying { flying } => {
+            movement::set_flying(state, id, flying);
+            Ok(())
+        }
+        ClientMessage::Jump => {
+            if let Some(client) = state.clients.get_mut(&id) {
+                client.movement.request_jump();
+            }
+            Ok(())
+        }
         ClientMessage::SelectAppearance { palettes } => appearance::select(state, id, palettes),
         ClientMessage::SelectCharacter { recipe } => {
             appearance::select_character(state, id, recipe)

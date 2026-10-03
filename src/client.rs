@@ -47,7 +47,7 @@ pub(crate) use mobile_tests::MobileProbe;
 #[cfg(test)]
 pub(crate) use tests::ReplicationProbe;
 pub(crate) mod trace;
-use movement::predict_player_movement_with_stance;
+use movement::predict_player_movement_with_mode;
 
 #[cfg(test)]
 fn edit_for_hit(
@@ -274,6 +274,8 @@ pub(crate) use lifecycle::tests::exercise_join_lifecycle;
 #[cfg(test)]
 pub(crate) use lifecycle::tests::exercise_player_services;
 #[cfg(test)]
+pub(crate) use movement::flight::tests::exercise_player_flight;
+#[cfg(test)]
 pub(crate) use movement::teleport_tests::exercise_player_teleport;
 mod lod;
 mod mesh_queue;
@@ -348,6 +350,7 @@ struct ClientApp {
     owned_entity_id: Option<u64>,
     player_stances: BTreeMap<u64, bool>,
     crouch_requested: bool,
+    flight: movement::flight::Flight,
     player_roster: Vec<crate::protocol::PlayerSummary>,
     roster_revision: u64,
     player_state_snapshot: u64,
@@ -449,6 +452,7 @@ impl ClientApp {
             owned_entity_id: None,
             player_stances: BTreeMap::new(),
             crouch_requested: false,
+            flight: Default::default(),
             player_roster: vec![],
             roster_revision: 0,
             player_state_snapshot: 0,
@@ -752,6 +756,8 @@ impl ClientApp {
                 self.focused_control = None;
             }
             UiControl::AdminBindings => {}
+            UiControl::AdminFlying if self.screen == UiScreen::Admin => self.toggle_flying(),
+            UiControl::AdminFlying => {}
             UiControl::AdminItem(_) if self.admin_binding_mode => {}
             UiControl::AdminItem(index) if self.screen == UiScreen::Admin && self.admin_enabled => {
                 self.admin_grant_index(index)
@@ -858,6 +864,7 @@ impl ClientApp {
                 let mut controls = Vec::new();
                 if self.admin_enabled {
                     controls.extend((0..24u8).map(UiControl::AdminItem));
+                    controls.push(UiControl::AdminFlying);
                 }
                 controls.extend([UiControl::AdminPrev, UiControl::AdminNext]);
                 controls.push(UiControl::AdminRun);
@@ -1184,6 +1191,7 @@ impl ClientApp {
                     self.player_stances.remove(&entity_id);
                 }
             }
+            ServerMessage::FlyingMode { flying } => self.accept_flying(flying),
             ServerMessage::ActionSession {
                 epoch,
                 next_seq,
@@ -1202,12 +1210,13 @@ impl ClientApp {
                 }
                 let mut predicted = Vec3::new(x, y, z);
                 for (_, delta) in &self.unacked {
-                    predicted = predict_player_movement_with_stance(
+                    predicted = predict_player_movement_with_mode(
                         &self.chunks,
                         &self.catalog,
                         predicted,
                         *delta,
                         self.crouching(),
+                        self.flight.flying,
                     );
                 }
                 self.position = predicted;
@@ -1603,7 +1612,7 @@ impl ClientApp {
     }
 
     fn move_player(&mut self, dt: f32) {
-        if self.screen != UiScreen::Playing || !self.grabbed {
+        if self.screen != UiScreen::Playing || !self.grabbed || self.flight.pending.is_some() {
             return;
         }
         if !self.pending_commands.is_empty() {
@@ -1624,10 +1633,10 @@ impl ClientApp {
         if self.keys.left {
             direction -= right;
         }
-        if self.keys.up {
+        if self.flight.flying && self.keys.up {
             direction += Vec3::Y;
         }
-        if self.keys.down {
+        if self.flight.flying && self.keys.down {
             direction -= Vec3::Y;
         }
         if direction == Vec3::ZERO {
@@ -1656,12 +1665,13 @@ impl ClientApp {
             dy: delta.y,
             dz: delta.z,
         }) {
-            self.position = predict_player_movement_with_stance(
+            self.position = predict_player_movement_with_mode(
                 &self.chunks,
                 &self.catalog,
                 self.position,
                 delta,
                 self.crouching(),
+                self.flight.flying,
             );
             self.unacked.push_back((seq, delta));
         }
@@ -1956,6 +1966,8 @@ impl ClientApp {
             action_panel: self.action_panel(),
             kiln_source: self.kiln_source,
             admin_enabled: self.admin_enabled,
+            flying: self.flight.flying,
+            flying_pending: self.flight.pending.is_some(),
             admin_page: if self.admin_binding_mode {
                 self.admin_binding_page
             } else {

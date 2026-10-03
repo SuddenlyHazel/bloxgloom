@@ -372,6 +372,8 @@ pub(super) async fn run_perf_benchmark_async(
             kiln: None,
             kiln_source: None,
             admin_enabled: false,
+            flying: true,
+            flying_pending: false,
             admin_page: 0,
             admin_input: "",
             target: Some(target_block),

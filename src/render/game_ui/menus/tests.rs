@@ -1,6 +1,60 @@
 use super::*;
 
 #[test]
+fn admin_flying_checkbox_clicks_and_disables_while_waiting_for_server() {
+    for size in [egui::vec2(640.0, 360.0), egui::vec2(1280.0, 720.0)] {
+        let context = crate::render::game_ui::themed_context();
+        let catalog = crate::content::Catalog::builtins();
+        for pending in [false, true] {
+            let frame = UiFrame {
+                screen: UiScreen::Admin,
+                admin_enabled: true,
+                flying_pending: pending,
+                ..Default::default()
+            };
+            let draw = |events| {
+                let mut intents = Vec::new();
+                let mut output = context.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| super::draw(ui, &frame, &catalog, &mut intents),
+                );
+                output.textures_delta.clear();
+                (output, intents)
+            };
+            draw(vec![]);
+            let (output, _) = draw(vec![]);
+            let pos = label_center(&output.shapes, "Flying");
+            assert!(pos.y > 0.0 && pos.y < size.y);
+            let click = |pressed| {
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]
+            };
+            draw(click(true));
+            let (_, intents) = draw(click(false));
+            if pending {
+                assert!(intents.is_empty());
+            } else {
+                assert!(matches!(
+                    intents.as_slice(),
+                    [Intent::Control(UiControl::AdminFlying)]
+                ));
+            }
+        }
+    }
+}
+
+#[test]
 fn graphics_settings_do_not_offer_a_model_override() {
     let rows = settings_rows(crate::ui::UiSettings::default(), true);
     assert_eq!(rows.len(), 11);

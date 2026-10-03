@@ -254,6 +254,15 @@ impl UiLayout {
     fn add_admin(&mut self) {
         let panel = self.admin_panel();
         self.push(
+            UiControl::AdminFlying,
+            UiRect {
+                x: panel.x + panel.width - 272.0 * self.scale,
+                y: panel.y + 14.0 * self.scale,
+                width: 119.0 * self.scale,
+                height: 30.0 * self.scale,
+            },
+        );
+        self.push(
             UiControl::AdminBindings,
             UiRect {
                 x: panel.x + panel.width - 145.0 * self.scale,

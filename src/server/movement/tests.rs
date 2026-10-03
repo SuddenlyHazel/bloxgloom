@@ -5,6 +5,9 @@ use super::{
 use crate::server::voxel_view::{MissingChunk, VoxelView};
 use crate::world::{AIR, CHUNK_VOLUME, Chunk, ChunkKey};
 
+#[path = "tests/ground.rs"]
+mod ground;
+
 fn key(x: i32, y: i32, z: i32) -> ChunkKey {
     ChunkKey { x, y, z }
 }

@@ -28,6 +28,8 @@ mod crouch;
 mod drop_policy;
 #[path = "script_startup/farming.rs"]
 mod farming;
+#[path = "script_startup/flight.rs"]
+mod flight;
 #[path = "script_startup/gameplay.rs"]
 mod gameplay;
 #[path = "script_startup/generation.rs"]

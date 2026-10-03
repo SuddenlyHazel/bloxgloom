@@ -22,7 +22,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 26;
+const WIRE_VERSION: u8 = 27;
 pub(crate) mod lod;
 mod player_states;
 mod players;
@@ -54,6 +54,10 @@ pub enum ClientMessage {
     SetCrouching {
         crouching: bool,
     },
+    SetFlying {
+        flying: bool,
+    },
+    Jump,
     MovementReady {
         session: u64,
         reset: u64,
@@ -198,6 +202,9 @@ pub enum ServerMessage {
         entity_id: u64,
         crouching: bool,
     },
+    FlyingMode {
+        flying: bool,
+    },
     PlayerTeleport {
         profile: u128,
         session: u64,
@@ -318,6 +325,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             ServerMessage::LodInvalidate { .. } => 25,
             ServerMessage::LodInvalidateAll { .. } => 16,
             ServerMessage::PlayerStance { .. } => 8 + 1,
+            ServerMessage::FlyingMode { .. } => 1,
             ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
@@ -439,6 +447,11 @@ pub fn write_client_with_catalog(
             out.push(20);
             out.push(u8::from(*crouching));
         }
+        ClientMessage::SetFlying { flying } => {
+            out.push(23);
+            out.push(u8::from(*flying));
+        }
+        ClientMessage::Jump => out.push(24),
         ClientMessage::MovementReady {
             session,
             reset,
@@ -703,6 +716,10 @@ pub fn write_server_with_catalog(
             out.push(27);
             out.extend(entity_id.to_le_bytes());
             out.push(u8::from(*crouching));
+        }
+        ServerMessage::FlyingMode { flying } => {
+            out.push(45);
+            out.push(u8::from(*flying));
         }
         ServerMessage::PlayerTeleport {
             profile,
@@ -1289,6 +1306,14 @@ pub fn read_client_with_catalog(
                 _ => return Err(invalid("invalid crouch state")),
             },
         },
+        23 => ClientMessage::SetFlying {
+            flying: match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid flying mode")),
+            },
+        },
+        24 => ClientMessage::Jump,
         19 => {
             let recipe = match c.u8()? {
                 0 => None,
@@ -1556,6 +1581,13 @@ pub fn read_server_with_catalog(
                 crouching,
             }
         }
+        45 => ServerMessage::FlyingMode {
+            flying: match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid flying mode")),
+            },
+        },
         26 => {
             let profile = c.u128()?;
             let session = c.u64()?;

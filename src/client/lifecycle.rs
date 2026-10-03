@@ -13,6 +13,7 @@ impl ClientApp {
         self.next_break = None;
         self.player_stances.clear();
         self.crouch_requested = false;
+        self.flight = Default::default();
         if let Some(lane) = self.player_services.take() {
             lane.close(self.failure.as_deref().unwrap_or("session retired"));
         }
