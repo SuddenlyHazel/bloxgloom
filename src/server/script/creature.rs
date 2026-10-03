@@ -185,17 +185,24 @@ impl Behavior for ScriptCreature {
             position: None,
             lifecycle: Lifecycle::default(),
         };
-        if context.next_tick.is_some_and(|due| due > context.tick) {
-            return Ok(plan);
-        }
-        let Some(snapshot) = &self.snapshot else {
-            return Err(Error::InvalidState);
-        };
         let mut state = context
             .state
             .downcast_ref::<State>()
             .ok_or(Error::InvalidState)?
             .clone();
+        // Support removal must interrupt a sleeping creature. Other early
+        // terrain hints, especially while already falling, must not advance
+        // another fixed physics step before its scheduled time.
+        if context.next_tick.is_some_and(|due| due > context.tick)
+            && (state.velocity < 0.0
+                || !context.world.clear(context.position)?
+                || context.world.grounded(context.position)?)
+        {
+            return Ok(plan);
+        }
+        let Some(snapshot) = &self.snapshot else {
+            return Err(Error::InvalidState);
+        };
         let result = run_with(
             &Program::Package {
                 snapshot: Arc::clone(snapshot),
@@ -261,16 +268,19 @@ impl Behavior for ScriptCreature {
         if !self.valid(&state) {
             return Err(Error::InvalidState);
         }
+        // The host advances 40 ms of collision/gravity per step. Request the
+        // next tick; due work enters the worker/WAL lane one tick later, giving
+        // the normal two-tick physics cadence instead of the script's idle wait.
+        let delay = if movement.vertical_velocity < 0.0 {
+            1
+        } else {
+            u64::from(result.delay)
+        };
         plan.state = Some(Payload::new(state));
         plan.lifecycle.despawn = result.lifecycle.despawn;
         plan.lifecycle.spawns = spawns;
         plan.position = (movement.position != context.position).then_some(movement.position);
-        plan.next_tick = Some(
-            context
-                .tick
-                .checked_add(u64::from(result.delay))
-                .ok_or(Error::Exhausted)?,
-        );
+        plan.next_tick = Some(context.tick.checked_add(delay).ok_or(Error::Exhausted)?);
         Ok(plan)
     }
 

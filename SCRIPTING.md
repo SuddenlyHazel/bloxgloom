@@ -603,6 +603,11 @@ Invalid or unavailable queries reject the tick even when caught. Return
 Return nil for both target coordinates to omit a horizontal movement target.
 The host advances movement with terrain collision and gravity; scripts do not
 teleport the body or own its replicated motion.
+While falling, the host requests the next logical tick, overriding the returned
+delay. With worker admission this normally gives a 40 ms physics cadence, so
+gravity keeps its normal rate. A support-removal wake can interrupt an idle
+deadline; other early terrain hints do not add physics steps. Use `c.tick` for
+behavior timers that must keep the same duration in the air.
 
 An optional fifth result is `{despawn=true,spawns={{x,y,z},...}}`. It may create
 at most four children within eight blocks of the parent's feet. A child can use

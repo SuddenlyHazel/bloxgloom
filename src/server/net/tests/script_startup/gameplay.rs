@@ -160,9 +160,14 @@ impl Peer {
         message
     }
 
-    pub(super) fn request(&mut self, mode: u8) -> ClientMessage {
+    pub(super) fn next_id(&mut self) -> u128 {
         let action_id = (u128::from(self.epoch) << 64) | u128::from(self.sequence);
         self.sequence += 1;
+        action_id
+    }
+
+    pub(super) fn request(&mut self, mode: u8) -> ClientMessage {
+        let action_id = self.next_id();
         ClientMessage::EntityInteract {
             action_id,
             target: [0, 0, 0], // Item actions must not trust this as a world target.

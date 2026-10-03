@@ -3,6 +3,9 @@ use super::*;
 use crate::client::{InventoryProbe, NetworkedVisualProbe};
 use bloxgloom_host_api::entity::{TintMode, VisualState};
 
+#[path = "glb_creature/falling.rs"]
+mod falling;
+
 fn joined(
     probe: &mut NetworkedVisualProbe,
     kind: crate::content::EntityTypeId,

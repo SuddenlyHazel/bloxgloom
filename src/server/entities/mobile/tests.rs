@@ -73,3 +73,90 @@ fn host_rejects_ignored_out_of_range_reads_unchecked_motion_and_invalid_state() 
         ));
     }
 }
+
+#[test]
+fn scripted_creature_support_loss_falls_at_physics_cadence_and_lands_exactly() {
+    let packages =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/glb-creatures/packages");
+    let catalog = crate::server::startup::ServerStartup::new(Arc::new(Catalog::builtins()))
+        .with_local_packages(&packages)
+        .unwrap()
+        .into_preview_catalog();
+    let kind = catalog.entity_type_id_by_key("sprout:sproutling").unwrap();
+    let definition = catalog.mobile_entity(kind).unwrap();
+    let adapter = Adapter(Arc::clone(definition));
+    let flat = view(&[(8, 84, 8)], &[]);
+    let hole = view(&[], &[]);
+    let location = EntityLocation::Mobile {
+        position: [8.5, 85.0, 8.5],
+    };
+    let mut snapshot = EntitySnapshot {
+        id: EntityId::new(7).unwrap(),
+        entity_type: kind,
+        revision: 1,
+        motion_revision: 1,
+        owner: location.owner().unwrap(),
+        location,
+        private_payload: definition.behavior.initial(),
+        next_tick: Some(100),
+    };
+    let plan = |snapshot: &EntitySnapshot, tick, terrain: &VoxelView| {
+        EntityTickPolicy::plan(
+            &adapter,
+            snapshot,
+            tick,
+            &catalog,
+            terrain,
+            &EntityView::assemble(vec![], snapshot.id),
+        )
+        .unwrap()
+    };
+    let harmless = plan(&snapshot, 10, &flat);
+    assert!(harmless.payload.is_none() && harmless.position.is_none());
+    assert_eq!(harmless.next_tick, Some(100));
+
+    let mut tick = 10;
+    let mut previous_drop = 0.0;
+    let mut landed = false;
+    for step in 0..30 {
+        let EntityLocation::Mobile { position: before } = snapshot.location else {
+            panic!("creature must remain mobile");
+        };
+        let falling = plan(&snapshot, tick, &hole);
+        let after = falling.position.unwrap_or(before);
+        snapshot.location = EntityLocation::Mobile { position: after };
+        snapshot.owner = snapshot.location.owner().unwrap();
+        // Roundtrip the real durable codec between steps, including velocity.
+        snapshot.private_payload = adapter
+            .decode(&adapter.encode(falling.payload.as_ref().unwrap()).unwrap())
+            .unwrap();
+        snapshot.next_tick = falling.next_tick;
+        let pose = definition
+            .behavior
+            .pose(&adapter.public_view(&snapshot.private_payload).unwrap())
+            .unwrap();
+        if pose.grounded {
+            assert_eq!(after[1], 80.0, "sweep must land on the voxel top");
+            assert_eq!(falling.next_tick, Some(tick + 10));
+            assert!(
+                tick - 10 < 50,
+                "five-block fall must finish within a second"
+            );
+            landed = true;
+            break;
+        }
+        assert_eq!(falling.next_tick, Some(tick + 1));
+        let drop = before[1] - after[1];
+        assert!(drop > previous_drop, "gravity must accelerate each step");
+        previous_drop = drop;
+        if step == 0 {
+            assert!((drop - 0.032).abs() < 0.00001);
+        }
+        let early_hint = plan(&snapshot, tick, &hole);
+        assert!(early_hint.payload.is_none() && early_hint.position.is_none());
+        assert_eq!(early_hint.next_tick, falling.next_tick);
+        // Ordinary due work is queued first, then planned at the next barrier.
+        tick += 2;
+    }
+    assert!(landed, "script's ten-tick delay must not slow gravity");
+}
