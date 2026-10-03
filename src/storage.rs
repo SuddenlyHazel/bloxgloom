@@ -13,6 +13,9 @@ use crate::world::{
     TERRAIN_GENERATOR_VERSION,
 };
 
+mod metadata;
+use metadata::read_world_metadata;
+
 const MAGIC: &[u8; 4] = b"BGED";
 // BGED v3: magic[4], format u16, terrain generator u16, seed u64,
 // revision u64, count u16, sorted `(cell_index u16, state_id u32)` records,
@@ -25,7 +28,7 @@ const WORLD_META: &str = "world.meta";
 const CONTENT_MAP: &str = "content.map";
 pub(crate) const WORLD_LOCK: &str = ".world.lock";
 pub(crate) const CONVERSION_INCOMPLETE: &str = ".conversion-incomplete";
-const SAVE_FORMAT_VERSION: u16 = 7;
+const SAVE_FORMAT_VERSION: u16 = 8;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -86,7 +89,19 @@ impl Storage {
             Ok(saved_seed) if saved_seed != seed => {
                 return Err(invalid_data("world directory belongs to another seed"));
             }
-            Ok(_) => {}
+            Ok(_) => {
+                // Diagnose content incompatibilities before creating even a
+                // lock file. Re-resolve under the lock before publishing new
+                // assignments, as another writer may have changed the save.
+                let mut saved = read_content_map(&root).map_err(|error| {
+                    if error.kind() == io::ErrorKind::NotFound {
+                        invalid_data("world is missing content manifest")
+                    } else {
+                        error
+                    }
+                })?;
+                saved.resolve_world_catalog(&catalog)?;
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 verify_new_world_directory(&root)?;
             }
@@ -347,35 +362,6 @@ fn verify_new_world_directory(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn read_world_metadata(path: &Path, identity: &[u8]) -> io::Result<u64> {
-    let mut bytes = Vec::new();
-    File::open(path)?
-        .take((16 + MAX_GENERATION_IDENTITY_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() == 14 && &bytes[..4] == WORLD_MAGIC {
-        return Err(invalid_data(
-            "unsupported old save format; no automatic upgrade",
-        ));
-    }
-    if bytes.len() < 16 || &bytes[..4] != WORLD_MAGIC {
-        return Err(invalid_data("invalid world metadata"));
-    }
-    if u16::from_le_bytes(bytes[4..6].try_into().unwrap()) != SAVE_FORMAT_VERSION {
-        return Err(invalid_data(
-            "unsupported save format; no automatic upgrade",
-        ));
-    }
-    if u16::from_le_bytes(bytes[6..8].try_into().unwrap()) != TERRAIN_GENERATOR_VERSION {
-        return Err(invalid_data("incompatible terrain generator version"));
-    }
-    if &bytes[16..] != identity {
-        return Err(invalid_data(
-            "incompatible generation contributors or revisions",
-        ));
-    }
-    Ok(u64::from_le_bytes(bytes[8..16].try_into().unwrap()))
-}
-
 #[cfg(test)]
 fn verify_content_map_with(
     root: &Path,
@@ -390,17 +376,9 @@ fn resolve_content_map_with(
     new_world: bool,
     catalog: &Catalog,
 ) -> io::Result<Arc<Catalog>> {
-    let path = root.join(CONTENT_MAP);
     let current = ContentManifest::from_catalog(catalog);
-    match File::open(&path) {
-        Ok(file) => {
-            let mut bytes = Vec::new();
-            file.take((MAX_MANIFEST_BYTES + 1) as u64)
-                .read_to_end(&mut bytes)?;
-            if bytes.len() > MAX_MANIFEST_BYTES {
-                return Err(invalid_data("content manifest too large"));
-            }
-            let mut saved = ContentManifest::decode(&bytes)?;
+    match read_content_map(root) {
+        Ok(mut saved) => {
             let (resolved, changed) = saved.resolve_world_catalog(catalog)?;
             if changed {
                 write_content_map(root, &saved)?;
@@ -416,6 +394,17 @@ fn resolve_content_map_with(
         }
         Err(error) => Err(error),
     }
+}
+
+fn read_content_map(root: &Path) -> io::Result<ContentManifest> {
+    let mut bytes = Vec::new();
+    File::open(root.join(CONTENT_MAP))?
+        .take((MAX_MANIFEST_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_MANIFEST_BYTES {
+        return Err(invalid_data("content manifest too large"));
+    }
+    ContentManifest::decode(&bytes)
 }
 
 fn write_content_map(root: &Path, manifest: &ContentManifest) -> io::Result<()> {

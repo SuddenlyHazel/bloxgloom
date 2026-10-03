@@ -11,6 +11,8 @@ use super::{
     valid_property_token,
 };
 
+mod diagnostics;
+
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = MAX_ASSIGNED_ID as usize * 4;
 const MAGIC: &[u8; 4] = b"BGCM";
@@ -150,15 +152,11 @@ impl ContentManifest {
         let mut candidates = current.entries;
         candidates.sort_unstable_by(|a, b| (a.kind, a.key.as_str()).cmp(&(b.kind, b.key.as_str())));
         let mut active = Vec::with_capacity(candidates.len());
-        let mut changed = false;
+        let mut additions = Vec::new();
         for mut entry in candidates {
             if let Some(&(id, fingerprint)) = saved_by_key.get(&(entry.kind, entry.key.clone())) {
                 if fingerprint != entry.schema_fingerprint {
-                    return Err(invalid(if entry.key == "bloxgloom:player" {
-                        "incompatible player character catalog; use a new world directory (existing save left unchanged)"
-                    } else {
-                        "content schema changed without migration"
-                    }));
+                    return Err(diagnostics::saved_contract(&entry, id, fingerprint));
                 }
                 entry.id = id;
             } else {
@@ -177,17 +175,24 @@ impl ContentManifest {
                     (entry.kind, entry.key.clone()),
                     (entry.id, entry.schema_fingerprint),
                 );
-                self.entries.push(entry.clone());
-                changed = true;
+                additions.push(entry.clone());
             }
             active.push(entry);
         }
         active.sort_unstable_by_key(|entry| (entry.kind, entry.id));
         let catalog = Self { entries: active }.resolve_catalog(local)?;
+        let changed = !additions.is_empty();
         if changed {
-            self.entries
+            // Validate the full replacement before publishing even in-memory
+            // assignments: a later incompatible key must leave this manifest
+            // and all of its reserved IDs untouched.
+            let mut replacement = self.clone();
+            replacement.entries.extend(additions);
+            replacement
+                .entries
                 .sort_unstable_by_key(|entry| (entry.kind, entry.id));
-            self.validate()?;
+            replacement.validate()?;
+            *self = replacement;
         }
         Ok((catalog, changed))
     }
@@ -206,18 +211,22 @@ impl ContentManifest {
             .iter()
             .map(|entry| ((entry.kind, entry.key.as_str()), entry))
             .collect::<BTreeMap<_, _>>();
-        if self.entries.len() != local_by_key.len() {
-            return Err(invalid("client and server content definitions differ"));
-        }
         let mut assigned = BTreeMap::new();
         for entry in &self.entries {
             let Some(local_entry) = local_by_key.get(&(entry.kind, entry.key.as_str())) else {
-                return Err(invalid("missing client content definition"));
+                return Err(diagnostics::missing_client(entry));
             };
             if local_entry.schema_fingerprint != entry.schema_fingerprint {
-                return Err(invalid("client content schema or material differs"));
+                return Err(diagnostics::client_contract(entry, local_entry));
             }
             assigned.insert((entry.kind, entry.key.as_str()), entry.id);
+        }
+        if let Some(extra) = local_manifest
+            .entries
+            .iter()
+            .find(|entry| !assigned.contains_key(&(entry.kind, entry.key.as_str())))
+        {
+            return Err(diagnostics::extra_client(extra));
         }
 
         let mut resolved = Catalog::new();

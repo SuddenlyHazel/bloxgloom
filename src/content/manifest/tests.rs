@@ -1,6 +1,89 @@
 use super::*;
 
 #[test]
+fn rejected_saved_contract_reports_identity_and_does_not_reserve_earlier_additions() {
+    let local = Catalog::builtins();
+    let mut saved = ContentManifest::from_catalog(&local);
+    let stone = saved
+        .entries
+        .iter_mut()
+        .find(|entry| entry.kind == b'B' && entry.key == "bloxgloom:stone")
+        .unwrap();
+    stone.schema_fingerprint ^= 1;
+    // AIR sorts before STONE, so its missing identity tentatively receives an
+    // assignment before the incompatible key is encountered.
+    saved
+        .entries
+        .retain(|entry| !(entry.kind == b'B' && entry.key == "bloxgloom:air"));
+    let before = saved.encode().unwrap();
+    let error = saved.resolve_world_catalog(&local).unwrap_err().to_string();
+    assert!(error.contains("block 'bloxgloom:stone'"), "{error}");
+    assert!(error.contains("namespace 'bloxgloom'"), "{error}");
+    assert!(error.contains("saved ID 3"), "{error}");
+    assert!(
+        error.contains("saved ") && error.contains("current "),
+        "{error}"
+    );
+    assert!(
+        error.contains("persisted contract fingerprint changed"),
+        "{error}"
+    );
+    assert!(
+        error.contains("new world directory") && error.contains("existing save left unchanged"),
+        "{error}"
+    );
+    assert_eq!(saved.encode().unwrap(), before);
+}
+
+#[test]
+fn handshake_mismatch_reports_the_first_missing_extra_or_changed_key() {
+    let local = Catalog::builtins();
+    let manifest = ContentManifest::from_catalog(&local);
+    let stone = manifest
+        .entries
+        .iter()
+        .find(|entry| entry.kind == b'B' && entry.key == "bloxgloom:stone")
+        .unwrap()
+        .clone();
+    let mut missing = manifest.clone();
+    missing.entries.retain(|entry| entry != &stone);
+    let error = missing.resolve_catalog(&local).unwrap_err().to_string();
+    assert!(
+        error.contains("extra client content definition: block 'bloxgloom:stone'"),
+        "{error}"
+    );
+    let mut changed = manifest.clone();
+    changed
+        .entries
+        .iter_mut()
+        .find(|entry| entry.kind == b'B' && entry.key == stone.key)
+        .unwrap()
+        .schema_fingerprint ^= 1;
+    let error = changed.resolve_catalog(&local).unwrap_err().to_string();
+    assert!(
+        error.contains("client content contract differs: block 'bloxgloom:stone'"),
+        "{error}"
+    );
+    assert!(
+        error.contains("server ") && error.contains("client "),
+        "{error}"
+    );
+    let mut unknown = manifest;
+    unknown
+        .entries
+        .iter_mut()
+        .find(|entry| entry.kind == b'B' && entry.key == stone.key)
+        .unwrap()
+        .key = "example:missing".into();
+    let error = unknown.resolve_catalog(&local).unwrap_err().to_string();
+    assert!(
+        error.contains("missing client content definition: block 'example:missing'"),
+        "{error}"
+    );
+    assert!(error.contains("namespace 'example'"), "{error}");
+}
+
+#[test]
 fn builtin_player_rules_survive_save_and_connection_reconstruction() {
     let local = Catalog::builtins();
     let manifest = ContentManifest::from_catalog(&local);

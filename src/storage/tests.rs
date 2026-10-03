@@ -5,7 +5,7 @@ use crate::content::{
 use std::borrow::Cow;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn temporary_root(label: &str) -> PathBuf {
+pub(super) fn temporary_root(label: &str) -> PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -126,6 +126,65 @@ fn content_map_preserves_wide_assignments_and_rejects_reassignment() {
     corrupt[10] ^= 1;
     fs::write(root.join(CONTENT_MAP), corrupt).unwrap();
     assert!(verify_content_map_with(&root, false, &extended).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn incompatible_entity_contract_reports_saved_evidence_before_any_file_mutation() {
+    use crate::content::{EntityTypeDef, EntityTypeId};
+    let root = temporary_root("content-contract-reject");
+    let catalog_with_schema = |revision| {
+        let mut catalog = Catalog::builtins();
+        catalog
+            .register_entity_type(EntityTypeDef {
+                id: EntityTypeId(65_536),
+                key: "example:creature".into(),
+                schema_version: revision,
+                schema_fingerprint: u64::from(revision),
+            })
+            .unwrap();
+        Arc::new(catalog)
+    };
+    drop(Storage::with_catalog(&root, 42, catalog_with_schema(1)).unwrap());
+    fs::remove_file(root.join(WORLD_LOCK)).unwrap();
+    // Preserve representative save files, including files the content loader
+    // never interprets. Rejection must not create a lock or temporary map.
+    fs::write(root.join("drops.bin"), b"saved drops").unwrap();
+    fs::create_dir(root.join("inventories")).unwrap();
+    fs::write(root.join("inventories/profile.bin"), b"saved inventory").unwrap();
+    let metadata = fs::read(root.join(WORLD_META)).unwrap();
+    let content = fs::read(root.join(CONTENT_MAP)).unwrap();
+    let error = Storage::with_catalog(&root, 42, catalog_with_schema(2)).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    let text = error.to_string();
+    assert!(text.contains("entity 'example:creature'"), "{text}");
+    assert!(
+        text.contains("namespace 'example'") && text.contains("saved ID 65536"),
+        "{text}"
+    );
+    let saved = ContentManifest::decode(&content)
+        .unwrap()
+        .entries
+        .into_iter()
+        .find(|entry| entry.key == "example:creature")
+        .unwrap();
+    assert!(
+        text.contains(&format!("saved {:016x}", saved.schema_fingerprint)),
+        "{text}"
+    );
+    assert!(
+        text.contains("new world directory") && text.contains("existing save left unchanged"),
+        "{text}"
+    );
+    assert_eq!(fs::read(root.join(WORLD_META)).unwrap(), metadata);
+    assert_eq!(fs::read(root.join(CONTENT_MAP)).unwrap(), content);
+    assert_eq!(fs::read(root.join("drops.bin")).unwrap(), b"saved drops");
+    assert_eq!(
+        fs::read(root.join("inventories/profile.bin")).unwrap(),
+        b"saved inventory"
+    );
+    assert!(!root.join(WORLD_LOCK).exists());
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 4);
     fs::remove_dir_all(root).unwrap();
 }
 
