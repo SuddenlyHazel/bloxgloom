@@ -900,6 +900,25 @@ inputs are own-package or built-in texture keys. Each target has one material
 owner; conflicts fail preparation. There are at most 16 materials per bundle,
 8 KiB shader source per material and 4 KiB version-2 descriptors.
 
+A version-2 material may also select global session lighting with an optional
+`environment_lighting` object: `sun_intensity`, `ambient_intensity`,
+`environment_intensity`, and `local_directionality` are finite scales in 0–4, each defaulting to 1. Exactly
+one material across the installed bundle may declare this object; conflicting
+selections fail preparation with both resource owners. This is a global theme,
+not a per-target material multiplier. Values multiply the corresponding local
+client lighting settings and the result is clamped to 0–4. Selection is immutable
+for the session; `host.set_parameter` does not change these controls. Legacy
+materials and omitted selections preserve the default lighting. Local directionality
+scales the shared 65% directional / 35% unresolved scattered local response;
+zero is isotropic, and values at/above 1.539 are fully directional.
+
+A version-2 material can also declare one global `local_shadows` object per
+bundle: `count` (0–4; 0 disables), `resolution` (64–1024 texels per face),
+`range` (finite 2–32 blocks), and `updates` (1–4 whole six-face lights per
+frame). Defaults are 2, 256, 16, and 2 respectively. Invalid values, unknown
+fields, and conflicting owners fail verification. Client limits cap package
+selections. These immutable controls cannot be changed with `host.set_parameter`.
+
 Supply `material_fragment(BgSurface) -> BgSurface`, and optionally
 `material_vertex(BgVertex) -> BgVertex`. The host supplies vertex position,
 normal and UV; surface values also include albedo, light and emission. Hooks

@@ -12,12 +12,18 @@ const PLANE: usize = SIDE * SIDE;
 const VOLUME: usize = SIDE * SIDE * SIDE;
 const MAX_LIGHT: u8 = 15;
 
+mod local;
+mod sampling;
 mod skylight;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LightSample {
     pub sky: u8,
     pub glow: u8,
+    /// Normalized dominant emitter tint, derived from catalog reflectance.
+    pub glow_color: [u8; 3],
+    /// Direction toward incoming transport, scaled by 127; length is confidence.
+    pub glow_direction: [i8; 3],
     pub bounce: [u8; 3],
     /// Emission-only reflection, retained when sunlight fades.
     pub glow_bounce: [u8; 3],
@@ -26,6 +32,7 @@ pub struct LightSample {
 pub struct LightField {
     sky: Vec<u8>,
     glow: Vec<u8>,
+    local: Option<Vec<local::LocalLight>>,
     bounce: Option<Vec<[u8; 3]>>,
     glow_bounce: Option<Vec<[u8; 3]>>,
 }
@@ -104,7 +111,7 @@ impl LightField {
         let incoming_sky = skylight::incoming(key, known, seed, catalog, &blocks);
         for z in 0..SIDE {
             for x in 0..SIDE {
-                let mut open_to_sky = incoming_sky[z * SIDE + x];
+                let mut direct_sky = incoming_sky[z * SIDE + x];
                 for y in (0..SIDE).rev() {
                     let at = index(x, y, z);
                     let emission = catalog.emission(blocks[at]);
@@ -112,23 +119,24 @@ impl LightField {
                         glow[at] = emission;
                         glow_frontier.push_back(at);
                     }
-                    if is_opaque(catalog, blocks[at]) {
-                        open_to_sky = false;
-                    } else if open_to_sky {
-                        sky[at] = MAX_LIGHT;
+                    direct_sky = direct_sky.saturating_sub(catalog.sky_attenuation(blocks[at]));
+                    if direct_sky != 0 {
+                        sky[at] = direct_sky;
                         sky_frontier.push_back(at);
                     }
                 }
             }
         }
-        propagate(&blocks, &mut sky, sky_frontier, catalog);
-        propagate(&blocks, &mut glow, glow_frontier, catalog);
-        let bounce = bounced.then(|| build_bounce(&blocks, &sky, &glow, catalog));
+        propagate(&blocks, &mut sky, sky_frontier, catalog, true);
+        propagate(&blocks, &mut glow, glow_frontier, catalog, false);
+        let local = local::build(&blocks, &glow, catalog);
+        let bounce = bounced.then(|| build_bounce(&blocks, &sky, &glow, local.as_deref(), catalog));
         let glow_bounce = (bounced && glow.iter().any(|&value| value != 0))
-            .then(|| build_bounce(&blocks, &vec![0; VOLUME], &glow, catalog));
+            .then(|| build_bounce(&blocks, &vec![0; VOLUME], &glow, local.as_deref(), catalog));
         Self {
             sky,
             glow,
+            local,
             bounce,
             glow_bounce,
         }
@@ -145,6 +153,11 @@ impl LightField {
         LightSample {
             sky: self.sky[at],
             glow: self.glow[at],
+            glow_color: self.local.as_ref().map_or([0; 3], |field| field[at].color),
+            glow_direction: self
+                .local
+                .as_ref()
+                .map_or([0; 3], |field| field[at].direction),
             bounce: self.bounce.as_ref().map_or([0; 3], |bounce| bounce[at]),
             glow_bounce: self
                 .glow_bounce
@@ -155,6 +168,7 @@ impl LightField {
 
     /// Average the four air-side voxels around a face corner. Opaque neighbors
     /// contribute zero, giving a cheap corner-occlusion term without a new pass.
+    #[cfg(test)]
     pub fn corner(
         &self,
         axes: [usize; 3],
@@ -162,9 +176,24 @@ impl LightField {
         slice: usize,
         corner: [usize; 2],
     ) -> [f32; 8] {
+        self.corner_with_visibility(axes, side, slice, corner).0
+    }
+
+    /// Alongside the unchanged averaged irradiance, expose its conservative
+    /// local averaging visibility (not exact geometric occupancy). Dark neighbors
+    /// and irradiance gradients are already counted by the average;
+    /// screen-space AO must union with that suppression rather than multiply it.
+    pub(crate) fn corner_with_visibility(
+        &self,
+        axes: [usize; 3],
+        side: i32,
+        slice: usize,
+        corner: [usize; 2],
+    ) -> ([f32; 8], f32) {
         let [axis, u, v] = axes;
         let [corner_u, corner_v] = corner;
         let mut sky = 0u32;
+        let mut maxima = [0u32; 7];
         let mut glow = 0u32;
         let mut bounce = [0u32; 3];
         let mut glow_bounce = [0u32; 3];
@@ -178,35 +207,64 @@ impl LightField {
                 point[v] = (CHUNK_SIZE + corner_v).checked_add_signed(dv).unwrap();
                 let at = index(point[0], point[1], point[2]);
                 sky += u32::from(self.sky[at]);
+                maxima[0] = maxima[0].max(u32::from(self.sky[at]));
                 glow += u32::from(self.glow[at]);
                 if let Some(field) = &self.glow_bounce {
                     for channel in 0..3 {
                         glow_bounce[channel] += u32::from(field[at][channel]);
+                        maxima[4 + channel] =
+                            maxima[4 + channel].max(u32::from(field[at][channel]));
                     }
                 }
                 if let Some(field) = &self.bounce {
                     for channel in 0..3 {
                         bounce[channel] += u32::from(field[at][channel]);
+                        maxima[1 + channel] =
+                            maxima[1 + channel].max(u32::from(field[at][channel]));
                     }
                 }
             }
         }
-        [
-            sky as f32 / 60.0,
-            glow as f32 / 60.0,
-            bounce[0] as f32 / 1020.0,
-            bounce[1] as f32 / 1020.0,
-            bounce[2] as f32 / 1020.0,
-            glow_bounce[0] as f32 / 1020.0,
-            glow_bounce[1] as f32 / 1020.0,
-            glow_bounce[2] as f32 / 1020.0,
-        ]
+        let sums = [
+            sky,
+            bounce[0],
+            bounce[1],
+            bounce[2],
+            glow_bounce[0],
+            glow_bounce[1],
+            glow_bounce[2],
+        ];
+        let visibility = sums
+            .into_iter()
+            .zip(maxima)
+            .filter(|(_, max)| *max > 0)
+            .map(|(sum, max)| sum as f32 / (4.0 * max as f32))
+            .fold(1.0f32, f32::min);
+        (
+            [
+                sky as f32 / 60.0,
+                glow as f32 / 60.0,
+                bounce[0] as f32 / 1020.0,
+                bounce[1] as f32 / 1020.0,
+                bounce[2] as f32 / 1020.0,
+                glow_bounce[0] as f32 / 1020.0,
+                glow_bounce[1] as f32 / 1020.0,
+                glow_bounce[2] as f32 / 1020.0,
+            ],
+            visibility,
+        )
     }
 }
 
 /// One diffuse reflection from opaque surfaces. Sources are derived only from
 /// direct/propagated sky and emission; bounced light cannot bounce again.
-fn build_bounce(blocks: &[BlockId], sky: &[u8], glow: &[u8], catalog: &Catalog) -> Vec<[u8; 3]> {
+fn build_bounce(
+    blocks: &[BlockId],
+    sky: &[u8],
+    glow: &[u8],
+    local: Option<&[local::LocalLight]>,
+    catalog: &Catalog,
+) -> Vec<[u8; 3]> {
     let mut bounce = vec![[0u8; 3]; VOLUME];
     let mut frontier = VecDeque::new();
     for y in 1..SIDE - 1 {
@@ -228,7 +286,8 @@ fn build_bounce(blocks: &[BlockId], sky: &[u8], glow: &[u8], catalog: &Catalog) 
                     let reflectance = catalog.reflectance(blocks[neighbor]);
                     for channel in 0..3 {
                         let sky_color = [82u16, 105, 145][channel];
-                        let glow_color = [205u16, 125, 65][channel];
+                        let glow_color = local
+                            .map_or(0, |field| u16::from(field[at].color[channel]) * 205 / 255);
                         let incident = ((u16::from(sky[at]) * sky_color
                             + u16::from(glow[at]) * glow_color)
                             / 15)
@@ -304,6 +363,7 @@ fn propagate(
     light: &mut [u8],
     mut frontier: VecDeque<usize>,
     catalog: &Catalog,
+    skylight: bool,
 ) {
     while let Some(at) = frontier.pop_front() {
         let next = light[at].saturating_sub(1);
@@ -324,8 +384,15 @@ fn propagate(
         .into_iter()
         .flatten()
         {
-            if !is_opaque(catalog, blocks[neighbor]) && light[neighbor] < next {
-                light[neighbor] = next;
+            // Diffuse light loses at least one level in air; absorption through
+            // foliage must also apply laterally so propagation cannot bypass it.
+            let transmitted = if skylight {
+                light[at].saturating_sub(catalog.sky_attenuation(blocks[neighbor]).max(1))
+            } else {
+                next
+            };
+            if !is_opaque(catalog, blocks[neighbor]) && light[neighbor] < transmitted {
+                light[neighbor] = transmitted;
                 frontier.push_back(neighbor);
             }
         }

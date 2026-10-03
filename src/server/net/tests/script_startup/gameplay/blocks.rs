@@ -198,7 +198,7 @@ fn package_cube_joins_places_and_recovers_with_identical_session_catalog() {
             assert!(
                 mesh.vertices
                     .chunks_exact(crate::render::VERTEX_FLOATS)
-                    .all(|v| v[8] == layer)
+                    .all(|v| v[8].floor() == layer)
             );
             if round == 0 {
                 let mut peer = connect(address, Arc::clone(&catalog), PROFILE);

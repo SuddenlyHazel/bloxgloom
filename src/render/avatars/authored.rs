@@ -40,6 +40,7 @@ pub(super) struct Renderer {
     pub(super) first_person: Option<super::FirstPersonView>,
     actors: HashMap<u64, Actor>,
     clock: Instant,
+    pub(super) preview_dt: Option<f32>,
     frame: u64,
     instances: Vec<gpu::Instance>,
     joints: Vec<[f32; 16]>,
@@ -82,6 +83,33 @@ fn model_yaw(game_yaw: f32) -> f32 {
     // GLB authoring faces -Z; authoritative yaw zero faces +Z. Apply this
     // basis correction once to both color and shadow instances.
     game_yaw + std::f32::consts::PI
+}
+// Match the color/motion vertex path: scale the authored pose, then apply the
+// owner-only offset in model axes, and finally rotate/translate into the world.
+fn motion_world(avatar: &VisualAvatar, scale: f32, first_person_offset: [f32; 3]) -> glam::Mat4 {
+    let rotation = glam::Quat::from_rotation_y(model_yaw(avatar.pose[0]));
+    glam::Mat4::from_scale_rotation_translation(
+        Vec3::splat(scale),
+        rotation,
+        avatar.position + rotation * Vec3::from_array(first_person_offset),
+    )
+}
+fn motion_identity(
+    asset: usize,
+    model: AvatarModel,
+    scale: f32,
+    first_person: bool,
+    parts: &[gpu::Part],
+) -> u64 {
+    // Include both ordinary and owner-only visibility, plus colors. A model or
+    // view-mode switch must not reuse a different primitive's submitted history.
+    super::motion::fingerprint((
+        asset,
+        model,
+        scale.to_bits(),
+        first_person,
+        bytemuck::cast_slice::<_, u8>(parts),
+    ))
 }
 impl Renderer {
     pub fn new(
@@ -171,6 +199,7 @@ impl Renderer {
             first_person: None,
             actors: HashMap::new(),
             clock: Instant::now(),
+            preview_dt: None,
             frame: 0,
             instances: Vec::new(),
             joints: Vec::new(),
@@ -185,11 +214,12 @@ impl Renderer {
         let now = Instant::now();
         let dt = now.duration_since(self.clock).as_secs_f32().min(0.1);
         self.clock = now;
-        self.set_at(queue, avatars, dt);
+        self.set_at(queue, avatars, self.preview_dt.unwrap_or(dt));
     }
     fn set_at(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar], dt: f32) {
         self.frame = self.frame.wrapping_add(1);
         self.instances.clear();
+        self.gpu.motion.history.clear_pending();
         self.joints.clear();
         self.parts.clear();
         for (asset_id, asset) in self.assets.iter().enumerate() {
@@ -348,6 +378,11 @@ impl Renderer {
                 self.joints
                     .extend(actor.animator.matrices.iter().map(|m| m.to_cols_array()));
                 let first_person = self.first_person.filter(|v| v.id == avatar.id && player);
+                let first_person_offset = binding
+                    .player
+                    .as_ref()
+                    .filter(|_| first_person.is_some())
+                    .map_or([0.0; 3], |p| p.first_person_offset);
                 let hidden = |node: usize| {
                     let Some(settings) = binding.player.as_ref().filter(|_| first_person.is_some())
                     else {
@@ -378,19 +413,31 @@ impl Renderer {
                             ],
                         },
                     ));
+                if self.gpu.motion.enabled {
+                    let world = motion_world(avatar, binding.scale, first_person_offset);
+                    let identity = motion_identity(
+                        asset_id,
+                        avatar.model,
+                        binding.scale,
+                        first_person.is_some(),
+                        &self.parts[offsets[1] as usize..],
+                    );
+                    self.gpu.motion.history.stage(
+                        avatar.id,
+                        identity,
+                        avatar.position,
+                        actor.animator.matrices.iter().map(|m| world * *m).collect(),
+                    );
+                }
                 self.instances.push(gpu::Instance {
                     origin: avatar.position.to_array(),
                     yaw_scale: [model_yaw(avatar.pose[0]), binding.scale],
-                    light_levels: avatar.light_levels,
+                    light_levels: avatar.packed_light(),
                     bounce: avatar.bounce,
                     glow_bounce: avatar.glow_bounce,
                     tint: avatar.tint,
                     offsets,
-                    first_person_offset: binding
-                        .player
-                        .as_ref()
-                        .filter(|_| first_person.is_some())
-                        .map_or([0.0; 3], |p| p.first_person_offset),
+                    first_person_offset,
                 });
             }
             self.ranges[asset_id] = first..self.instances.len() as u32;
@@ -398,6 +445,18 @@ impl Renderer {
         self.actors.retain(|_, actor| actor.seen == self.frame);
         self.gpu
             .set(queue, &self.instances, &self.joints, &self.parts);
+    }
+    pub(super) fn enable_motion(&mut self, enabled: bool) {
+        self.gpu.motion.enable(enabled);
+    }
+    pub(super) fn prepare_motion(&self, queue: &wgpu::Queue, frame: &super::motion::Frame) {
+        self.gpu.motion.prepare(queue, frame);
+    }
+    pub(super) fn submitted(&mut self) {
+        self.gpu.motion.submitted();
+    }
+    pub(super) fn draw_motion(&self, pass: &mut wgpu::RenderPass<'_>, camera: &wgpu::BindGroup) {
+        self.gpu.draw_motion(pass, camera, &self.ranges);
     }
     pub fn draw(
         &self,

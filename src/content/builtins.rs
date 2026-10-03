@@ -205,6 +205,22 @@ impl Catalog {
                 stitch_vertical,
                 alpha_cutout,
                 emission_strength: if name == "glowstone" { 3.5 } else { 0.0 },
+                foliage: if matches!(
+                    name,
+                    "leaves"
+                        | "flower_red"
+                        | "flower_yellow"
+                        | "flower_blue"
+                        | "fern"
+                        | "tall_grass"
+                ) {
+                    api::FoliageShading {
+                        wrap: 0.35,
+                        transmission: 0.28,
+                    }
+                } else {
+                    Default::default()
+                },
             };
             catalog.embedded_texture(&texture);
         }
@@ -343,6 +359,7 @@ impl Catalog {
                 supports_plant: false,
                 flammable: false,
                 emission: 0,
+                sky_attenuation: 0,
                 reflectance: [145, 135, 125],
                 properties: vec![
                     PropertyDef {
@@ -533,6 +550,7 @@ impl Catalog {
                 supports_plant: false,
                 flammable: false,
                 emission: 0,
+                sky_attenuation: 0,
                 reflectance: [100, 110, 120],
                 properties: vec![],
             })
@@ -797,6 +815,7 @@ fn block(
         supports_plant: flags & SUPPORTS_PLANT != 0,
         flammable: flags & FLAMMABLE != 0,
         emission: BUILTIN_EMISSION[id.0 as usize],
+        sky_attenuation: if id == world::LEAVES { 2 } else { 0 },
         reflectance: BUILTIN_REFLECTANCE[id.0 as usize],
         properties: if id == world::WOOD {
             vec![api::Property {

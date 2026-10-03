@@ -24,6 +24,7 @@ pub(in crate::server::script) fn cube(
         supports_plant: false,
         flammable: false,
         emission: 0,
+        sky_attenuation: 0,
         reflectance: [128; 3],
         properties: vec![],
         states: vec![BlockState::default()],
@@ -36,7 +37,7 @@ pub(in crate::server::script) fn cube(
     let mut properties = None;
     let mut states = None;
     for (index, pair) in options.pairs::<Value, Value>().enumerate() {
-        if index >= 14 {
+        if index >= 15 {
             return Err("too many block options");
         }
         let (key, value) = pair.map_err(|_| "invalid block option")?;
@@ -51,6 +52,7 @@ pub(in crate::server::script) fn cube(
             b"replaceable" => block.replaceable = boolean(value)?,
             b"side" => block.textures.side = text(value)?,
             b"bottom" => block.textures.bottom = text(value)?,
+            b"sky_attenuation" => block.sky_attenuation = integer(value, 0, 15)? as u8,
             b"emission" => block.emission = integer(value, 0, 15)? as u8,
             b"reflectance" => {
                 let Value::Table(table) = value else {

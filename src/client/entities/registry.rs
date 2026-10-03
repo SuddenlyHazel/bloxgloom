@@ -138,6 +138,8 @@ impl EntityClientRegistry {
                         cosmetics: [0; 4],
                         light_levels: [0; 4],
                         bounce: [0; 4],
+                        glow_color: [0; 3],
+                        glow_direction: [0; 3],
                         glow_bounce: [0; 4],
                         tint: [1.0; 3],
                     });
@@ -193,6 +195,8 @@ impl EntityClientRegistry {
                     cosmetics: [0; 4],
                     light_levels: [0; 4],
                     bounce: [0; 4],
+                    glow_color: [0; 3],
+                    glow_direction: [0; 3],
                     glow_bounce: [0; 4],
                     tint: [1.0; 3],
                 });

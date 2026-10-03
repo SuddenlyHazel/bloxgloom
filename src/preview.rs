@@ -6,6 +6,12 @@ pub use third_person::{
     render_first_person_previews, render_gameplay_animation_previews, render_third_person_previews,
 };
 mod calibration;
+mod outdoor;
+pub use outdoor::workshop::local_shadow::render as render_local_shadow_previews;
+pub use outdoor::workshop::render_workshop_previews;
+pub use outdoor::{
+    install_outdoor_creatures, render_outdoor_depth, render_outdoor_motion, render_outdoor_previews,
+};
 mod sandbox;
 mod sun_shadow;
 pub use sandbox::{install_sandbox_materials, render_sandbox_previews};
@@ -568,6 +574,7 @@ enum PreviewScene {
     ThirdPerson(third_person::Shot),
     Calibration(calibration::Scene),
     Sandbox(sandbox::Shot),
+    Outdoor(outdoor::View),
     Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
@@ -685,9 +692,30 @@ async fn render_previews_weather(
     );
     let mut sun_shadows =
         render::sun_shadow::SunShadows::new(&device, &camera_buffer, sun_shadow::quality()?);
+    let mut local_shadows = render::local_shadow::LocalShadows::new(&device, &camera_buffer);
+    if matches!(
+        scene,
+        PreviewScene::Outdoor(outdoor::View::Workshop(
+            outdoor::workshop::View::LocalShadow { enabled: false }
+        ))
+    ) {
+        local_shadows = render::local_shadow::LocalShadows::new_with_settings(
+            &device,
+            &camera_buffer,
+            render::local_shadow::Settings {
+                count: 0,
+                ..Default::default()
+            },
+        );
+    }
+    sun_shadows.bind_local(&device, &camera_buffer, &local_shadows);
     let camera_group = sun_shadows.camera_group.clone();
     avatar_renderer.set_camera_group(camera_group.clone());
-    let mut contact_shadows = render::contact_shadow::Renderer::new(&device, &camera_buffer);
+    avatar_renderer.preview_animation_dt(0.0);
+    avatar_renderer.enable_motion(
+        render::post::temporal::supported(&device)
+            && std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1"),
+    );
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new_with_catalog(
@@ -700,7 +728,12 @@ async fn render_previews_weather(
         .iter()
         .any(|output| output.screen == UiScreen::Package);
     // Authored previews are visual verification, not UI preparation benchmarks.
-    if !authored_preview && !matches!(scene, PreviewScene::Effect | PreviewScene::Fire) {
+    if !authored_preview
+        && !matches!(
+            scene,
+            PreviewScene::Effect | PreviewScene::Fire | PreviewScene::Outdoor(_)
+        )
+    {
         measure_ui_prepare(&mut ui_renderer, &queue);
     }
     let mut package_ui = if authored_preview {
@@ -784,6 +817,7 @@ async fn render_previews_weather(
         | PreviewScene::Chests
         | PreviewScene::Calibration(_)
         | PreviewScene::Sandbox(_)
+        | PreviewScene::Outdoor(_)
         | PreviewScene::ThirdPerson(_)
         | PreviewScene::Avatars
         | PreviewScene::Characters(..)
@@ -898,6 +932,22 @@ async fn render_previews_weather(
         avatar_renderer.preview_character_clip("idle", 0.35);
         shadow_avatars = calibration::avatars(&chunks);
         avatar_renderer.set(&queue, &shadow_avatars);
+    }
+    if let PreviewScene::Outdoor(view) = scene {
+        camera_template = outdoor::prepare(view, &mut chunks);
+        avatar_renderer.preview_character_clip("idle", 0.35);
+        shadow_avatars = if matches!(
+            view,
+            outdoor::View::Workshop(outdoor::workshop::View::LocalShadow { .. })
+        ) {
+            outdoor::workshop::local_shadow::actors(&chunks, 0)
+        } else if matches!(view, outdoor::View::Workshop(_)) {
+            outdoor::workshop::avatars(&chunks)
+        } else {
+            outdoor::avatars(&chunks)
+        };
+        avatar_renderer.set(&queue, &shadow_avatars);
+        println!("outdoor adapter: {:?}", adapter.get_info());
     }
     if let PreviewScene::Sandbox(shot) = scene {
         camera_template = sandbox::prepare(shot, &mut chunks);
@@ -1083,7 +1133,10 @@ async fn render_previews_weather(
             }
         }
     }
+    let motion_sequence = matches!(scene, PreviewScene::Outdoor(outdoor::View::Motion));
+    let mut foliage_motion = outdoor::motion::Foliage::default();
     let mut gpu_meshes = Vec::new();
+    let mut local_sources = Vec::new();
     for z in -2..=2 {
         for x in -2..=2 {
             for y in bottom_chunk..=4 {
@@ -1100,6 +1153,7 @@ async fn render_previews_weather(
                     matches!(scene, PreviewScene::Cave { bounced: true, .. }),
                 );
                 let mesh = render::mesh_chunk_lit(chunk, &light, 0);
+                local_sources.extend_from_slice(&mesh.local_sources);
                 if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                     continue;
                 }
@@ -1111,7 +1165,12 @@ async fn render_previews_weather(
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: Some("preview vertices"),
                             contents: bytemuck::cast_slice(vertices),
-                            usage: wgpu::BufferUsages::VERTEX,
+                            usage: wgpu::BufferUsages::VERTEX
+                                | if motion_sequence {
+                                    wgpu::BufferUsages::COPY_DST
+                                } else {
+                                    wgpu::BufferUsages::empty()
+                                },
                         }),
                         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: Some("preview indices"),
@@ -1125,6 +1184,11 @@ async fn render_previews_weather(
                     upload(&mesh.vertices, &mesh.indices),
                     upload(&mesh.cutout_vertices, &mesh.cutout_indices),
                 ));
+                if motion_sequence && let Some((buffer, _, _)) = &gpu_meshes.last().unwrap().1 {
+                    foliage_motion
+                        .buffers
+                        .push((buffer.clone(), mesh.cutout_vertices.clone()));
+                }
             }
         }
     }
@@ -1303,6 +1367,8 @@ async fn render_previews_weather(
                 cosmetics: [0, 0, 0, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                glow_color: [0; 3],
+                glow_direction: [0; 3],
                 glow_bounce: [0; 4],
                 tint: [1.0; 3],
             },
@@ -1345,6 +1411,8 @@ async fn render_previews_weather(
                 cosmetics: [2, 4, 2, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                glow_color: [0; 3],
+                glow_direction: [0; 3],
                 glow_bounce: [0; 4],
                 tint: if let PreviewScene::Creature(_, Some(tint)) = scene {
                     tint
@@ -1373,6 +1441,8 @@ async fn render_previews_weather(
                 cosmetics: [4, 1, 4, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                glow_color: [0; 3],
+                glow_direction: [0; 3],
                 glow_bounce: [0; 4],
                 tint: [1.0; 3],
             },
@@ -1431,8 +1501,17 @@ async fn render_previews_weather(
             chunks.get(&key).and_then(|chunk| chunk.block(local))
         },
     );
-    contact_shadows.set(&queue, &shadow_patches);
+    if visual_resources
+        .as_ref()
+        .and_then(|r| r.material.as_ref())
+        .is_none()
+    {
+        sun_shadows.set_contacts(&queue, &shadow_patches);
+    }
 
+    let motion_actor_base = shadow_avatars.clone();
+    let mut motion_post: Option<render::post::PostProcess> = None;
+    let mut local_maps_ready = false;
     for (frame, output) in outputs.into_iter().enumerate() {
         if let (PreviewScene::Characters(clip, time, _), Some(visuals)) =
             (scene, &character_visuals)
@@ -1465,7 +1544,7 @@ async fn render_previews_weather(
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: render::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let color_view = color.create_view(&Default::default());
@@ -1473,7 +1552,7 @@ async fn render_previews_weather(
         let mut camera = Camera {
             fov_y_radians: if matches!(
                 scene,
-                PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
+                PreviewScene::Calibration(_) | PreviewScene::Sandbox(_) | PreviewScene::Outdoor(_)
             ) {
                 camera_template.fov_y_radians
             } else {
@@ -1481,6 +1560,47 @@ async fn render_previews_weather(
             },
             ..camera_template
         };
+        if motion_sequence {
+            shadow_avatars = outdoor::motion::actors(&motion_actor_base, frame);
+            let (motion_camera, first_person) = outdoor::motion::camera(frame, &shadow_avatars);
+            camera = motion_camera;
+            avatar_renderer.set_first_person(first_person);
+            avatar_renderer.preview_animation_dt(if frame < 8 { 0.0 } else { 1.0 / 30.0 });
+            avatar_renderer.preview_character_clip("walk", outdoor::motion::seconds(frame));
+            avatar_renderer.set(&queue, &shadow_avatars);
+            foliage_motion.update(&queue, frame);
+            let patches = render::contact_shadow::patches(
+                &shadow_avatars,
+                camera.position,
+                crate::content::catalog(),
+                |x, y, z| {
+                    let (key, local) = world::world_to_chunk(x, y, z);
+                    chunks.get(&key).and_then(|chunk| chunk.block(local))
+                },
+            );
+            sun_shadows.set_contacts(&queue, &patches);
+        }
+        if matches!(
+            scene,
+            PreviewScene::Outdoor(outdoor::View::Workshop(
+                outdoor::workshop::View::LocalShadow { .. }
+            ))
+        ) {
+            shadow_avatars = outdoor::workshop::local_shadow::actors(&chunks, frame);
+            avatar_renderer.preview_animation_dt(1.0 / 8.0);
+            avatar_renderer.preview_character_clip("walk", frame as f32 / 8.0);
+            avatar_renderer.set(&queue, &shadow_avatars);
+            let patches = render::contact_shadow::patches(
+                &shadow_avatars,
+                camera.position,
+                crate::content::catalog(),
+                |x, y, z| {
+                    let (key, local) = world::world_to_chunk(x, y, z);
+                    chunks.get(&key).and_then(|chunk| chunk.block(local))
+                },
+            );
+            sun_shadows.set_contacts(&queue, &patches);
+        }
         if let Some((yaw, pitch)) = output.orientation {
             camera.yaw = yaw;
             camera.pitch = pitch;
@@ -1598,7 +1718,10 @@ async fn render_previews_weather(
         }
         if !matches!(
             scene,
-            PreviewScene::SurfaceBare | PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
+            PreviewScene::SurfaceBare
+                | PreviewScene::Calibration(_)
+                | PreviewScene::Sandbox(_)
+                | PreviewScene::Outdoor(_)
         ) {
             ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         }
@@ -1611,10 +1734,17 @@ async fn render_previews_weather(
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
+        let mut post = motion_post.take().unwrap_or_else(|| {
+            render::post::PostProcess::new(&device, output.width, output.height, FORMAT)
+        });
+        let post_size = post.scene.texture().size();
+        if post_size.width != output.width || post_size.height != output.height {
+            post.resize(&device, output.width, output.height);
+        }
+
         if matches!(
             scene,
-            PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
+            PreviewScene::Calibration(_) | PreviewScene::Sandbox(_) | PreviewScene::Outdoor(_)
         ) {
             post.configure(&queue, true, 1.0, 0.12);
         }
@@ -1627,100 +1757,171 @@ async fn render_previews_weather(
                 gpu.update(&queue);
             }
         }
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("preview commands"),
-        });
-        sun_shadow::draw(
-            &mut encoder,
-            &sun_shadows,
-            &sun_pipelines,
-            &texture_group,
-            visual_resources
-                .as_ref()
-                .and_then(|resources| resources.material.as_ref()),
-            &gpu_meshes,
-            drop_gpu_mesh.as_ref(),
-            &avatar_renderer,
-        );
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("preview world"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &post.scene,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(render::SKY_COLOR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                ..Default::default()
-            });
-            pass.set_pipeline(&sky_pipeline);
-            pass.set_bind_group(0, &sky_group, &[]);
-            pass.draw(0..3, 0..1);
-            pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &camera_group, &[]);
-            pass.set_bind_group(1, &texture_group, &[]);
-            if let Some(gpu) = visual_resources.as_ref().and_then(|r| r.material.as_ref()) {
-                pass.set_bind_group(2, &gpu.group, &[]);
+        let temporal = std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1");
+        post.enable_temporal(&device, temporal);
+        let samples = if post.temporal_enabled() && !motion_sequence {
+            8
+        } else {
+            1
+        };
+        if !local_maps_ready {
+            // Warm up admission with real submitted depth passes. Never mark a
+            // face initialized without drawing it (important with updates<count).
+            for _ in 0..=local_shadows.settings.count {
+                local_shadows.update(&queue, camera.position, &local_sources, 0.25);
+                let mut warmup = device.create_command_encoder(&Default::default());
+                sun_shadow::draw_local(
+                    &mut warmup,
+                    &local_shadows,
+                    &sun_pipelines,
+                    &texture_group,
+                    visual_resources.as_ref().and_then(|r| r.material.as_ref()),
+                    &gpu_meshes,
+                    drop_gpu_mesh.as_ref(),
+                    &avatar_renderer,
+                );
+                queue.submit(Some(warmup.finish()));
             }
-            for (opaque, _) in &gpu_meshes {
-                if let Some((vertices, indices, count)) = opaque {
-                    pass.set_vertex_buffer(0, vertices.slice(..));
-                    pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..*count, 0, 0..1);
-                }
-            }
-            if let Some(Some((vertices, indices, count))) =
-                drop_gpu_mesh.as_ref().map(|mesh| &mesh.0)
-            {
-                pass.set_vertex_buffer(0, vertices.slice(..));
-                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..*count, 0, 0..1);
-            }
-            avatar_renderer.draw(&mut pass);
-            if visual_resources
-                .as_ref()
-                .and_then(|resources| resources.material.as_ref())
-                .is_none()
-            {
-                contact_shadows.draw(&mut pass);
-            }
-            pass.set_pipeline(&cutout_pipeline);
-            pass.set_bind_group(0, &camera_group, &[]);
-            pass.set_bind_group(1, &texture_group, &[]);
-            if let Some(gpu) = visual_resources.as_ref().and_then(|r| r.material.as_ref()) {
-                pass.set_bind_group(2, &gpu.group, &[]);
-            }
-            for (_, cutout) in &gpu_meshes {
-                if let Some((vertices, indices, count)) = cutout {
-                    pass.set_vertex_buffer(0, vertices.slice(..));
-                    pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..*count, 0, 0..1);
-                }
-            }
-            if let Some(Some((vertices, indices, count))) =
-                drop_gpu_mesh.as_ref().map(|mesh| &mesh.1)
-            {
-                pass.set_vertex_buffer(0, vertices.slice(..));
-                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..*count, 0, 0..1);
-            }
-            if matches!(scene, PreviewScene::Fire) {
-                fire_renderer.draw(&mut pass);
-            }
-            rain_renderer.draw(&mut pass);
+            local_maps_ready = true;
         }
-        post.encode(&device, &queue, &mut encoder, &color_view);
+        let mut sample = 0;
+        let mut encoder = loop {
+            let (matrix, _) = post.prepare_temporal(&queue, camera);
+            queue.write_buffer(
+                &camera_buffer,
+                0,
+                bytemuck::cast_slice(&atmosphere.camera_data(matrix, camera.position)),
+            );
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("preview commands"),
+            });
+            local_shadows.update(&queue, camera.position, &local_sources, 1.0 / 60.0);
+            sun_shadow::draw_local(
+                &mut encoder,
+                &local_shadows,
+                &sun_pipelines,
+                &texture_group,
+                visual_resources.as_ref().and_then(|r| r.material.as_ref()),
+                &gpu_meshes,
+                drop_gpu_mesh.as_ref(),
+                &avatar_renderer,
+            );
+            sun_shadow::draw(
+                &mut encoder,
+                &sun_shadows,
+                &sun_pipelines,
+                &texture_group,
+                visual_resources
+                    .as_ref()
+                    .and_then(|resources| resources.material.as_ref()),
+                &gpu_meshes,
+                drop_gpu_mesh.as_ref(),
+                &avatar_renderer,
+            );
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("preview world"),
+                    color_attachments: &render::scene_ao::attachments(
+                        &post.scene,
+                        &post.ambient.indirect,
+                        render::SKY_COLOR,
+                    ),
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    ..Default::default()
+                });
+                pass.set_pipeline(&sky_pipeline);
+                pass.set_bind_group(0, &sky_group, &[]);
+                pass.draw(0..3, 0..1);
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &camera_group, &[]);
+                pass.set_bind_group(1, &texture_group, &[]);
+                if let Some(gpu) = visual_resources.as_ref().and_then(|r| r.material.as_ref()) {
+                    pass.set_bind_group(2, &gpu.group, &[]);
+                }
+                for (opaque, _) in &gpu_meshes {
+                    if let Some((vertices, indices, count)) = opaque {
+                        pass.set_vertex_buffer(0, vertices.slice(..));
+                        pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..*count, 0, 0..1);
+                    }
+                }
+                if let Some(Some((vertices, indices, count))) =
+                    drop_gpu_mesh.as_ref().map(|mesh| &mesh.0)
+                {
+                    pass.set_vertex_buffer(0, vertices.slice(..));
+                    pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..*count, 0, 0..1);
+                }
+                avatar_renderer.draw(&mut pass);
+                pass.set_pipeline(&cutout_pipeline);
+                pass.set_bind_group(0, &camera_group, &[]);
+                pass.set_bind_group(1, &texture_group, &[]);
+                if let Some(gpu) = visual_resources.as_ref().and_then(|r| r.material.as_ref()) {
+                    pass.set_bind_group(2, &gpu.group, &[]);
+                }
+                for (_, cutout) in &gpu_meshes {
+                    if let Some((vertices, indices, count)) = cutout {
+                        pass.set_vertex_buffer(0, vertices.slice(..));
+                        pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..*count, 0, 0..1);
+                    }
+                }
+                if let Some(Some((vertices, indices, count))) =
+                    drop_gpu_mesh.as_ref().map(|mesh| &mesh.1)
+                {
+                    pass.set_vertex_buffer(0, vertices.slice(..));
+                    pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..*count, 0, 0..1);
+                }
+            }
+            post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
+            {
+                let mut attachments = render::scene_ao::attachments(
+                    &post.scene,
+                    &post.ambient.indirect,
+                    wgpu::Color::TRANSPARENT,
+                );
+                for attachment in attachments.iter_mut().flatten() {
+                    attachment.ops.load = wgpu::LoadOp::Load;
+                }
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("translucent particles after ambient occlusion"),
+                    color_attachments: &attachments,
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    ..Default::default()
+                });
+                if matches!(scene, PreviewScene::Fire) {
+                    fire_renderer.draw(&mut pass);
+                }
+                rain_renderer.draw(&mut pass);
+            }
+
+            post.draw_motion(&queue, &mut encoder, &depth_view, Some(&avatar_renderer));
+            post.resolve_temporal(&device, &mut encoder, &depth_view);
+            post.encode(&device, &queue, &mut encoder, &color_view);
+            sample += 1;
+            if sample == samples {
+                break encoder;
+            }
+            // Separate submissions preserve each jitter/camera uniform update.
+            queue.submit(Some(encoder.finish()));
+            post.submitted();
+            avatar_renderer.submitted();
+        };
         if has_target {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview target outline"),
@@ -1750,7 +1951,10 @@ async fn render_previews_weather(
         }
         if !matches!(
             scene,
-            PreviewScene::SurfaceBare | PreviewScene::Calibration(_) | PreviewScene::Sandbox(_)
+            PreviewScene::SurfaceBare
+                | PreviewScene::Calibration(_)
+                | PreviewScene::Sandbox(_)
+                | PreviewScene::Outdoor(_)
         ) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview UI"),
@@ -1790,6 +1994,8 @@ async fn render_previews_weather(
             },
         );
         let submission = queue.submit(Some(encoder.finish()));
+        post.submitted();
+        avatar_renderer.submitted();
         let (sender, receiver) = mpsc::channel();
         readback.map_async(wgpu::MapMode::Read, .., move |result| {
             let _ = sender.send(result);
@@ -1807,6 +2013,9 @@ async fn render_previews_weather(
         drop(mapped);
         readback.unmap();
         write_png(&output.path, output.width, output.height, &pixels)?;
+        if motion_sequence {
+            motion_post = Some(post);
+        }
     }
     Ok(())
 }

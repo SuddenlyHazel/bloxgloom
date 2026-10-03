@@ -397,6 +397,7 @@ fn invalid_composition_and_missing_content_fail_atomically_before_installation()
                 stitch_vertical: false,
                 alpha_cutout: false,
                 emission_strength: 0.0,
+                foliage: Default::default(),
             })
         }),
         Declare(|r| {
@@ -494,6 +495,7 @@ fn switch_block() -> Block {
         supports_plant: false,
         flammable: false,
         emission: 0,
+        sky_attenuation: 0,
         reflectance: [128; 3],
         properties: vec![Property {
             name: "mode".into(),
@@ -647,6 +649,7 @@ fn surface_emission_is_registered_bounded_and_part_of_material_compatibility() {
         stitch_vertical: false,
         alpha_cutout: false,
         emission_strength: 1.25,
+        foliage: Default::default(),
     };
     let a = crate::server::catalog_with_extension(Catalog::builtins(), &Emitter(texture.clone()))
         .unwrap();

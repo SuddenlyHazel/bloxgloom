@@ -4,6 +4,8 @@ use super::{Renderer, custom, effects, pipeline};
 use std::{sync::mpsc, thread};
 
 pub(crate) struct Ready {
+    environment_lighting: Option<crate::config::lighting::Lighting>,
+    local_shadows: Option<super::local_shadow::Settings>,
     material: Option<(pipeline::VoxelPipelines, custom::Gpu)>,
     effect: Option<effects::Effect>,
     sun_pipelines: Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>,
@@ -45,6 +47,10 @@ impl Renderer {
         )
     }
     pub(crate) fn commit_package_visuals(&mut self, ready: Ready) {
+        self.package_lighting = ready.environment_lighting.unwrap_or_default();
+        self.configure_lighting(self.user_lighting);
+        self.package_local_shadows = ready.local_shadows;
+        self.configure_local_shadows(self.user_local_shadows);
         if let Some(((opaque, cutout, _, _, _), gpu)) = ready.material {
             self.pipeline = opaque;
             self.cutout_pipeline = cutout;
@@ -98,6 +104,10 @@ impl Preparation {
                         )
                     });
                     Ok(Ready {
+                        environment_lighting: prepared_material
+                            .as_ref()
+                            .and_then(|m| m.environment_lighting),
+                        local_shadows: prepared_material.as_ref().and_then(|m| m.local_shadows),
                         material,
                         effect,
                         sun_pipelines,

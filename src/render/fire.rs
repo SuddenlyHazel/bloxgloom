@@ -160,11 +160,7 @@ impl FireRenderer {
                 module: &shader,
                 entry_point: Some("fs"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &super::scene_ao::color_targets(post::HDR_FORMAT,Some(wgpu::BlendState::ALPHA_BLENDING)),
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: None,

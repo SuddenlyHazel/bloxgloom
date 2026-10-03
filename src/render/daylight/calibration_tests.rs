@@ -5,6 +5,19 @@ use wgpu::util::DeviceExt;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {
+    if id.x >= 12u {
+        let radiance = vec3f(0.16,0.04,0.25);
+        var direction = vec3f(1.0,0.0,0.0);
+        var normal = direction;
+        if id.x == 13u { normal = -normal; }
+        if id.x == 14u { direction = vec3f(0.0); }
+        if id.x == 15u { direction *= 0.5; normal = -normal; }
+        let local = bg_local_light(normal,radiance,direction);
+        let visibility = select(1.0,0.0,id.x == 17u);
+        result[id.x] = vec4f(bg_surface_light(normal,vec4f(0.0,1.0,0.0,0.0),0.0,
+            local,vec3f(0.0),vec3f(0.0),visibility),1.0);
+        return;
+    }
     let sun = normalize(vec3f(-0.55, 0.65, -0.52));
     let away = normalize(vec3f(-sun.x, 0.0, -sun.z));
     var n = away;
@@ -20,14 +33,21 @@ const FIXTURE: &str = r#"
     if id.x == 8u || id.x == 10u { visibility = 0.75; }
     if id.x == 9u || id.x == 10u { n = -away; }
     if id.x == 11u { sky = 0.0; visibility = 0.75; }
-    result[id.x] = vec4f(bg_surface_light(n, vec4f(sun, strength), sky, glow,
+    camera.sun_radiance *= strength;
+    camera.ambient_lower *= strength;
+    camera.ambient_upper *= strength;
+    result[id.x] = vec4f(bg_surface_light(n, vec4f(sun, strength), sky, glow*glow*vec3f(1.0,0.57,0.23),
         vec3f(0.0), vec3f(0.0), visibility), 1.0);
 }
 "#;
 
 fn source() -> String {
-    // The lighting helper has no camera binding and can also be validated alone.
-    format!("{}\n{FIXTURE}", include_str!("../daylight.wgsl"))
+    // Standalone fixture supplies the same camera lighting fields as production.
+    format!(
+        "{}\n{}\n{FIXTURE}",
+        include_str!("test_camera.wgsl"),
+        include_str!("../daylight.wgsl")
+    )
 }
 
 #[test]
@@ -61,12 +81,12 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
     });
     let output = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: &[0; 12 * 16],
+        contents: &[0; 18 * 16],
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 12 * 16,
+        size: 18 * 16,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -83,9 +103,9 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(12, 1, 1);
+        pass.dispatch_workgroups(18, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 12 * 16);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 18 * 16);
     queue.submit([encoder.finish()]);
     let slice = readback.slice(..);
     slice.map_async(wgpu::MapMode::Read, |result| result.unwrap());
@@ -113,6 +133,21 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
 
     let floor = Vec3::new(0.012, 0.015, 0.022);
     assert!(light[4].distance(floor) < 1e-6);
+    let local = Vec3::new(0.16, 0.04, 0.25);
+    assert!(
+        (light[12] - floor).distance(local) < 1e-6,
+        "source RGB must survive"
+    );
+    assert!(
+        (light[13] - floor).distance(local * 0.35) < 1e-6,
+        "back face retains only unresolved voxel scattering"
+    );
+    assert_eq!(light[12], light[14], "zero confidence is isotropic");
+    assert!(
+        (light[15] - floor).distance(local * 0.675) < 1e-6,
+        "direction confidence must remain continuous"
+    );
+    assert_eq!(light[16], light[17], "AO must not dim direct local light");
     assert_eq!(light[4], light[5], "sealed caves depend on time of day");
     assert_eq!(light[4], light[11], "local AO changed the cave floor");
     assert_eq!(light[6], light[7], "torch lighting depends on daylight");

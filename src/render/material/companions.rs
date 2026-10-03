@@ -25,7 +25,14 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
         let s = definitions
             .get(format!("{}_s", texture.key).as_str())
             .copied();
-        flags.push(u32::from(n.is_some()) | (u32::from(s.is_some()) << 1));
+        // Quantized presentation parameters reuse the existing flags buffer.
+        // Zero metadata leaves generic cutouts and industrial materials unchanged.
+        flags.push(
+            u32::from(n.is_some())
+                | (u32::from(s.is_some()) << 1)
+                | (((texture.foliage.wrap * 255.0).round() as u32) << 8)
+                | (((texture.foliage.transmission * 255.0).round() as u32) << 16),
+        );
         normal.extend(tile(n, [128, 128, 255, 255]));
         specular.extend(tile(s, [0, 0, 0, 255]));
     }

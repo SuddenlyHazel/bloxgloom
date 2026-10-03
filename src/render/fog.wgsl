@@ -18,3 +18,15 @@ fn bg_apply_fog(color: vec3f, world: vec3f, sky: f32) -> vec3f {
     let weather = bg_weather_fog(distance, density);
     return mix(clear_color, camera.horizon.xyz, weather);
 }
+
+// Only surface radiance is extinguished. AO must never remove the in-scattered
+// horizon/weather color added by bg_apply_fog.
+fn bg_fog_transmittance(world: vec3f, sky: f32) -> f32 {
+    let distance = length(world-camera.eye.xyz);
+    let background = smoothstep(camera.fog_range.x,camera.fog_range.y,distance);
+    let exposure = max(camera.eye.w,smoothstep(0.0,0.1,sky));
+    let density = camera.horizon.w*exposure;
+    var weather = 0.0;
+    if density>0.0 { weather=bg_weather_fog(distance,density); }
+    return (1.0-background)*(1.0-weather);
+}

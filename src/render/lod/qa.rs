@@ -136,15 +136,11 @@ impl EditGpu {
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("network production LOD HDR pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.post.scene,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(super::super::SKY_COLOR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &super::super::scene_ao::attachments(
+                    &self.post.scene,
+                    &self.post.ambient.indirect,
+                    super::super::SKY_COLOR,
+                ),
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth,
                     depth_ops: Some(wgpu::Operations {
@@ -157,6 +153,13 @@ impl EditGpu {
             });
             assert!(self.gpu.draw(&mut pass) > 0);
         }
+        self.post.resolve_ambient(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.depth,
+            super::super::view_projection(camera, WIDTH, HEIGHT),
+        );
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &self.view);
         let submission = self.queue.submit([encoder.finish()]);
