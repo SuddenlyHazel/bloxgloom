@@ -130,6 +130,23 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Disposable package bytes use native cache storage, never a world save.
+    pub(crate) fn package_cache_path() -> Option<PathBuf> {
+        #[cfg(target_os = "macos")]
+        let base = user_home().map(|p| p.join("Library/Caches/Bloxgloom"));
+        #[cfg(target_os = "windows")]
+        let base = nonempty_env("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .or_else(|| user_home().map(|p| p.join("AppData/Local")))
+            .map(|p| p.join("Bloxgloom/Cache"));
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let base = nonempty_env("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| user_home().map(|p| p.join(".cache")))
+            .map(|p| p.join("bloxgloom"));
+        base.map(|p| p.join("package-bundles-v1"))
+    }
+
     /// Returns the native per-user settings path. Callers can use `load` and
     /// `save` with another path to support an explicit override.
     pub fn default_path() -> PathBuf {

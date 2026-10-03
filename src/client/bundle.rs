@@ -1,6 +1,7 @@
 //! Session artifact installation only: no extraction, image decode or script
 //! execution. The cache holds one immutable, already verified bundle, independent
-//! of the session. Reconnects re-offer identity; process restart downloads again.
+//! of the session. A bounded disk cache survives process restart; its bytes are
+//! decoded and verified again against the server's exact offered identity.
 use crate::protocol::{self, BundleIdentity, ClientMessage, MAX_BUNDLE_PART, ServerMessage};
 use crate::server::client_bundle::ClientBundle;
 use std::io::{self, Read, Write};
@@ -8,6 +9,7 @@ use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod disk;
 mod memory;
 mod recovery;
 
@@ -34,11 +36,32 @@ pub(super) fn install(
     identity: BundleIdentity,
     control: &super::join_worker::Control,
 ) -> io::Result<Arc<ClientBundle>> {
-    let cached = CACHE.lock().unwrap().clone();
+    identity.validate()?;
+    identity.require_supported_runtime()?;
+    control.download(0, identity.total_len, false)?;
+    let mut cached = CACHE.lock().unwrap().clone().filter(|bundle| {
+        bundle.cache_key() == identity.key && bundle.bytes().len() == identity.total_len as usize
+    });
+    let disk = disk::Cache::default();
+    if cached.is_none()
+        && let Some(disk) = &disk
+    {
+        match disk.load(identity) {
+            Ok(bundle) => cached = bundle,
+            Err(error) => {
+                tracing::warn!(%error, "package disk cache unavailable; downloading instead")
+            }
+        }
+    }
     let bundle = receive_progress(socket, identity, cached, |received, cached| {
         control.download(received, identity.total_len, cached)
     })?;
     *CACHE.lock().unwrap() = Some(Arc::clone(&bundle));
+    if let Some(disk) = disk
+        && let Err(error) = disk.store(identity, &bundle)
+    {
+        tracing::warn!(%error, "package disk cache write skipped");
+    }
     Ok(bundle)
 }
 
