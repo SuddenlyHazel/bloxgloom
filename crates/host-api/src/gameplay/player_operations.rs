@@ -10,6 +10,19 @@ pub struct PlayerOperation {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerOperationKind {
+    SessionModifier {
+        key: String,
+        value: Option<crate::player_modifiers::Effect>,
+    },
+    Model(Option<String>),
+    ModelVisual(crate::entity::VisualState),
+    Animation {
+        clip: String,
+        speed: f32,
+        looping: bool,
+        crossfade_s: f32,
+    },
+    StopAnimation(f32),
     Message(String),
     Kick(String),
     /// Saved through the native profile cosmetic file before avatar publication.
@@ -84,7 +97,7 @@ impl Context<'_> {
         });
         Ok(())
     }
-    fn player_target(&mut self, profile: u128, session: u64) -> Result<(), Error> {
+    pub(super) fn player_target(&mut self, profile: u128, session: u64) -> Result<(), Error> {
         self.charge()?;
         if !self
             .handler_namespace

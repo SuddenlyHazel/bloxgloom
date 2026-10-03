@@ -102,10 +102,16 @@ pub(in crate::server) fn prepare_writes(
     }
     let mut changes = Vec::new();
     for ((key, profile), cell) in writes {
-        let reg = catalog
-            .player_lifecycles()
-            .find(|reg| reg.key == key)
-            .ok_or_else(|| io::Error::other("unregistered player service output"))?;
+        let internal;
+        let reg = if key == bloxgloom_host_api::player_modifiers::PROFILE_SYSTEM {
+            internal = super::modifiers::registration();
+            &internal
+        } else {
+            catalog
+                .player_lifecycles()
+                .find(|reg| reg.key == key)
+                .ok_or_else(|| io::Error::other("unregistered player service output"))?
+        };
         let system = SystemId::new(&key).map_err(|_| io::Error::other("invalid player service"))?;
         if runtime
             .owner_snapshot(&system, OwnerKey::Profile(profile))

@@ -1,0 +1,8 @@
+format 2
+package pace
+version 1.0.0
+entry main
+requires bloxgloom:players/v1
+requires bloxgloom:actions/v1
+module server main server/main.luau
+module server movement server/movement.luau

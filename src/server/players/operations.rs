@@ -15,6 +15,44 @@ pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) -> io::
             continue;
         };
         let (kicked, text) = match operation.kind {
+            PlayerOperationKind::SessionModifier { key, value } => {
+                state.player_modifiers.apply(
+                    operation.profile,
+                    operation.session,
+                    &key,
+                    value,
+                    state.player_runtime.tick,
+                )?;
+                continue;
+            }
+            PlayerOperationKind::Model(model) => {
+                crate::server::appearance::packaged::select_model(state, id, model.as_deref())?;
+                continue;
+            }
+            PlayerOperationKind::ModelVisual(visual) => {
+                crate::server::appearance::packaged::select_visual(state, id, visual)?;
+                continue;
+            }
+            PlayerOperationKind::Animation {
+                clip,
+                speed,
+                looping,
+                crossfade_s,
+            } => {
+                crate::server::appearance::packaged::play_animation(
+                    state,
+                    id,
+                    &clip,
+                    speed,
+                    looping,
+                    crossfade_s,
+                )?;
+                continue;
+            }
+            PlayerOperationKind::StopAnimation(crossfade_s) => {
+                crate::server::appearance::packaged::stop_animation(state, id, crossfade_s)?;
+                continue;
+            }
             PlayerOperationKind::Teleport(position) => {
                 crate::server::movement::teleport(state, id, position)?;
                 continue;
