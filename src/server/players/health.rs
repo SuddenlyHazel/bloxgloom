@@ -130,7 +130,16 @@ pub(in crate::server) fn publish(
     let session = client.action_epoch;
     let before = client.health;
     let health = view(&state.system_runtime, profile)?;
-    if operation.life != health.life || health == before {
+    if operation.life != health.life {
+        // Suppress intermediate health snapshots, but preserve the ordered
+        // position checkpoint if this transaction respawned and then died.
+        // Otherwise reconnect would apply a respawn the live session skipped.
+        if let Some(position) = position {
+            crate::server::movement::teleport_respawn(state, id, position, operation.life)?;
+        }
+        return Ok(());
+    }
+    if health == before {
         return Ok(());
     }
     state.clients.get_mut(&id).unwrap().health = health;

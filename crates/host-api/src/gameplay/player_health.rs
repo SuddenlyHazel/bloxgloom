@@ -40,7 +40,23 @@ impl Context<'_> {
             .into_iter()
             .find(|p| p.profile == profile && p.session == session)
         {
-            Some(player) => Ok(player),
+            Some(mut player) => {
+                // Health hooks and policies after a staged respawn use its
+                // proposed position, while the live avatar waits for receipt.
+                for operation in self.plan.player_operations.iter().rev() {
+                    if operation.profile == profile
+                        && operation.session == session
+                        && let PlayerOperationKind::HealthChanged {
+                            respawn_position: Some(position),
+                            ..
+                        } = &operation.kind
+                    {
+                        player.position = *position;
+                        break;
+                    }
+                }
+                Ok(player)
+            }
             None => self.fail(Error::Invalid("health target session is not online".into())),
         }
     }

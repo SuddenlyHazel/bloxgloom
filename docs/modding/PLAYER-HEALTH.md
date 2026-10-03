@@ -43,6 +43,11 @@ Health and ordinary world/inventory/profile effects commit through one WAL.
 Errors, caught-invalid bindings, unavailable terrain and conflicting revisions
 publish none of those effects.
 
+Several health transitions may be staged for one target in a transaction. Only
+the final health snapshot is published; ordered respawn position checkpoints
+still apply if later damage kills the player again. Subsequent damage policies
+and health hooks use the last staged respawn position.
+
 `c.respawn_player(session, revision, x, y, z)` is an authorized package operation
 for a dead target. The final terrain, including edits made by callbacks in the
 same transaction, must be authoritative, loaded, supported and unobstructed.

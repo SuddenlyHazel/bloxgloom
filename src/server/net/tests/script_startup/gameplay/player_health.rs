@@ -235,6 +235,8 @@ fn player_health_damage_heal_death_replay_and_manual_respawn_survive_restart() {
 mod audio;
 #[path = "player_health/transactions.rs"]
 mod transactions;
+#[path = "player_health/transitions.rs"]
+mod transitions;
 
 #[test]
 fn player_health_respawn_hook_final_collision_rolls_back_health_reward_and_terrain() {

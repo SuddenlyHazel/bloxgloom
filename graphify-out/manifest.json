@@ -9810,9 +9810,9 @@
     "semantic_hash": ""
   },
   "crates/host-api/src/gameplay/player_health.rs": {
-    "mtime": 1791052597.7019713,
-    "seen": 1791052677.812842,
-    "ast_hash": "6a358653d4614c83580eebafb0929045",
+    "mtime": 1791053092.0551927,
+    "seen": 1791053353.391788,
+    "ast_hash": "2f44ee9913b34699ddf2553877e76581",
     "semantic_hash": ""
   },
   "crates/host-api/src/player_health.rs": {
@@ -9894,9 +9894,9 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay/player_health.rs": {
-    "mtime": 1791052761.2016501,
-    "seen": 1791052946.6546261,
-    "ast_hash": "5eef5a878838cccb5e61b5bbb4b6f553",
+    "mtime": 1791053234.17258,
+    "seen": 1791053353.393007,
+    "ast_hash": "95848848b29880c54fb5deda4a2b784d",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay/player_health/transactions.rs": {
@@ -9906,9 +9906,9 @@
     "semantic_hash": ""
   },
   "src/server/players/health.rs": {
-    "mtime": 1791052597.8114786,
-    "seen": 1791052677.8137448,
-    "ast_hash": "46673442594dc1a8cf7a50d4b107b7bf",
+    "mtime": 1791053092.0537121,
+    "seen": 1791053353.393091,
+    "ast_hash": "551f993bf781da5ed97d5b76524e96ac",
     "semantic_hash": ""
   },
   "src/server/script/gameplay/bindings/player_health.rs": {
@@ -9936,9 +9936,9 @@
     "semantic_hash": ""
   },
   "docs/modding/PLAYER-HEALTH.md": {
-    "mtime": 1791052597.7039585,
-    "seen": 1791052677.8140318,
-    "ast_hash": "a80002a280439de143b7f055adbddd17",
+    "mtime": 1791053092.0556242,
+    "seen": 1791053353.393461,
+    "ast_hash": "28dfdf778a02439a7f815ba783d08708",
     "semantic_hash": ""
   },
   "fixtures/player-health/README.md": {
@@ -9957,6 +9957,12 @@
     "mtime": 1791052757.2353618,
     "seen": 1791052946.654627,
     "ast_hash": "e8b7db7ba3771fb5fc7bb55893a0f926",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/script_startup/gameplay/player_health/transitions.rs": {
+    "mtime": 1791053297.3547962,
+    "seen": 1791053353.393012,
+    "ast_hash": "65519abf057cb076af5c9c8954fb17de",
     "semantic_hash": ""
   }
 }
