@@ -24,6 +24,7 @@ pub(crate) struct Prepared {
     pub model: Arc<Model>,
     pub scale: f32,
     pub fingerprint: u64,
+    visual_schema: bloxgloom_host_api::entity::VisualSchema,
     bytes: usize,
     _reservation: Reservation,
 }
@@ -39,49 +40,44 @@ impl Prepared {
     pub(crate) fn decoded_bytes(&self) -> usize {
         self.bytes
     }
+    pub(crate) fn visual_schema(&self) -> &bloxgloom_host_api::entity::VisualSchema {
+        &self.visual_schema
+    }
     pub(crate) fn schema(&self) -> bloxgloom_host_api::entity::VisualSchema {
-        bloxgloom_host_api::entity::VisualSchema {
-            clips: self.model.clips.iter().map(|c| c.name.clone()).collect(),
-            clip_loops: self
-                .model
-                .clips
-                .iter()
-                .map(|c| {
-                    self.model
-                        .controls
-                        .loops
-                        .get(&c.name)
-                        .copied()
-                        .unwrap_or(false)
-                })
-                .collect(),
-            variants: self
-                .model
-                .controls
-                .variants
-                .iter()
-                .map(|v| {
-                    (
-                        v.name.clone(),
-                        v.options.iter().map(|o| o.name.clone()).collect(),
-                    )
-                })
-                .collect(),
-            layers: self
-                .model
-                .controls
-                .layers
-                .iter()
-                .map(|l| l.name.clone())
-                .collect(),
-            tints: self
-                .model
-                .controls
-                .tints
-                .iter()
-                .map(|t| t.name.clone())
-                .collect(),
-        }
+        self.visual_schema.clone()
+    }
+}
+fn schema(model: &Model) -> bloxgloom_host_api::entity::VisualSchema {
+    bloxgloom_host_api::entity::VisualSchema {
+        clips: model.clips.iter().map(|c| c.name.clone()).collect(),
+        clip_loops: model
+            .clips
+            .iter()
+            .map(|c| model.controls.loops.get(&c.name).copied().unwrap_or(false))
+            .collect(),
+        variants: model
+            .controls
+            .variants
+            .iter()
+            .map(|v| {
+                (
+                    v.name.clone(),
+                    v.options.iter().map(|o| o.name.clone()).collect(),
+                )
+            })
+            .collect(),
+        layers: model
+            .controls
+            .layers
+            .iter()
+            .map(|l| l.name.clone())
+            .collect(),
+        tints: model
+            .controls
+            .tints
+            .iter()
+            .map(|t| t.name.clone())
+            .collect(),
     }
 }
 
@@ -133,6 +129,7 @@ pub(crate) fn prepare(asset: &ModelAsset) -> Result<Arc<Prepared>, Error> {
     hash_bytes(&mut fingerprint, &asset.controls);
     hash_bytes(&mut fingerprint, &asset.scale.to_le_bytes());
     let prepared = Arc::new(Prepared {
+        visual_schema: schema(&model),
         model: Arc::new(model),
         scale: asset.scale,
         fingerprint,

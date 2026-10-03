@@ -1,9 +1,12 @@
 use super::*;
 use bloxgloom_host_api::{RegistrationError as ApiError, entity::MobileEntity};
 use std::sync::Arc;
+#[cfg(test)]
+mod tests;
 impl Catalog {
     pub(crate) fn register_mobile(&mut self, entity: MobileEntity) -> Result<(), ApiError> {
         entity.validate()?;
+        self.validate_mobile_model(&entity)?;
         if self.entity_type_id_by_key(&entity.key).is_some() {
             return Err(ApiError("duplicate entity identity".into()));
         }
@@ -26,6 +29,7 @@ impl Catalog {
         entity: Arc<MobileEntity>,
     ) -> Result<(), ApiError> {
         entity.validate()?;
+        self.validate_mobile_model(&entity)?;
         if self.mobile_entities().count() >= 128 {
             return Err(ApiError("too many mobile models".into()));
         }
@@ -57,6 +61,47 @@ impl Catalog {
         if !matches!(&action.operation, bloxgloom_host_api::actions::Operation::EntityRequest(bytes) if bytes.is_empty())
         {
             self.register_action(action)?;
+        }
+        Ok(())
+    }
+    fn validate_mobile_model(&self, entity: &MobileEntity) -> Result<(), ApiError> {
+        let Some(authored) = &entity.authored_model else {
+            return Ok(());
+        };
+        let asset = self.model_by_key(&authored.key).ok_or_else(|| {
+            ApiError(format!(
+                "{}: missing authored model {}",
+                entity.key, authored.key
+            ))
+        })?;
+        let schema = asset.visual_schema();
+        if [&authored.idle, &authored.walk, &authored.run]
+            .into_iter()
+            .flatten()
+            .any(|clip| !schema.clips.contains(clip))
+        {
+            return Err(ApiError(format!(
+                "{}: locomotion references an unknown model clip",
+                entity.key
+            )));
+        }
+        let initial = entity.behavior.initial();
+        let fail = || {
+            ApiError(format!(
+                "{}: initial state does not match authored model schema",
+                entity.key
+            ))
+        };
+        let private = entity.behavior.encode(&initial).map_err(|_| fail())?;
+        let public = entity.behavior.public(&initial).map_err(|_| fail())?;
+        let pose = entity.behavior.pose(&public).map_err(|_| fail())?;
+        let visual = entity.behavior.visual(&public).map_err(|_| fail())?;
+        if private.len() > entity.max_state_bytes
+            || public.len() > entity.max_public_bytes
+            || !pose.yaw.is_finite()
+            || visual.as_ref().is_some_and(|state| !schema.accepts(state))
+        {
+            return Err(fail());
         }
         Ok(())
     }
