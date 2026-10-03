@@ -34,6 +34,7 @@ mod camera;
 mod character;
 mod character_motion;
 pub(crate) mod chat;
+mod controller;
 pub(crate) mod drops;
 mod fire;
 mod health;
@@ -313,6 +314,7 @@ struct Keys {
 }
 
 struct ClientApp {
+    controller: controller::Controller,
     chat: chat::Session,
     movement_modifiers: bloxgloom_host_api::player_modifiers::Movement,
     health: bloxgloom_host_api::player_health::View,
@@ -422,6 +424,7 @@ impl ClientApp {
             audio.install_sounds(clips);
         }
         Self {
+            controller: Default::default(),
             chat: chat::Session::default(),
             movement_modifiers: Default::default(),
             health: bloxgloom_host_api::player_health::View::new(Default::default(), 0),
@@ -551,6 +554,7 @@ impl ClientApp {
             self.character_editor
                 .open(self.replicas.owned_appearance(self.owned_entity_id));
         }
+        self.clear_controller_input();
         self.screen = screen;
         if screen != UiScreen::Admin {
             self.admin_binding_mode = false;
@@ -990,6 +994,7 @@ impl ClientApp {
 
     fn set_grab(&mut self, grab: bool) {
         if !grab {
+            self.clear_controller_input();
             self.cancel_sprint();
             self.keys = Keys::default();
             self.grabbed = false;
@@ -1700,7 +1705,8 @@ impl ClientApp {
         }
         let forward = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin());
         let right = Vec3::new(-self.yaw.sin(), 0.0, self.yaw.cos());
-        let mut direction = Vec3::ZERO;
+        let mut direction =
+            forward * self.controller.movement.y + right * self.controller.movement.x;
         if self.keys.forward {
             direction += forward;
         }
@@ -1713,16 +1719,16 @@ impl ClientApp {
         if self.keys.left {
             direction -= right;
         }
-        if self.flight.flying && self.keys.up {
+        if self.flight.flying && (self.keys.up || self.controller.rising) {
             direction += Vec3::Y;
         }
-        if self.flight.flying && self.keys.down {
+        if self.flight.flying && (self.keys.down || self.controller.descending) {
             direction -= Vec3::Y;
         }
         if direction == Vec3::ZERO {
             return;
         }
-        let delta = direction.normalize()
+        let delta = direction.clamp_length_max(1.0)
             * self
                 .movement_modifiers
                 .rules(
@@ -1978,6 +1984,7 @@ impl ClientApp {
             return;
         }
         self.validate_kiln_screen();
+        self.poll_controller(dt, now);
         self.move_player(dt);
         self.audio
             .poll_listener(self.camera().position.to_array(), self.yaw, now);

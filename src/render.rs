@@ -233,6 +233,15 @@ impl Renderer {
         self.game_ui.on_window_event(&self.window, event);
     }
 
+    pub(crate) fn game_ui_controller_pointer(
+        &mut self,
+        position: Option<[f32; 2]>,
+        button: Option<(bool, bool)>,
+        scroll: [f32; 2],
+    ) {
+        self.game_ui.controller_pointer(position, button, scroll);
+    }
+
     pub(crate) fn take_game_ui_intents(&mut self) -> Vec<GameUiIntent> {
         self.game_ui.take_intents()
     }

@@ -5,6 +5,8 @@ use crate::content::Catalog;
 use crate::ui::{UiControl, UiFrame, UiScreen};
 use winit::{event::WindowEvent, window::Window};
 
+mod controller;
+pub(crate) use controller::draw_cursor;
 mod health;
 mod hud;
 mod menus;
@@ -68,6 +70,7 @@ pub(super) struct GameUi {
     search: String,
     filter: SlotFilter,
     intents: Vec<Intent>,
+    controller_cursor: controller::Pointer,
 }
 
 pub(super) struct DrawTarget<'a> {
@@ -133,6 +136,7 @@ impl GameUi {
             search: String::new(),
             filter: SlotFilter::All,
             intents: Vec::new(),
+            controller_cursor: Default::default(),
         }
     }
 
@@ -145,6 +149,12 @@ impl GameUi {
     }
 
     pub(super) fn on_window_event(&mut self, window: &Window, event: &WindowEvent) {
+        if matches!(
+            event,
+            WindowEvent::CursorMoved { .. } | WindowEvent::MouseInput { .. }
+        ) {
+            self.controller_cursor.visible = false;
+        }
         let _ = self.input.on_window_event(window, event);
     }
 
@@ -181,6 +191,9 @@ impl GameUi {
                 &mut self.filter,
                 &mut self.intents,
             );
+            if frame.screen != UiScreen::Playing && self.controller_cursor.visible {
+                draw_cursor(ui.ctx(), self.controller_cursor.position);
+            }
         });
         self.input
             .handle_platform_output(target.window, output.platform_output);

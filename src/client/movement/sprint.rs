@@ -24,7 +24,9 @@ impl ClientApp {
         }
         self.keys.forward = pressed;
         if !pressed {
-            self.request_sprint(false);
+            if !self.forward_held() {
+                self.request_sprint(false);
+            }
             return;
         }
         if !self.can_sprint() {
@@ -41,6 +43,16 @@ impl ClientApp {
         }
     }
 
+    pub(in crate::client) fn forward_held(&self) -> bool {
+        self.keys.forward || self.controller.movement.y > 0.1
+    }
+
+    pub(in crate::client) fn controller_sprint(&mut self) {
+        if self.can_sprint() && self.forward_held() {
+            self.request_sprint(!self.sprint.requested);
+        }
+    }
+
     fn can_sprint(&self) -> bool {
         self.screen == UiScreen::Playing
             && self.grabbed
@@ -49,11 +61,12 @@ impl ClientApp {
             && !self.crouch_requested
             && !self.crouching()
             && !self.keys.back
+            && self.controller.movement.y >= -0.1
     }
 
     pub(in crate::client) fn sprinting(&self) -> bool {
         self.sprint.requested
-            && self.keys.forward
+            && self.forward_held()
             && self.can_sprint()
             && self
                 .owned_entity_id

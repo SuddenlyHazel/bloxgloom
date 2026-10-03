@@ -63,6 +63,7 @@ impl ClientApp {
         renderer.clear_game_ui_intents();
         self.renderer = Some(renderer);
         self.window = Some(window);
+        self.controller.initialize();
         self.refresh_layout();
         self.apply_fullscreen();
         Ok(preparation)
@@ -157,7 +158,7 @@ impl ClientApp {
                 ..
             }
         ) {
-            self.break_button(false, Instant::now());
+            self.mouse_break_button(false, Instant::now());
         }
         if let WindowEvent::ModifiersChanged(modifiers) = &event {
             self.input_modifiers = modifiers.state();
@@ -331,7 +332,7 @@ impl ClientApp {
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.shift_down = modifiers.state().shift_key();
-                self.request_crouch(self.shift_down);
+                self.request_crouch(self.shift_down || self.controller.crouching);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
@@ -607,7 +608,7 @@ impl ClientApp {
                 } else if !self.grabbed {
                     self.set_grab(true);
                 } else if button == MouseButton::Left {
-                    self.break_button(true, Instant::now());
+                    self.mouse_break_button(true, Instant::now());
                 } else if button == MouseButton::Right {
                     self.place_or_interact();
                 }

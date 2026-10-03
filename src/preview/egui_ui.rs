@@ -129,6 +129,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         (UiScreen::Playing, "chat-closed"),
         (UiScreen::Container, "container"),
         (UiScreen::Pause, "pause"),
+        (UiScreen::Pause, "pause-controller"),
         (UiScreen::Settings, "settings"),
         (UiScreen::Graphics, "graphics"),
         (UiScreen::Audio, "audio"),
@@ -295,6 +296,12 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
                         &mut filter,
                         &mut intents,
                     );
+                    if label == "pause-controller" {
+                        render::game_ui::draw_cursor(
+                            ui.ctx(),
+                            egui::pos2(width as f32 * 0.5, height as f32 * 0.54),
+                        );
+                    }
                 },
             )
         };

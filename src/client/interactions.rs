@@ -37,7 +37,7 @@ impl ClientApp {
     }
 
     pub(super) fn place_or_interact(&mut self) {
-        if self.shift_down {
+        if self.shift_down || self.controller.crouching {
             self.edit_aimed_block(true);
             return;
         }

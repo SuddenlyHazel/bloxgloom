@@ -36,6 +36,31 @@ Open **Escape → Settings → Graphics** to adjust exposure and bloom strength 
 
 The corresponding config keys are `post_processing=true`, `bloom_enabled=true`, `exposure=1.0` (range `0.25`–`4.0`), and `bloom_strength=0.12` (range `0`–`1`). Zero bloom strength also skips bloom passes. On macOS the file is `~/Library/Application Support/Bloxgloom/config`; Linux uses `$XDG_CONFIG_HOME/bloxgloom/config` or `~/.config/bloxgloom/config`, and Windows uses `%APPDATA%/Bloxgloom/config`. Restart after manual file edits. Existing configs use the defaults for missing keys. Image previews and the headless benchmark use the same post-processing pipeline at its default settings.
 
+## Controller controls
+
+Controllers use Gilrs with bundled SDL mappings and can connect or disconnect during play.
+The 8BitDo Ultimate 2C wireless controller uses its standard Xbox button layout.
+
+| Gameplay | Control |
+| --- | --- |
+| Move / look | Left / right stick |
+| Jump; rise while flying | A |
+| Hold crouch; descend while flying | B |
+| Break / place or interact | RT / LT (or X to interact) |
+| Previous / next hotbar slot | LB / RB |
+| Toggle sprint while moving forward | Click left stick |
+| Inventory / pause / camera perspective | Y / Start / Back |
+
+In menus, move the white ring cursor with the left stick or D-pad. A clicks;
+hold A while moving to drag sliders. X performs a secondary click (including
+splitting inventory stacks), the right stick scrolls, and B goes back. Text entry
+still uses a keyboard. Gameplay input stops when menus open or the window loses
+focus, and held action buttons must be released before they work in the next screen.
+
+Linux builds also require `libudev-dev` and `pkg-config` for controller input.
+The desktop user needs read access to the controller's `/dev/input/event*` device;
+Ubuntu's active desktop session normally grants it automatically.
+
 ## Run locally
 
 With a recent Rust toolchain, run a local game with one command:

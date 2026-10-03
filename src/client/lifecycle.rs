@@ -5,6 +5,7 @@ use super::*;
 
 impl ClientApp {
     pub(super) fn retire_session(&mut self) {
+        self.clear_controller_input();
         self.simulation_clock = Default::default();
         self.audio.retire_session(&self.config);
         self.weather = Default::default();
