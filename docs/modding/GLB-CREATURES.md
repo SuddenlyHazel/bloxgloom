@@ -109,6 +109,9 @@ failed calls reject the whole candidate update, including errors caught by
   triangle meshes are required; unsupported transparency, morph targets, external
   resources and required extensions fail startup.
 
+Material support is base-color PNGs and alpha cutout. Companion and emissive maps
+are rejected at startup.
+
 Allocation estimates are checked before decode. Shared assets hold their memory
 reservation until released. Registration, download and renderer caps remain
 independent.
@@ -117,3 +120,30 @@ independent.
 nonblocking listener, downloaded assets, two native client projections,
 interaction and durable restart with an isolated save. Renderer tests cover
 independent instances, baked poses, layers, colors and shadow/depth behavior.
+
+## Verification, October 2026
+
+The workspace/all-features run passed 1,707 tests, with 10 existing tests
+ignored. Formatting, strict all-targets/all-features Clippy, and the release build
+passed. The 1280×720 production creature preview was inspected; the real native
+release client also completed its downloaded-package join against an isolated save.
+
+`perf 300 6`, Apple M1 Pro/Metal, medium shadows, voxel lighting:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Scene setup, excluded from frames | 2374.3 ms | 2312.0 ms |
+| Steady CPU p50 / p95 | 1.017 / 2.917 ms | 0.691 / 1.268 ms |
+| Steady GPU p50 / p95 | 0.798 / 2.130 ms | 0.787 / 1.256 ms |
+| Mesh vertices / indices | 320236 / 480354 | 320236 / 480354 |
+| Mesh bytes | 18573688 | 18573688 |
+
+These single-run measurements show no regression in the default headless scene;
+the lower CPU times aren't attributed to a specific change. This scene excludes
+live presentation and custom GLB creatures. The creature GPU tests separately
+exercise shared assets, independent looks and the 512-actor admission limit.
+
+The additional bounced-lighting run measured 2714.7 ms setup, steady CPU
+0.686 / 1.212 ms p50 / p95 and GPU 0.791 / 1.259 ms. Its mesh contained 324092
+vertices, 486138 indices and 18797336 bytes. No before-change bounced baseline was
+collected; this is a separate mode check.
