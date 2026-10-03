@@ -5,8 +5,9 @@
 //! Every binary string of exactly state_bytes is canonical; authors encode their
 //! own fields, without coercion, padding or a second serializer. Only the explicit
 //! prefix is public. Zero exposes no bytes. No VM executes during codec calls.
-//! The schema fingerprint covers these choices and the entire frozen package
-//! installation, rejecting changed sources on restart even for suspended types.
+//! The schema fingerprint covers these choices and explicit package/dependency
+//! contracts. Source edits alone preserve it, including for suspended types;
+//! authors must bump schema_version when changing saved-state interpretation.
 use super::{
     package::PackageSnapshot,
     startup::Pending,

@@ -89,12 +89,14 @@ pub(super) fn registration(
     declaration: Declaration,
 ) -> Registration {
     snapshot.mark_generation_module(&declaration.module);
+    let source_identity = snapshot.generation_source_identity(&declaration.module);
     Registration {
         key: declaration.key,
         revision: declaration.revision,
         contributor: Arc::new(ScriptContributor {
             snapshot,
             module: declaration.module,
+            source_identity,
         }),
     }
 }
@@ -102,11 +104,12 @@ pub(super) fn registration(
 struct ScriptContributor {
     snapshot: Arc<PackageSnapshot>,
     module: String,
+    source_identity: [u8; 32],
 }
 
 impl Contributor for ScriptContributor {
     fn source_identity(&self) -> Option<[u8; 32]> {
-        Some(self.snapshot.generation_source_identity(&self.module))
+        Some(self.source_identity)
     }
 
     fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
