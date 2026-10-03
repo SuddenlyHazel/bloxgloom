@@ -475,6 +475,14 @@ fn gpu_packaged_glb_casters_and_receivers_preserve_layers_clips_and_indirect_lig
     let (catalog, id) = authored::tests::catalog();
     let mut scene = Scene::new(&catalog);
     let mut actor = authored::tests::avatar(91, id, 0.0, [240, 180, 100]);
+    actor.model_pose.as_mut().unwrap().playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: 0,
+        speed: 0.0,
+        looping: true,
+        crossfade_s: 0.0,
+        started_tick: 0,
+        sequence: 0,
+    });
     let resting = scene.render(&[actor], true, false, true);
     actor.model_pose.as_mut().unwrap().layers[1] = 1;
     let hat = scene.render(&[actor], true, false, true);
@@ -497,9 +505,19 @@ fn gpu_packaged_glb_casters_and_receivers_preserve_layers_clips_and_indirect_lig
         scene.render(&[actor], true, false, true),
         "baked animation must also change caster geometry"
     );
-    // Recreate the presentation clock for deterministic static receiver checks.
+    // Hold the authored idle at one exact pose while changing only lighting.
+    // GPU readback duration under parallel tests must not advance the geometry.
     let mut scene = Scene::new(&catalog);
-    actor.model_pose.as_mut().unwrap().playback = None;
+    let visual = actor.model_pose.as_mut().unwrap();
+    visual.sequence = 2;
+    visual.playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: 0,
+        speed: 0.0,
+        looping: true,
+        crossfade_s: 0.0,
+        started_tick: 0,
+        sequence: 2,
+    });
     for levels in [[15, 0, 0, 0], [0; 4], [0, 15, 0, 0]] {
         actor.light_levels = levels;
         actor.bounce = [30, 40, 20, 0];
