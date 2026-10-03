@@ -3696,9 +3696,9 @@
     "semantic_hash": ""
   },
   "src/server/tests/appearance.rs": {
-    "mtime": 1791033654.1495554,
-    "seen": 1791035421.790708,
-    "ast_hash": "3a4c855889a604520693fbf7f17608aa",
+    "mtime": 1791042264.5604095,
+    "seen": 1791042288.7162611,
+    "ast_hash": "61822aaa457ba55858f4dbfba9467fd9",
     "semantic_hash": ""
   },
   "src/server/tests/clients.rs": {
