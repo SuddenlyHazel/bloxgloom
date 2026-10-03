@@ -1111,6 +1111,29 @@ See [package development](docs/modding/PACKAGE-DEVELOPMENT.md),
 [revision/runtime tests](src/server/script/runtime/engine/tests.rs) and
 [disk cache tests](src/client/bundle/disk/tests.rs).
 
+## Player world and motion acceptance — October 3, 2026
+
+The scoped goal is implemented: region hooks, moderated native chat,
+profile/session movement modifiers, package-defined player GLBs with baked clip
+selection and crossfades, and opt-in Rapier rigid bodies. Vehicles and arbitrary
+animation graphs remain parked by agreement.
+
+Verification passed 1,734 game tests and 60 host API tests (11 game tests ignored),
+including real nonblocking TCP admission, session/revision fences, rollback,
+replication and restart cases. Formatting, strict all-target/all-feature Clippy
+and the release build passed. Native chat previews at 1280×720 and 640×360 and
+GPU previews of both the small packaged rig and the embedded humanoid were
+generated and inspected.
+
+On the M1 Pro/Metal offscreen `perf 300 6` comparison, geometry stayed at 320,236
+vertices and 480,354 indices. Scene setup was 2,344.5 → 2,306.4 ms; steady CPU
+p50/p95 was 0.668/1.062 → 0.670/0.980 ms, and steady GPU p50/p95 was
+0.788/1.044 → 0.772/1.089 ms. These are comparable renderer measurements, not
+live gameplay or a model-heavy workload. The isolated release Rapier probe
+measured 29.173 µs per body with 64 captured colliders (1.867 ms for 64 bodies);
+it excludes terrain capture, WAL work and client rendering. Bodies currently
+respond to captured obstacles without reciprocal impulses or coupled islands.
+
 ## Suggested priority
 
 1. Health/combat/respawn and additional per-player modifier domains.
