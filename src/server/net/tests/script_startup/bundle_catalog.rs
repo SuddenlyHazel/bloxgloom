@@ -423,7 +423,21 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
             } else if mode == 8 {
                 assert!(error.to_string().contains("invalid"), "{error}");
             } else if mode == 1 || mode >= 3 {
-                assert!(error.to_string().contains("schema or material differs"));
+                let expected = match mode {
+                    1 => "item 'demo:token'",
+                    3 | 7 => "entity 'bloxgloom:player'",
+                    4 => "gameplay handler 'demo:tick'",
+                    5 => "owner system 'demo:clock'",
+                    6 => "entity 'demo:counter'",
+                    _ => unreachable!(),
+                };
+                let text = error.to_string();
+                assert!(text.contains("client content contract differs"), "{text}");
+                assert!(text.contains(expected), "mode {mode}: {text}");
+                assert!(
+                    text.contains("server ") && text.contains("client "),
+                    "{text}"
+                );
             } else {
                 assert!(error.to_string().contains("fingerprint mismatch"));
             }
