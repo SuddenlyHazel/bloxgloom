@@ -1,4 +1,51 @@
 use super::*;
+
+#[test]
+fn color_and_motion_positions_are_invariant_for_equal_depth() {
+    use wgpu::naga::{Binding, BuiltIn, ShaderStage, TypeInner};
+    let catalog = crate::content::catalog();
+    for (name, source) in [
+        ("procedural", super::super::appearance::shader(catalog)),
+        ("character", super::super::character_shader(catalog)),
+        (
+            "authored",
+            shader(
+                crate::render::daylight::shader(include_str!("../authored.wgsl")),
+                3,
+            ),
+        ),
+    ] {
+        let module = wgpu::naga::front::wgsl::parse_str(&source).unwrap();
+        wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+        for entry in ["vs_main", "vs_motion"] {
+            let result = module
+                .entry_points
+                .iter()
+                .find(|point| point.stage == ShaderStage::Vertex && point.name == entry)
+                .unwrap()
+                .function
+                .result
+                .as_ref()
+                .unwrap();
+            let TypeInner::Struct { members, .. } = &module.types[result.ty].inner else {
+                panic!("{name} {entry} must return a vertex output struct");
+            };
+            assert!(
+                members.iter().any(|member| matches!(
+                    member.binding,
+                    Some(Binding::BuiltIn(BuiltIn::Position { invariant: true }))
+                )),
+                "{name} {entry} must preserve position for the Equal-depth motion pass"
+            );
+        }
+    }
+}
+
 fn stage(history: &mut History, id: u64, identity: u64, x: f32) {
     history.stage(
         id,

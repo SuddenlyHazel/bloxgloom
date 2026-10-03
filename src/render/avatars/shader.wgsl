@@ -17,7 +17,7 @@ struct VertexInput {
 };
 
 struct VertexOutput {
-    @builtin(position) clip: vec4<f32>,
+    @builtin(position) @invariant clip: vec4<f32>,
     @location(0) color: vec3<f32>,
     @location(1) direct: vec3f,
     @location(2) sky: f32,
@@ -99,7 +99,7 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     return bg_scene_output(color,input.indirect,input.world_position,input.sky,history_sign);
 }
 
-struct MotionOutput { @builtin(position) clip: vec4f, @location(0) previous: vec4f, @location(1) current: vec4f };
+struct MotionOutput { @builtin(position) @invariant clip: vec4f, @location(0) previous: vec4f, @location(1) current: vec4f };
 @vertex fn vs_motion(input: VertexInput, @builtin(instance_index) instance: u32) -> MotionOutput {
     let current = avatar_vertex(input, false);
     let old = previous_world[instance];

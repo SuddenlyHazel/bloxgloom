@@ -17,7 +17,7 @@ struct Input {
     @location(14) hair_color_body: vec4u, @location(15) surface: u32,
 };
 struct Output {
-    @builtin(position) clip: vec4f, @location(0) light: vec4f,
+    @builtin(position) @invariant clip: vec4f, @location(0) light: vec4f,
     @location(1) direct: vec4f,
     // Pack local-light inputs into existing slots to retain the 16-varying limit.
     // The spare w components of light/indirect/world_position carry tint.rgb.

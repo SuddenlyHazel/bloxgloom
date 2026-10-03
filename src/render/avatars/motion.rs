@@ -200,6 +200,8 @@ pub(super) fn pipeline(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: super::DEPTH_FORMAT,
             depth_write_enabled: Some(false),
+            // Color and motion share vertex geometry and invariant clip outputs,
+            // so only the visible color-pass surfaces receive motion vectors.
             depth_compare: Some(wgpu::CompareFunction::Equal),
             stencil: Default::default(),
             bias: Default::default(),

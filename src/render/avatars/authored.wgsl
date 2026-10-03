@@ -16,7 +16,7 @@ struct Input {
     @location(12) offsets: vec2u, @location(13) first_person_offset: vec3f,
 };
 struct Output {
-    @builtin(position) clip: vec4f, @location(0) world: vec3f,
+    @builtin(position) @invariant clip: vec4f, @location(0) world: vec3f,
     @location(1) normal: vec3f, @location(2) uv: vec2f,
     @location(3) @interpolate(flat) part: u32,
     @location(4) @interpolate(flat) light_levels: vec2u,
@@ -74,7 +74,7 @@ fn color(input: Output) -> vec4f {
 @fragment fn fs_shadow(input: Output) { _=color(input); }
 
 struct MotionOutput {
-    @builtin(position) clip: vec4f, @location(0) previous: vec4f,
+    @builtin(position) @invariant clip: vec4f, @location(0) previous: vec4f,
     @location(1) uv: vec2f, @location(2) @interpolate(flat) part: u32,
     @location(3) current: vec4f,
 };
