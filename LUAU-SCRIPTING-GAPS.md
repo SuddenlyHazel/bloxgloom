@@ -3,7 +3,8 @@
 Current assessment: October 3, 2026, after Phase 8, runtime tools, player services,
 dynamic UI, anchored entities, typed client replicas and the VM lifetime work
 recorded in section 6, plus package composition in section 7 and the smaller
-composable API goal below.
+composable API goal below, plus player world hooks, movement modifiers, packaged
+player rigs and the opt-in Rapier moving-body mode.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
@@ -88,8 +89,8 @@ runtime movement or cosmetic-change authority.
 | --- | --- |
 | Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Account authentication remains separate |
 | Package-owned lifecycle/gameplay profile state, atomic profile inventory transactions and profile/session timers | Global account/role databases remain separate |
-| Validated admission/reconnect spawn proposals, runtime teleport and cosmetic replacement, frozen player rules/palettes | Per-player physics remains deferred |
-| Client lifecycle callbacks, selected local public state and targeted status notices | General chat transport and hooks |
+| Admission/spawn/teleport, packaged player looks and profile/session movement modifiers | Health/combat/respawn and additional modifier domains remain open |
+| Client lifecycle callbacks, targeted notices and bounded moderated native chat | Account authentication and durable chat history remain separate |
 | Native and Luau readonly post-commit observers | Exactly-once notification delivery; critical rewards use durable decisions |
 
 The agreed player-services implementation is complete. Native and Luau post-commit observers remain advisory:
@@ -217,21 +218,22 @@ state update has a different lifetime and durability requirement.
 
 #### Chat and additional player mechanics
 
-There is no bound chat message or general message-delivery service to intercept.
-A useful chat feature first needs server/client transport, text presentation,
-authoritative sender identity and delivery semantics. Luau can then provide
-formatting, routing, moderation and command integration. Define accepted text,
-size/rate limits, recipients and whether moderation decides before delivery or
-observes an already delivered message. A command argument is not a substitute
-for a complete chat pipeline.
+Chat transport, native input/history and package moderation are implemented.
+Hooks receive captured sender/session identities and bounded UTF-8 text. A bounded
+worker applies formatting, routing and denial before delivery; stale sender or
+recipient sessions cannot follow a profile through reconnect. Text is limited to
+512 UTF-8 bytes and four requests per two seconds. This is transient chat, without
+saved history or a separate chat-command grammar. See [player world rules](docs/modding/PLAYER-WORLD.md).
 
-Health, damage, death, respawn, teams and per-player movement modifiers are
-separate mechanics to specify where the engine does not already support them.
+Health, damage, death, respawn and teams remain separate mechanics.
+Movement modifiers now support profile and exact-session effects with optional
+logical-tick expiry, authoritative speed/sprint/jump/gravity and client input fences.
+Additional modifier domains remain open.
 The player API should make those future additions straightforward, but adding
 an event named `PlayerDied` does not create authoritative health or combat.
 Initial player spawning already exists; configurable respawn and combat rules
-need additional engine behavior. Custom player geometry remains part of the
-separately deferred model work.
+need additional engine behavior. Packaged player geometry and baked clips are
+implemented; they retain the shared authoritative player collision body.
 
 #### Additional scope accepted for implementation
 
@@ -257,9 +259,9 @@ separately deferred model work.
   advertised as general remote account authentication. Authentication credentials
   and an account service remain separate work.
 
-Region enter/leave hooks remain follow-up work. Chat, health/combat/respawn,
-per-player movement modifiers, custom geometry, VM reuse and save converters
-are outside this goal. Admission policy can implement package-owned bans/roles
+The original player-service goal excluded region hooks, chat, movement modifiers
+and custom geometry; these are now implemented by the follow-up contracts linked
+below. Health/combat/respawn remain open, and save conversion remains excluded. Admission policy can implement package-owned bans/roles
 through durable profile state; this goal does not prescribe a separate account
 or global role database.
 
@@ -318,8 +320,11 @@ previews were rendered and inspected. Graphify was refreshed after the code edit
 The runnable example is `fixtures/player-lifecycle/`; the
 [active player-services reference](docs/modding/PLAYER-LIFECYCLE.md) records
 bindings, operation limits, event ordering, retry/receipt semantics and remaining
-engine boundaries. Region hooks, chat/combat/respawn, per-player physics, custom
-geometry, authentication, VM reuse and save converters remain follow-up work.
+engine boundaries. Follow-up region hooks, chat, movement modifiers and packaged
+player rigs now have guides under [player world rules](docs/modding/PLAYER-WORLD.md),
+[modifiers](docs/modding/PLAYER-MODIFIERS.md) and [models](docs/modding/PLAYER-MODELS.md).
+Combat/respawn and authentication remain open; VM reuse is implemented in section 6.
+Save conversion remains excluded.
 
 ### 3. Dynamic UI and input — closed within agreed scope
 
@@ -468,14 +473,14 @@ running, interaction and completion sounds.
 with captured script weather reads, advisory target-transition hooks, authenticated
 admin controls and readonly client observations. Packages declare block rain
 materials, bounded custom impact profiles and insect habitats. The
-[rain collector fixture](fixtures/rain-collector/README.md) combines these contracts. Custom player geometry
-registration remains deferred. Client presentation offers bounded replica windows, pose/tint overrides, sparks and embers rather than a general
+[rain collector fixture](fixtures/rain-collector/README.md) combines these contracts. Packaged player geometry
+registration is implemented through the native GLB path below. Client presentation offers bounded replica windows, pose/tint overrides, sparks and embers rather than a general
 scene/entity renderer.
 
 The native player kit now has authored character styles, first/third-person
 body rendering, walking and tool animations, and server-owned crouch stance.
-These improve the builtin player experience; they do not expose general Luau
-model imports, animation controllers, arbitrary motion or per-player physics.
+These improve the builtin player experience. The follow-up package model and
+runtime movement contracts below extend that experience to mod-authored rigs.
 
 The [native GLB model pipeline](docs/modding/AUTHORED-MODELS.md) loads
 embedded textures and baked clips in Rust and renders them through wgpu. The
@@ -486,13 +491,22 @@ blend interrupted transitions, and expose named layer/variant/color controls plu
 explicit looping/nonlooping playback through Luau. Their bounded visual state is
 server-owned, durable and public; movement/collision remain authoritative.
 
-**Remaining impact:** vehicles, per-player physics, arbitrary animation graphs and advanced audio
-need additional engine services. Simple projectiles and guided flying objects
+Packaged player rigs now use the same verified native GLB pipeline, with native
+Character selection, named variants/layers/multiply-or-replace tints and profile
+persistence. Idle/walk/run/crouch/tool mappings and named clips with crossfades use
+the animations baked into each GLB. Runtime profile/session movement modifiers
+share server authority and client prediction. General moving bodies can opt into
+Rapier damping, contact friction, angular motion and oriented cuboid collision.
+Rapier results commit through existing captured-state and WAL checks; obstacles
+are snapshots, so reciprocal rigid-body impulse islands are not implemented.
+
+**Remaining impact:** vehicles, coupled rigid-body constraints/islands, arbitrary
+animation graphs and advanced audio need additional engine services. Simple projectiles and guided flying objects
 use the moving-entity contract rather than private-state position emulation.
 
 **Closure direction:** introduce public motion/physics contracts for specific
-supported behaviors, richer public projections and audio. Custom player model
-registration and live model hot reload remain separate scope decisions.
+supported behaviors, richer public projections and audio. Live model asset hot reload remains separate; changed model bytes/settings
+require a fresh compatible startup contract.
 
 Evidence: [gameplay entities](SCRIPTING.md#persistent-gameplay-entities-and-exact-handles),
 [creatures](SCRIPTING.md#mobile-creatures) and
@@ -1099,8 +1113,20 @@ See [package development](docs/modding/PACKAGE-DEVELOPMENT.md),
 
 ## Suggested priority
 
-1. Advanced audio, additional motion and richer presentation contracts.
-2. Development iteration and the remaining smaller composability gaps.
+1. Health/combat/respawn and additional per-player modifier domains.
+2. Advanced audio and live debugging/model asset iteration.
+3. Coupled rigid-body worlds and constraints, if needed by a future playable feature.
+
+Vehicles and arbitrary animation graphs are explicitly parked. This goal uses
+baked GLB clips and simple crossfades. Region membership reconciles authoritative
+feet positions; under sustained bounded-queue overload, intermediate edges may
+coalesce while membership converges. This does not promise a continuous path
+crossing detector or exactly-once advisory notifications.
+
+Implemented contracts and runnable fixtures are in [regions/chat](docs/modding/PLAYER-WORLD.md),
+[player modifiers](docs/modding/PLAYER-MODIFIERS.md), [player models](docs/modding/PLAYER-MODELS.md),
+and [moving entities](docs/modding/MOVING-ENTITIES.md). The default fresh save folder
+is `world-v25`; the appearance and moving-record formats changed without converters.
 
 VM lifetime and retained runtime state are implemented in section 6; larger-package
 composition is implemented in section 7.

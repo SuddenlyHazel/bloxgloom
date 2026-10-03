@@ -5,7 +5,7 @@ use super::*;
 pub(in crate::server) struct Contract {
     catalog: u64,
     regions: Vec<(String, Vec<u8>)>,
-    chat: Vec<(String, u16)>,
+    chat: Vec<(String, u64)>,
     creatures: Vec<(String, Vec<u8>)>,
     systems: Vec<SystemDescriptor>,
     codecs: Vec<(SystemId, u16, usize)>,

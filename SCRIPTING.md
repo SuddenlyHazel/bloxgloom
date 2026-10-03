@@ -69,7 +69,8 @@ restart boundaries.
 | Area | Available to Luau packages |
 | --- | --- |
 | Content | PNG textures, opaque cubes, cutout foliage, explicit block states, items, item components, block/item tags |
-| Player | Startup movement/body/spawn/eye rules and additional cosmetic palette colors |
+| Player | Lifecycle and region hooks, profile/session movement modifiers, packaged GLB player models, named looks and baked clips |
+| Chat | Native input/history, authoritative sender identity, package formatting/routing/moderation |
 | Generation | Deterministic contributors that write the current chunk after built-in terrain |
 | Gameplay | Registered item/block/entity/empty actions, optional typed commands, block decisions, entity ticks, pickup decisions |
 | Inventories | Read authorized slots; create or consume stacks explicitly; move exact stacks; collect eligible drops |
@@ -81,6 +82,11 @@ restart boundaries.
 | UI | Fixed JSON widget trees, packaged styles/fonts/images, local event callbacks and requests for registered server actions |
 | Client replicas | Bounded public observations, UI/parameter updates, creature pose/tint and attached visual effects |
 | Rendering | Versioned WGSL material hooks, scene-color effect graphs and typed parameters updated from Luau |
+
+Player authoring references: [regions and chat](docs/modding/PLAYER-WORLD.md),
+[movement modifiers](docs/modding/PLAYER-MODIFIERS.md), and
+[packaged player rigs](docs/modding/PLAYER-MODELS.md).
+General moving bodies can opt into [Rapier physics](docs/modding/MOVING-ENTITIES.md).
 
 ## Package format and module imports
 
@@ -142,6 +148,9 @@ them. The currently accepted manifest capabilities are the names below.
 | `register_action`, `register_handler`, `register_entity` | `actions/v1` | 32 actions, 32 handlers, 32 entity definitions |
 | `register_system` | `owner_systems/v1` | Eight |
 | `register_player_lifecycle` | `players/v1` | Eight; 128 in the installation |
+| `register_region` | `players/v1` | 32; 256 in the installation |
+| `register_chat_hook` | `players/v1` | Eight; 32 in the installation |
+| `register_model`, `register_player_model` | `content/v1` | Eight shared model declarations; 128 in the installation |
 | `register_storage` | `content/v1`, `storage/v1`, `inventory_screens/v1` | Eight |
 | `register_creature` | `content/v1`, `mobile_entities/v1` | Eight |
 | `register_machine` | `content/v1`, `machines/v1`, `inventory_screens/v1` | Eight |

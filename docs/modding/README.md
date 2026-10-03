@@ -4,8 +4,8 @@
 implementation are done. The
 [Phase 8 acceptance record](PHASE-8-ACCEPTANCE.md) contains the production parity
 audit and integrated verification evidence. [SCRIPTING.md](../../SCRIPTING.md)
-is the implemented Luau API inventory. Native fire migration and package-defined
-player model registration remain deferred. Imported GLB creature models and
+is the implemented Luau API inventory. Native fire migration remains deferred.
+Packaged player/creature GLB models, region hooks, chat, runtime modifiers and
 manual development reload are available. The native Rust extension API has
 additional interfaces that are not Luau bindings.
 [Current Luau gaps](../../LUAU-SCRIPTING-GAPS.md) records the limitations and their
@@ -18,6 +18,9 @@ impact on larger mods.
 - [Custom machine processing](MACHINE-PROCESSING.md): atomic exact-stack transformations.
 - [Item visuals](item-visuals.md): bitmap icons and per-stack presentation callbacks.
 - [Native GLB models](AUTHORED-MODELS.md): authored clips, appearance layers and color controls.
+- [Player world rules](PLAYER-WORLD.md): transactional region hooks and bounded moderated chat.
+- [Player modifiers](PLAYER-MODIFIERS.md): profile/session movement effects with optional expiry.
+- [Packaged player models](PLAYER-MODELS.md): native character selection, named looks and baked clips.
 - [Packaged GLB creatures](GLB-CREATURES.md): verified model delivery, replicated
   appearance and clip controls, with a runnable multiplayer fixture.
 

@@ -324,6 +324,11 @@ impl Snapshot for WorldSnapshot<'_> {
         }
         let declaration =
             super::entities::motion::services::declaration(self.world.catalog(), &key, owner)?;
+        if declaration.physics.is_some() && value.orientation != record.motion.orientation {
+            return Err(Error::Invalid(
+                "rigid-body orientation is controlled by angular velocity".into(),
+            ));
+        }
         crate::content::moving::validate_motion(declaration, value).map_err(|e| Error::Invalid(e.0))
     }
     fn validate_entity_state(&self, key: &str, owner: &str, state: &[u8]) -> Result<(), Error> {

@@ -32,6 +32,7 @@ export type BloxPlayerView = {
     name: string,
     position: {number},
     appearance: {skin:number,shirt:number,pants:number,flags:number},
+    model: string?,
     online: boolean,
     identity_trust: "claimed_profile",
 }
@@ -80,6 +81,9 @@ export type BloxItemVisualCallback = (BloxItemVisualInput) -> BloxItemVisual
 export type BloxStartupHost = {
     --- Eight/package; self-contained GLB and optional JSON controls declared in package.txt.
     register_model: (declaration: BloxModelDeclaration) -> (),
+    register_player_model: (declaration: BloxPlayerModelDeclaration) -> (),
+    register_region: (key: string, minimum: BloxTriple, maximum: BloxTriple, own_service: string) -> (),
+    register_chat_hook: (key: string, revision: number, module: string) -> (),
     --- At most 256/package; encoded and decoded asset limits remain independent.
     register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
     --- At most 256/package; each block also consumes one of 512 total item slots.
@@ -157,6 +161,21 @@ export type BloxStorageOptions = {
 export type BloxModelDeclaration = {
     key: string, asset: string, controls: string?, scale: number?,
 }
+export type BloxPlayerModelDeclaration = BloxModelDeclaration & {
+    clips: {idle:string?,walk:string?,run:string?,crouch:string?,tool_left:string?,tool_right:string?}?,
+    crossfade_s: number?, first_person_hide: {string}?, first_person_offset: BloxTriple?,
+}
+export type BloxPlayerModifierOptions = {
+    speed: number?, sprint: number?, jump: number?, gravity: number?, duration_ticks: number?,
+}
+export type BloxPlayerModifier = {
+    key: string, speed: number, sprint: number, jump: number, gravity: number, expires_at: BloxTick?,
+}
+export type BloxChatRequest = {
+    sender: BloxPlayerView, text: string, players: {BloxPlayerView}, identity_trust: "claimed_profile",
+}
+export type BloxChatDecision = {allow:true,text:string,recipients:{BloxPlayerView}?} | {allow:false,reason:string}
+export type BloxChatModerator = (BloxChatRequest) -> BloxChatDecision
 export type BloxAuthoredCreatureModel = {
     key: string, scale: number?, idle: string?, walk: string?, run: string?,
 }
@@ -385,7 +404,7 @@ export type BloxPickupEvent = {
 export type BloxQuaternion = {number} -- dense [x,y,z,w], unit length
 export type BloxMotion = {
     position: BloxTriple, velocity: BloxTriple, acceleration: BloxTriple,
-    orientation: BloxQuaternion, revision: BloxRevision, grounded: boolean,
+    orientation: BloxQuaternion, angular_velocity: BloxTriple, revision: BloxRevision, grounded: boolean,
 }
 export type BloxMovingTarget = {kind: "Terrain", cell: BloxTriple, state: string}
     | {kind: "Entity", entity: BloxEntityId, revision: BloxRevision}
@@ -408,10 +427,10 @@ export type BloxMovingExpiryEvent = {
 export type BloxSpawnReference = {__brand: "BloxSpawnReference", ordinal: number}
 export type BloxMovingSpawn = {
     position: BloxTriple, velocity: BloxTriple?, orientation: BloxQuaternion?, state: string,
-    source: BloxEntityId?,
+    source: BloxEntityId?, angular_velocity: BloxTriple?,
 }
 export type BloxMotionChange = {
-    velocity: BloxTriple?, acceleration: BloxTriple?, orientation: BloxQuaternion?,
+    velocity: BloxTriple?, acceleration: BloxTriple?, orientation: BloxQuaternion?, angular_velocity: BloxTriple?,
 }
 export type BloxMovingDeclaration = {
     key: string, module: string, schema: number, revision: number,
@@ -424,6 +443,7 @@ export type BloxMovingDeclaration = {
         max_speed: number, max_acceleration: number,
     },
     model: {{min: BloxTriple, max: BloxTriple, color: BloxTriple, motion: "body"?}}?,
+    physics: {linear_damping: number?, angular_damping: number?, friction: number?, max_angular_speed: number?}?,
 }
 --- Match kind before accessing event-specific fields.
 export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedEvent
@@ -450,6 +470,16 @@ export type BloxGameplayContext = BloxTagQueries & {
     --- Requires the executing package's players/v1 capability. Exact online session; after receipt, no replay.
     message_player: (session: BloxSessionId, text: string) -> (),
     kick_player: (session: BloxSessionId, reason: string) -> (),
+    --- Profile effects persist; exact-session effects vanish on leave. Duration uses logical ticks.
+    set_player_modifier: (target: BloxProfileId | BloxSessionId, own_key: string, options: BloxPlayerModifierOptions) -> (),
+    remove_player_modifier: (target: BloxProfileId | BloxSessionId, own_key: string) -> (),
+    player_modifiers: (target: BloxProfileId | BloxSessionId) -> {BloxPlayerModifier},
+    set_player_model: (session: BloxSessionId, key: string?) -> (),
+    set_player_model_variant: (session: BloxSessionId, group: string, option: string?) -> (),
+    set_player_model_layer: (session: BloxSessionId, layer: string, visible: boolean?) -> (),
+    set_player_model_tint: (session: BloxSessionId, tint: string, value: {rgb:BloxTriple,mode:"multiply"|"replace"}?) -> (),
+    play_player_animation: (session: BloxSessionId, value: {clip:string,speed:number?,looping:boolean?,crossfade_ms:number?}) -> (),
+    stop_player_animation: (session: BloxSessionId, crossfade_ms: number?) -> (),
     --- Registered integer palette indices, players/v1 authority, exact session. Native cosmetic save precedes replication.
     set_player_appearance: (session: BloxSessionId, skin: number, shirt: number, pants: number) -> (),
     --- Absolute feet position, players/v1 authority. Host fences final terrain and resets old movement input/prediction.
@@ -872,8 +902,8 @@ export type BloxMachinePlanner = (BloxMachineContext) -> (string, number, boolea
 
 --- Captured inputs. Profile bytes persist; session bytes end with this connection.
 export type BloxPlayerLifecycleEvent = {
-    kind: "PlayerJoining" | "PlayerJoined" | "PlayerLeaving" | "PlayerLeft" | "PlayerSpawned" | "ProfileTick" | "SessionTick",
-    profile: BloxProfileId, player: BloxPlayerView?, transition: BloxTick,
+    kind: "PlayerJoining" | "PlayerJoined" | "PlayerLeaving" | "PlayerLeft" | "PlayerSpawned" | "ProfileTick" | "SessionTick" | "RegionEntered" | "RegionLeft",
+    profile: BloxProfileId, player: BloxPlayerView?, transition: BloxTick, region: string?,
     identity_trust: "claimed_profile", state: string, public_state: string, session_state: string,
 }
 export type BloxPlayerLifecycleDecision = {
