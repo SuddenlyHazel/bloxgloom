@@ -20,6 +20,7 @@ pub(super) fn prepare(
     mut draw: impl FnMut(Vec<egui::Event>) -> egui::FullOutput,
 ) -> Result<egui::FullOutput, Box<dyn std::error::Error>> {
     let header = match label {
+        "audio-mixer" => "Mixer buses and compression",
         "audio-wind" => "Wind character",
         "audio-cicadas" => "Cicadas",
         "audio-thunder" => "Thunder",
@@ -73,6 +74,24 @@ pub(super) fn prepare(
     }
     for _ in 0..16 {
         output = frame(vec![]);
+    }
+    if label == "audio-mixer"
+        && let Some(pos) = centre(&output, "Ambient bus")
+    {
+        for pressed in [true, false] {
+            frame(vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+        }
+        for _ in 0..16 {
+            output = frame(vec![]);
+        }
     }
     // Put the expanded section near the top of the scrollable card.
     for _ in 0..3 {

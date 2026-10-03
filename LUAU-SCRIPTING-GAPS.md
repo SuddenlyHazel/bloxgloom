@@ -527,8 +527,10 @@ The [audio contract](docs/audio/SCRIPTING.md) records bounds and exact API field
 The [audio timer machine](fixtures/audio-machine/README.md) demonstrates a running
 loop reconstructed from current public state, transactional start/completion clips
 and cleanup on removal. Dedicated process-machine/creature callback signatures,
-geometry-derived reverb, buses, streamed music and device recovery are
-separate remaining work. No save conversion or imported models are introduced.
+geometry-derived reverb, streamed music and device recovery are
+separate remaining work. Fixed native mixer buses and stereo-linked compression
+are implemented, with package routing and local listener controls; see the
+[audio mixer contract](docs/audio/SCRIPTING.md). No save conversion or imported models are introduced.
 
 #### Implemented extension: weather and acoustic authoring
 

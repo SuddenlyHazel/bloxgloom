@@ -10,8 +10,8 @@ asset sound motor assets/sounds/motor.wav
 A package named `factory` registers that clip as `factory:motor`. File paths never
 cross the wire or reach gameplay callbacks. The existing exact bundle hash,
 streaming verification and dependency checks cover audio bytes. Audio uses asset
-tag 10 in the existing canonical bundle grammars; wire version 24 and client
-runtime contract 11 require matching clients before downloading a bundle.
+tag 10 in the existing canonical bundle grammars; wire version 31 and client
+runtime contract 13 require matching clients before downloading a bundle.
 No save schema or numeric content IDs change.
 
 WAV accepts mono/stereo integer PCM at 8/16/24/32 bits or 32-bit float, 8–192 kHz.
@@ -28,7 +28,7 @@ decision callbacks accept `host.sound(table)`:
 
 ```lua
 host.sound{kind='play', voice='motor-1', clip='factory:motor',
-    entity=event.entity, looping=true, gain=0.5, pitch=0.8}
+    entity=event.entity, looping=true, gain=0.5, pitch=0.8, bus='ambient'}
 host.sound{kind='play', voice='finish', clip='factory:finish', position={x,y,z}}
 host.sound{kind='update', voice='motor-1', gain=0.7, pitch=1.2}
 host.sound{kind='stop', voice='motor-1'}
@@ -46,7 +46,10 @@ action; fire waves do not masquerade as player block breaks.
 `voice` is a nonempty local identifier up to 64 bytes; it is scoped to the handler's
 package. Play requires a registered namespaced `clip` and either `position` or an
 exact entity handle. Entity position is captured by the server and participates
-in its ordinary dependency validation. Loops require an entity. Gain defaults to
+in its ordinary dependency validation. Loops require an entity. `bus` accepts `ambient`, `effects` (default), `ui` or `music`. Routing is fixed at
+play time; update/stop retain the existing route. Invalid routes latch rollback.
+Packages retain voice gain/pitch controls but cannot edit global listener bus gains
+or compressor settings or create unbounded custom buses. Gain defaults to
 1 and accepts 0–4; pitch defaults to 1 and accepts 0.25–4. Coordinates must be
 finite and within ±16,000,000. At most 16 script sound operations may be staged in
 one transaction, within the normal host operation budget. Unknown clips and
@@ -100,8 +103,20 @@ transmission and nearby one-bend openings. Obstruction gain and lowpass glide
 over approximately 100 ms independently of authored gain/pitch. Positional starts
 may wait up to 100 ms for an initial sample; sources beyond 32 metres or stalled
 sampling use conservative muffling. Nonpositional playback stays independent of
-terrain. Geometry-based reverb, buses, compression, streamed music, device
-selection and hot-plug recovery remain follow-up work.
+terrain. Native fixed buses now provide local gains and stereo-linked compression, with a
+master compressor before the existing safety limiter. Compression defaults off,
+bus gains default 1, and existing rain tuning is unchanged. Ambient/Music follow
+Ambient volume; Effects/UI follow Effects volume; all follow Master. Native clicks
+use UI, weather uses Ambient and thunder uses Effects. All category mute gates
+remain after compression, so makeup cannot bypass mute. Buses expose threshold,
+ratio, attack, release, knee and makeup in Audio settings, with live local
+persistence, clipboard export and reset. A zero bus gain fades to silence; settings
+and processing histories are reset/reapplied across session epochs. DSP runs on
+the existing worker with fixed storage, never in the device callback.
+
+Music routing currently plays bounded decoded WAV clips; it does not implement
+streaming. Geometry-based reverb, streamed music, device selection and hot-plug
+recovery remain follow-up work.
 Weather continues to use its native procedural path. Luau now supplies captured
 weather reads, advisory transition hooks and authorized admin controls, while block
 `acoustics` metadata selects native/custom impact profiles and insect habitats.

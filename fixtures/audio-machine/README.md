@@ -20,8 +20,20 @@ registered-actions view and select **Start audio timer** to run it again.
 Walk around it to hear panning and distance attenuation. Break it while running:
 the loop fades out. Disconnect/reconnect while running: the current public state
 reconstructs the loop without replaying earlier start/completion sounds. Two
-machines use separate exact entity-based voice names. Effects and Master volume
-settings control these clips; Ambient controls procedural weather separately.
+machines use separate exact entity-based voice names. The motor routes to the Ambient bus; start/completion clips retain the Effects bus.
+Ambient and Master volume control the motor; Effects and Master control the short
+cues. Open **Settings → Audio → Mixer buses and compression** to adjust each bus
+independently. Mute Ambient bus to isolate start/completion, or Effects bus to
+isolate the motor. Enable the Ambient compressor, lower threshold to -30 dB and
+raise ratio to hear its volume envelope change. Set makeup gain to 0 dB while
+comparing so loudness compensation does not conceal compression. Copy mixer
+settings exports current controls to the clipboard. Reset restores bypass defaults.
+
+For one local process:
+
+```sh
+cargo run --release -- local-packages fixtures/audio-machine/packages /tmp/bloxgloom-audio-mixer-test-v25
+```
 
 `server/machine.luau` stages one-shots with state updates through `host.sound`.
 `client/sounds.luau` declares the motor from current committed public replicas;

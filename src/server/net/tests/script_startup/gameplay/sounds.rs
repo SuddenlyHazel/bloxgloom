@@ -28,9 +28,9 @@ fn packaged_audio_commits_once_and_caught_invalid_audio_rolls_back() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
     fixture.action(REGISTER,r#"return function(c,e)
-        c.sound{kind='play',voice='ping',clip='demo:beep',position={0.5,80,0.5}}
+        c.sound{kind='play',voice='ping',clip='demo:beep',bus='music',position={0.5,80,0.5}}
         c.set_block(2,80,0,if e.arguments:byte(1)==1 then 'bloxgloom:sand' else 'bloxgloom:glowstone')
-        if e.arguments:byte(1)==1 then pcall(function() c.sound{kind='play',voice='bad',clip='demo:missing',position={0,80,0}} end) end
+        if e.arguments:byte(1)==1 then pcall(function() c.sound{kind='play',voice='bad',clip='demo:beep',bus='unknown',position={0,80,0}} end) end
     end"#);
     let dir = fixture.0.join("packages/demo");
     std::fs::create_dir_all(dir.join("server")).unwrap();
@@ -91,7 +91,7 @@ fn packaged_audio_commits_once_and_caught_invalid_audio_rolls_back() {
         peer.write(&request);
         let (accepted, sounds) = receive_result(&mut peer, action_id);
         assert!(accepted);
-        assert_eq!(sounds.iter().filter(|e|matches!(&e.kind,bloxgloom_host_api::sound::Kind::Play{clip,..} if clip=="demo:beep")).count(),1);
+        assert_eq!(sounds.iter().filter(|e|matches!(&e.kind,bloxgloom_host_api::sound::Kind::Play{clip,bus,..} if clip=="demo:beep" && *bus == bloxgloom_host_api::sound::Bus::Music)).count(),1);
         peer.write(&request);
         let (accepted, sounds) = receive_result(&mut peer, action_id);
         assert!(accepted);

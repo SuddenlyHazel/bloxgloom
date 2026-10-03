@@ -131,6 +131,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         (UiScreen::Settings, "settings"),
         (UiScreen::Graphics, "graphics"),
         (UiScreen::Audio, "audio"),
+        (UiScreen::Audio, "audio-mixer"),
         (UiScreen::Audio, "audio-wind"),
         (UiScreen::Audio, "audio-cicadas"),
         (UiScreen::Audio, "audio-thunder"),

@@ -498,3 +498,31 @@ The collector custom-profile probe rendered eight seconds of stereo audio in
 peak 0.0408 and RMS 0.00793. A two-second `audio-file` device smoke test exited
 successfully. These are execution and signal checks, not a subjective listening
 approval or a live gameplay performance measurement.
+
+
+## Mixer buses and compression — October 3, 2026
+
+The audio worker now mixes fixed Ambient, Effects, UI and Music stems. Native
+weather uses Ambient; thunder and ordinary clip plays use Effects; local clicks
+use UI. Package play commands can select a route. Music is a decoded-clip route,
+not a streaming decoder. No dynamic bus graph or package-wide global controls
+are introduced.
+
+Each bus has a local gain and optional stereo-linked peak compressor; master has
+another optional compressor. Ambient/Music receive the existing Ambient gain,
+Effects/UI receive Effects gain and the final sum receives Master gain. Category
+and master gains apply after compression, preserving silence even with makeup.
+Bus gain changes glide over 20 ms. Compression defaults disabled and bus gains
+1, so existing rain and gameplay balance remain unchanged. The final lookahead
+safety limiter remains active. No file access, allocation, Lua execution or locks
+were added to the device callback. Settings locks are sampled only by the worker.
+Session reset clears voices and compression history; persistent local settings
+are restored independently of the bounded event queue.
+
+The native Audio menu exposes bus gain and threshold, ratio, attack, release,
+knee and makeup controls, plus clipboard export and reset. The revised
+[audio timer fixture](../../fixtures/audio-machine/README.md) routes its motor
+loop to Ambient and its committed start/completion cues to Effects.
+
+Geometry-aware room reflections/reverb, streamed music and device selection/
+recovery remain open. These buses provide shared infrastructure for them.
