@@ -132,10 +132,10 @@ impl Context<'_> {
     ) -> Result<(), Error> {
         self.charge()?;
         let namespace = self.modifier_owner(key)?;
-        if let Some(value) = &value {
-            if let Err(error) = value.validate() {
-                return self.fail(Error::Invalid(error.to_string()));
-            }
+        if let Some(value) = &value
+            && let Err(error) = value.validate()
+        {
+            return self.fail(Error::Invalid(error.to_string()));
         }
         if let Some(session) = session {
             self.player_target(profile, session)?;
@@ -163,10 +163,10 @@ impl Context<'_> {
                     }
                 }
             }
-            if let Some(value) = &value {
-                if let Err(error) = effects.set(value.clone(), self.tick()) {
-                    return self.fail(Error::Invalid(error.to_string()));
-                }
+            if let Some(value) = &value
+                && let Err(error) = effects.set(value.clone(), self.tick())
+            {
+                return self.fail(Error::Invalid(error.to_string()));
             }
             // Reserve and advance the same profile owner revision for session
             // writes, without saving session effects. This serializes competing
