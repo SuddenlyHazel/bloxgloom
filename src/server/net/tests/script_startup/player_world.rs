@@ -16,6 +16,9 @@ fn fixture() -> Fixture {
     return function(c,e)
         if e.kind=='RegionEntered' or e.kind=='RegionLeft' then
             assert(e.region=='demo:west')
+            if e.kind=='RegionLeft' and c.player_by_session(e.player.session) then
+                assert(e.player.position[1]>=1, 'active leave used the last inside position')
+            end
             assert(c.give('player',{item='bloxgloom:stick',count=1}))
             if c.player_by_session(e.player.session) then c.message_player(e.player.session,e.kind .. ':' .. e.region) end
         end
