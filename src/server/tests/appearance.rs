@@ -346,7 +346,11 @@ fn mismatched_player_catalog_preserves_existing_world_and_profile_files() {
     std::fs::write(&profile_path, old_profile).unwrap();
     let error = server_state(7, save.path().to_path_buf()).err().unwrap();
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-    assert!(error.to_string().contains("player character catalog"));
+    let diagnostic = error.to_string();
+    assert!(diagnostic.contains("incompatible saved content"));
+    assert!(diagnostic.contains("bloxgloom:player"));
+    assert!(diagnostic.contains("saved ID"));
+    assert!(diagnostic.contains("saved ") && diagnostic.contains("current "));
     assert_eq!(std::fs::read(&manifest_path).unwrap(), before);
     assert_eq!(std::fs::read(&profile_path).unwrap(), old_profile);
 }
