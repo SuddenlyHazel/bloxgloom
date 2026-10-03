@@ -1,7 +1,8 @@
 return function(c,e)
-    local player=c.player_by_session(e.command_arguments[1])
+    local own = e.action == "pace:self"
+    local player = if own then c.player_by_profile(c.player_profile) else c.player_by_session(e.command_arguments[1])
     assert(player, "Player is no longer connected")
-    local mode=e.command_arguments[2]
+    local mode = e.command_arguments[if own then 1 else 2]
     if mode==1 then
         c.set_player_modifier(player.profile,"pace:training",{speed=1.25})
     elseif mode==2 then
@@ -12,5 +13,8 @@ return function(c,e)
     else
         error("Mode must be 1 (saved boost), 2 (temporary slow) or 3 (clear)")
     end
-    c.message_player(player.session,"Movement effects updated")
+    local message = if mode == 1 then "Saved walking speed boost: +25%"
+        elseif mode == 2 then "Temporary speed multiplier: 50% for 600 ticks"
+        else "Movement effects cleared"
+    c.message_player(player.session, message)
 end

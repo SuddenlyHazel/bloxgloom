@@ -39,6 +39,12 @@ Double quotes preserve spaces in the command entry. Backslash escapes a double
 quote or a backslash. There is no shell interpolation. An unmatched quote or an
 unsupported escape is rejected. Player completion also recognizes declared aliases.
 
+F4 shows a scrollable registered-command list for both ordinary players and
+admins, alongside the admin creative inventory. Clicking a command fills its
+canonical key into the text field; edit arguments and click Run to submit.
+Player arguments use an online display name or an exact session token, not a
+numeric player index. Quote names containing spaces.
+
 Aliases are client convenience names. They are never server action identities;
 forged requests using an alias fail. Changing aliases, bounds, or kinds changes
 that action's compatibility identity. Existing schemas without these extensions

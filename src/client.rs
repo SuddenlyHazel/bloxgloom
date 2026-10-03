@@ -1136,6 +1136,7 @@ impl ClientApp {
                 } else if kicked {
                     self.fail_session(format!("Removed by server: {text}"));
                 } else {
+                    self.chat.notice(format!("Server: {text}"));
                     self.status = Some((text, Instant::now()));
                 }
             }

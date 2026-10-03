@@ -1,6 +1,69 @@
 use super::*;
 
 #[test]
+fn registered_commands_are_clickable_for_admins_and_fill_without_running() {
+    for admin_enabled in [false, true] {
+        let context = crate::render::game_ui::themed_context();
+        let mut catalog = crate::content::Catalog::builtins();
+        catalog
+            .register_action(bloxgloom_host_api::actions::Action {
+                key: "pace:self".into(),
+                version: 1,
+                label: "Tune my movement".into(),
+                target: bloxgloom_host_api::actions::Target::Empty,
+                operation: bloxgloom_host_api::actions::Operation::Gameplay,
+                panel: None,
+                command: Some(bloxgloom_host_api::actions::Command {
+                    permission: bloxgloom_host_api::actions::CommandPermission::Admin,
+                    aliases: Vec::new(),
+                    arguments: vec![bloxgloom_host_api::actions::CommandArgument::Count {
+                        default: Some(1),
+                    }],
+                }),
+            })
+            .unwrap();
+        let frame = UiFrame {
+            screen: UiScreen::Admin,
+            admin_enabled,
+            ..Default::default()
+        };
+        let draw = |events| {
+            let mut intents = Vec::new();
+            let mut output = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1280.0, 720.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| super::draw(ui, &frame, &catalog, &mut intents),
+            );
+            output.textures_delta.clear();
+            (output, intents)
+        };
+        draw(vec![]);
+        let (output, _) = draw(vec![]);
+        let pos = label_center(&output.shapes, "pace:self [count]");
+        let click = |pressed| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        };
+        draw(click(true));
+        let (_, intents) = draw(click(false));
+        assert!(matches!(intents.as_slice(), [Intent::AdminInput(input)] if input == "pace:self "));
+    }
+}
+
+#[test]
 fn admin_flying_checkbox_clicks_and_disables_while_waiting_for_server() {
     for size in [egui::vec2(640.0, 360.0), egui::vec2(1280.0, 720.0)] {
         let context = crate::render::game_ui::themed_context();

@@ -486,8 +486,10 @@ fn player_notices_present_only_current_session_and_kicks_retire_it() {
         if (profile, session, kicked) == (1, 5, false) {
             assert!(!app.disconnected);
             assert_eq!(app.status.as_ref().unwrap().0, "Session notice");
+            assert_eq!(app.chat.lines().back().unwrap(), "Server: Session notice");
         } else {
             assert!(app.disconnected);
+            assert!(app.chat.lines().is_empty());
             assert_eq!(app.actions.epoch, 0);
             let reason = if kicked {
                 "Removed by server: Session notice"

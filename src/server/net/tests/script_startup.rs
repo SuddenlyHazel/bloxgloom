@@ -44,6 +44,8 @@ mod join_lifecycle;
 mod machine;
 #[path = "script_startup/moving.rs"]
 mod moving;
+#[path = "script_startup/playable_players.rs"]
+mod playable_players;
 #[path = "script_startup/player.rs"]
 mod player;
 #[path = "script_startup/player_world.rs"]
