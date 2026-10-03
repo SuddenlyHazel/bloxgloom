@@ -38,6 +38,7 @@ impl State {
         };
         if let Some(output) = &output {
             output.set_rain_config(config.rain_audio);
+            output.set_mix_config(config.audio_mix);
         }
         Self {
             output,
@@ -80,6 +81,7 @@ impl State {
         if let Some(output) = &self.output {
             output.set_controls(volumes(config, self.preset));
             output.set_rain_config(config.rain_audio);
+            output.set_mix_config(config.audio_mix);
         }
     }
     pub(super) fn change_preview(&mut self, increase: bool, config: &Config) {

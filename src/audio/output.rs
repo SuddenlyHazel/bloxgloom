@@ -36,6 +36,8 @@ pub(crate) struct OutputStats {
     pub rejected_commands: u64,
 }
 struct Shared {
+    mix_config: Mutex<super::mix_tuning::MixConfig>,
+    mix_revision: AtomicU64,
     rain_config: Mutex<crate::audio::rain_tuning::RainConfig>,
     rain_revision: AtomicU64,
     controls: AtomicU64,
@@ -52,6 +54,8 @@ struct Shared {
 impl Shared {
     fn new(controls: Controls) -> Self {
         Self {
+            mix_config: Mutex::new(Default::default()),
+            mix_revision: AtomicU64::new(0),
             rain_config: Mutex::new(Default::default()),
             rain_revision: AtomicU64::new(0),
             controls: AtomicU64::new(pack_controls(controls)),
@@ -136,6 +140,14 @@ impl AudioOutput {
         self.shared
             .controls_revision
             .fetch_add(1, Ordering::Release);
+    }
+    pub(crate) fn set_mix_config(&self, config: super::mix_tuning::MixConfig) {
+        let config = config.sanitized();
+        let mut stored = self.shared.mix_config.lock().expect("mix settings lock");
+        if *stored != config {
+            *stored = config;
+            self.shared.mix_revision.fetch_add(1, Ordering::Release);
+        }
     }
     /// Latest tuning is independent of event queue pressure. Only the worker
     /// reads this short-lived lock; the device callback never touches it.
@@ -224,6 +236,7 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
     let mut controls_revision = shared.controls_revision.load(Ordering::Acquire);
     source.mixer.set_controls(unpack_controls(controls));
     let mut rain_revision = apply_latest_rain(&mut source, shared);
+    let mut mix_revision = apply_latest_mix(&mut source, shared);
     // Prime before starting callbacks so device startup is not itself an underrun.
     fill(
         &mut producer,
@@ -245,6 +258,10 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
             resampler.reset();
             epoch = current_epoch;
             (controls, controls_revision) = apply_latest_controls(&mut source, shared);
+        }
+        let latest_mix = shared.mix_revision.load(Ordering::Acquire);
+        if latest_mix != mix_revision {
+            mix_revision = apply_latest_mix(&mut source, shared);
         }
         let latest_rain = shared.rain_revision.load(Ordering::Acquire);
         if latest_rain != rain_revision {
@@ -303,7 +320,14 @@ fn apply_latest_controls(source: &mut Source, shared: &Shared) -> (u64, u64) {
     let revision = shared.controls_revision.load(Ordering::Acquire);
     source.mixer.set_controls(unpack_controls(controls));
     apply_latest_rain(source, shared);
+    apply_latest_mix(source, shared);
     (controls, revision)
+}
+fn apply_latest_mix(source: &mut Source, shared: &Shared) -> u64 {
+    let revision = shared.mix_revision.load(Ordering::Acquire);
+    let config = *shared.mix_config.lock().expect("mix settings lock");
+    source.mixer.set_mix_config(config);
+    revision
 }
 fn apply_latest_rain(source: &mut Source, shared: &Shared) -> u64 {
     let revision = shared.rain_revision.load(Ordering::Acquire);

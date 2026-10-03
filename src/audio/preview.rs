@@ -231,6 +231,7 @@ pub(crate) fn play_file(path: &Path, seconds: f32) -> io::Result<()> {
     }
     if !output.stats().available
         || !output.try_send(Command::Play {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip,
             position: None,
             gain: 1.0,

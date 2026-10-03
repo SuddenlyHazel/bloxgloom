@@ -277,6 +277,7 @@ fn terrain_profiles_muffle_fixture_motor_in_production_mixer() {
             yaw: 0.0
         }));
         assert!(mixer.command(Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip: clip.clone(),
             position: profile.position,
             gain: 1.0,

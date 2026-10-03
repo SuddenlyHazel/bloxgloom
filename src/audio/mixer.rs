@@ -6,6 +6,7 @@ use super::{
 use std::sync::Arc;
 struct Voice {
     clip: Arc<Clip>,
+    bus: bloxgloom_host_api::sound::Bus,
     cursor: f64,
     position: Option<[f32; 3]>,
     gain: f32,
@@ -30,6 +31,7 @@ pub(crate) struct Mixer {
     preset: Preset,
     fade: f32,
     limiter: Limiter,
+    buses: super::buses::Processor,
     seed: u32,
     pub rejected: u64,
     click: Arc<Clip>,
@@ -60,6 +62,7 @@ impl Mixer {
             preset: Preset::Off,
             fade: 0.0,
             limiter: Limiter::default(),
+            buses: super::buses::Processor::default(),
             seed,
             rejected: 0,
             click: Arc::new(Clip::click()),
@@ -71,12 +74,16 @@ impl Mixer {
     pub fn set_rain_config(&mut self, config: crate::audio::rain_tuning::RainConfig) {
         self.synth.set_rain_config(config);
     }
+    pub fn set_mix_config(&mut self, config: super::mix_tuning::MixConfig) {
+        self.buses.set_config(config);
+    }
     pub fn set_controls(&mut self, controls: Controls) {
         self.controls = controls.sanitized();
     }
     pub fn command(&mut self, command: Command) -> bool {
         let (command, initial_obstruction) = match command {
             Command::PlayObstructed {
+                bus,
                 clip,
                 position,
                 gain,
@@ -92,6 +99,7 @@ impl Mixer {
                 }
                 (
                     Command::Play {
+                        bus,
                         clip,
                         position: Some(position),
                         gain,
@@ -106,6 +114,7 @@ impl Mixer {
         };
         if let Command::Click(id) = command {
             return self.command(Command::Play {
+                bus: bloxgloom_host_api::sound::Bus::Ui,
                 clip: self.click.clone(),
                 position: None,
                 gain: 1.0,
@@ -116,6 +125,7 @@ impl Mixer {
         }
         let accepted = match command {
             Command::Play {
+                bus,
                 clip,
                 position,
                 gain,
@@ -140,6 +150,7 @@ impl Mixer {
                 } else {
                     let ears = gains(position, self.listener, self.yaw);
                     self.voices.push(Voice {
+                        bus,
                         clip,
                         cursor: 0.0,
                         position,
@@ -252,6 +263,7 @@ impl Mixer {
                 self.fade = 0.0;
                 self.controls.preset = Preset::Off;
                 self.limiter = Limiter::default();
+                self.buses.reset();
                 true
             }
         };
@@ -288,9 +300,9 @@ impl Mixer {
                 }
             }
             let (ambient, thunder) = self.synth.next(self.preset);
-            let mut mix = std::array::from_fn::<_, 2, _>(|i| {
-                ambient[i] * self.fade * self.levels[1] + 0.5 * thunder[i] * self.levels[2]
-            });
+            let mut stems = [[0.0; 2]; 4];
+            stems[0] = ambient.map(|x| x * self.fade);
+            stems[1] = thunder.map(|x| 0.5 * x);
             let mut index = 0;
             while index < self.voices.len() {
                 if self.voices[index].stop_remaining == Some(0) {
@@ -337,13 +349,14 @@ impl Mixer {
                 for ear in 0..2 {
                     voice.ears[ear] +=
                         (target[ear] - voice.ears[ear]) / (0.02 * SAMPLE_RATE as f32);
-                    mix[ear] += sample[ear] * voice.ears[ear] * voice.gain * fade * self.levels[2];
+                    stems[voice.bus as usize][ear] +=
+                        sample[ear] * voice.ears[ear] * voice.gain * fade;
                 }
                 voice.cursor +=
                     voice.clip.rate as f64 / SAMPLE_RATE as f64 * f64::from(voice.pitch);
                 index += 1;
             }
-            *out = self.limiter.next(mix.map(|x| x * self.levels[0]));
+            *out = self.limiter.next(self.buses.process(stems, self.levels));
         }
     }
 }

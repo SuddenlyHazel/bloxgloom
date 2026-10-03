@@ -30,6 +30,7 @@ fn cue(name: &str, position: [f32; 3]) -> Event {
         owner: "bloxgloom".into(),
         voice: name.into(),
         kind: Kind::Play {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip: format!("bloxgloom:{name}"),
             position,
             entity: None,

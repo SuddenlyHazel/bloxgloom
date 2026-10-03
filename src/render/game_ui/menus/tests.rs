@@ -517,3 +517,55 @@ fn rain_audio_copy_exports_current_tuning_and_reset_dispatches_live_defaults() {
         assert!(matches!(&intents[..], [Intent::RainAudio(profile)] if **profile == muted));
     }
 }
+
+#[test]
+fn mixer_copy_and_reset_use_current_local_controls() {
+    let context = crate::render::game_ui::themed_context();
+    let mut frame = UiFrame::default();
+    frame.settings.audio_mix.buses[0].gain = 0.2;
+    frame.settings.audio_mix.master.enabled = true;
+    let draw = |events| {
+        let mut intents = Vec::new();
+        let output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 720.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| super::audio_mix::draw(ui, &frame, &mut intents),
+        );
+        (output, intents)
+    };
+    let click = |pos, pressed| {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    };
+    draw(vec![]);
+    let (output, _) = draw(vec![]);
+    let pos = label_center(&output.shapes, "Mixer buses and compression");
+    draw(click(pos, true));
+    draw(click(pos, false));
+    let mut output = draw(vec![]).0;
+    for _ in 0..16 {
+        output = draw(vec![]).0;
+    }
+    let pos = label_center(&output.shapes, "Copy mixer settings");
+    draw(click(pos, true));
+    let (output, intents) = draw(click(pos, false));
+    assert!(intents.is_empty());
+    assert!(output.platform_output.commands.iter().any(|command| matches!(command,egui::OutputCommand::CopyText(text) if *text == frame.settings.audio_mix.export())));
+    let pos = label_center(&output.shapes, "Reset mixer defaults");
+    draw(click(pos, true));
+    let (_, intents) = draw(click(pos, false));
+    assert!(matches!(&intents[..],[Intent::AudioMix(config)] if *config == Default::default()));
+}

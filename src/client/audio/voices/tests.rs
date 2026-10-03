@@ -17,6 +17,7 @@ fn event(kind: Kind) -> Event {
 
 fn play(entity: Option<u64>, looping: bool) -> Event {
     event(Kind::Play {
+        bus: bloxgloom_host_api::sound::Bus::Music,
         clip: "bloxgloom:break".into(),
         position: [1.0; 3],
         entity,
@@ -51,6 +52,7 @@ fn pending_one_shot_expiry_begins_at_atomic_native_admission() {
     assert!(matches!(
         state.sent.borrow().as_slice(),
         [Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Music,
             transmission: 0.2,
             lowpass_hz: 800.0,
             looping: false,
@@ -107,6 +109,7 @@ fn pending_profile_retries_without_starting_or_expiring_when_native_queue_is_ful
     assert!(matches!(
         state.sent.borrow().as_slice(),
         [Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Music,
             transmission: 0.3,
             lowpass_hz: 1500.0,
             ..
@@ -128,6 +131,7 @@ fn moving_pending_entity_updates_capture_without_native_update_and_rejects_old_v
     assert!(matches!(
         state.sent.borrow().as_slice(),
         [Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Music,
             position: [0.99, 1.0, 1.0],
             ..
         }]
@@ -155,6 +159,7 @@ fn pending_start_falls_back_after_100ms_and_pending_changes_are_used_at_admissio
     assert!(matches!(
         state.sent.borrow().as_slice(),
         [Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Music,
             position: [80.0, 1.0, 1.0],
             gain: 0.4,
             pitch: 2.0,

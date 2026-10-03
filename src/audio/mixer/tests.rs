@@ -60,6 +60,7 @@ fn world_and_preview_sources_change_only_at_fade_boundary() {
 fn live_voice_updates_glide_pitch_gain_and_follow_position_without_restarting() {
     let mut mixer = Mixer::new(4);
     assert!(mixer.command(Command::Play {
+        bus: bloxgloom_host_api::sound::Bus::Effects,
         clip: std::sync::Arc::new(Clip::click()),
         position: Some([0.0, 0.0, 1.0]),
         gain: 1.0,
@@ -141,6 +142,7 @@ fn initial_obstruction_muffles_short_one_shot_from_its_first_attack() {
             ..Controls::default()
         });
         assert!(mixer.command(Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip: clip.clone(),
             position: [1.0, 0.0, 0.0],
             gain: 1.0,
@@ -169,6 +171,7 @@ fn initial_obstruction_muffles_short_one_shot_from_its_first_attack() {
     let mut rejected = Mixer::new(4);
     for (transmission, lowpass_hz) in [(f32::NAN, 500.0), (0.5, 199.0), (1.1, 500.0)] {
         assert!(!rejected.command(Command::PlayObstructed {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip: clip.clone(),
             position: [1.0, 0.0, 0.0],
             gain: 1.0,
@@ -190,6 +193,7 @@ fn clip_mixer(clip: Arc<Clip>, position: Option<[f32; 3]>) -> Mixer {
         ..Controls::default()
     });
     assert!(mixer.command(Command::Play {
+        bus: bloxgloom_host_api::sound::Bus::Effects,
         clip,
         position,
         gain: 1.0,
@@ -354,4 +358,44 @@ fn malformed_obstruction_cannot_poison_audio_or_change_playback() {
     assert_eq!(frames, unchanged);
     assert!(frames.iter().flatten().all(|sample| sample.is_finite()));
     assert!(frames.iter().flatten().any(|sample| sample.abs() > 1e-7));
+}
+
+#[test]
+fn routed_clips_follow_their_bus_and_reset_keeps_local_mix_settings() {
+    use bloxgloom_host_api::sound::Bus;
+    let mut mixer = Mixer::new(1);
+    let mut config = crate::audio::mix_tuning::MixConfig::default();
+    config.buses[Bus::Music as usize].gain = 0.0;
+    mixer.set_mix_config(config);
+    mixer.command(Command::Reset);
+    mixer.set_controls(Controls::default());
+    mixer.command(Command::Play {
+        bus: Bus::Music,
+        clip: Arc::new(Clip::click()),
+        position: None,
+        gain: 1.0,
+        pitch: 1.0,
+        looping: true,
+        id: 1,
+    });
+    let mut frames = [[0.0; 2]; 2048];
+    mixer.render(&mut frames);
+    assert!(frames.iter().all(|frame| *frame == [0.0; 2]));
+    mixer.command(Command::Play {
+        bus: Bus::Effects,
+        clip: Arc::new(Clip::click()),
+        position: None,
+        gain: 1.0,
+        pitch: 1.0,
+        looping: true,
+        id: 2,
+    });
+    mixer.render(&mut frames);
+    assert!(frames.iter().any(|frame| frame[0].abs() > 0.001));
+    assert!(
+        mixer
+            .voices
+            .iter()
+            .any(|voice| voice.id == 1 && voice.bus == Bus::Music)
+    );
 }

@@ -799,12 +799,12 @@ export type BloxReplicaInput = {
 --- Named voices are scoped to the entry package and server/client side. Loops require an entity.
 export type BloxSound =
     { kind: "play", voice: string, clip: string, position: BloxTriple?, entity: BloxEntityId?,
-      gain: number?, pitch: number?, looping: boolean? }
+      gain: number?, pitch: number?, looping: boolean?, bus: ("ambient" | "effects" | "ui" | "music")? }
     | { kind: "update", voice: string, position: BloxTriple?, gain: number?, pitch: number? }
     | { kind: "stop", voice: string }
 export type BloxSoundCommand =
     { op: "sound", kind: "play", voice: string, clip: string, position: BloxTriple?, entity: BloxEntityId?,
-      gain: number?, pitch: number?, looping: boolean? }
+      gain: number?, pitch: number?, looping: boolean?, bus: ("ambient" | "effects" | "ui" | "music")? }
     | { op: "sound", kind: "update", voice: string, position: BloxTriple?, gain: number?, pitch: number? }
     | { op: "sound", kind: "stop", voice: string }
 

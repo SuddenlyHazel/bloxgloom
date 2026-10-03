@@ -12,6 +12,7 @@ fn mixer_is_buffer_partition_independent_and_limits_overload() {
         });
         for id in 1..=32 {
             assert!(m.command(Command::Play {
+                bus: bloxgloom_host_api::sound::Bus::Effects,
                 clip: clip.clone(),
                 position: None,
                 gain: 4.0,
@@ -21,6 +22,7 @@ fn mixer_is_buffer_partition_independent_and_limits_overload() {
             }));
         }
         assert!(!m.command(Command::Play {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip: clip.clone(),
             position: None,
             gain: 1.0,
@@ -58,6 +60,7 @@ fn positioned_clip_follows_listener_and_stop_releases_voice() {
         ..Controls::default()
     });
     assert!(m.command(Command::Play {
+        bus: bloxgloom_host_api::sound::Bus::Effects,
         clip,
         position: Some([0.0, 0.0, 1.0]),
         gain: 1.0,

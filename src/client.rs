@@ -2043,6 +2043,7 @@ impl ClientApp {
                 audio_ambient: self.config.audio_ambient,
                 audio_effects: self.config.audio_effects,
                 audio_preset: self.audio.preset() as u8,
+                audio_mix: self.config.audio_mix,
                 rain_audio: self.config.rain_audio,
                 post_processing: self.config.post_processing,
                 exposure: self.config.exposure,
@@ -2290,6 +2291,13 @@ impl ClientApp {
                 crate::render::GameUiIntent::AudioThunder { distance, angle } => {
                     if self.screen == UiScreen::Audio {
                         self.audio.test_thunder(distance, angle);
+                    }
+                }
+                crate::render::GameUiIntent::AudioMix(profile) => {
+                    if self.screen == UiScreen::Audio {
+                        self.config.audio_mix = profile.sanitized();
+                        self.audio.set_volumes(&self.config);
+                        self.config_writer.request_save(&self.config);
                     }
                 }
                 crate::render::GameUiIntent::RainAudio(profile) => {

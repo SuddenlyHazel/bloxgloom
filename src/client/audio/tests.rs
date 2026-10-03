@@ -46,6 +46,7 @@ fn event(voice: &str, entity: Option<u64>, looping: bool) -> bloxgloom_host_api:
         owner: "demo".into(),
         voice: voice.into(),
         kind: Kind::Play {
+            bus: bloxgloom_host_api::sound::Bus::Effects,
             clip: "bloxgloom:break".into(),
             position: [1.0; 3],
             entity,
@@ -100,6 +101,7 @@ fn invalid_sound_batches_are_atomic_and_client_voices_cannot_stop_server_voices(
                 owner: "demo".into(),
                 voice: "bad".into(),
                 kind: Kind::Play {
+                    bus: bloxgloom_host_api::sound::Bus::Effects,
                     clip: "demo:missing".into(),
                     position: [0.0; 3],
                     entity: None,

@@ -45,6 +45,7 @@ fn playing() -> (AudioState, Instant) {
             owner: "bloxgloom".into(),
             voice: "test".into(),
             kind: bloxgloom_host_api::sound::Kind::Play {
+                bus: bloxgloom_host_api::sound::Bus::Effects,
                 clip: "bloxgloom:break".into(),
                 position: [1.0; 3],
                 entity: Some(7),

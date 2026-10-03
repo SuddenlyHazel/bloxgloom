@@ -1388,6 +1388,7 @@ fn sound_batch_roundtrip_length_and_truncated_frames_are_checked() {
             owner: "demo".into(),
             voice: "run".into(),
             kind: Kind::Play {
+                bus: bloxgloom_host_api::sound::Bus::Music,
                 clip: "demo:motor".into(),
                 position: [1.0, 2.0, 3.0],
                 entity: Some(u64::MAX),

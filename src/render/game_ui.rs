@@ -50,6 +50,7 @@ pub(crate) enum Intent {
     CharacterModelVisual(bloxgloom_host_api::entity::VisualState),
     AudioPreview(u8),
     AudioThunder { distance: f32, angle: f32 },
+    AudioMix(crate::audio::mix_tuning::MixConfig),
     RainAudio(Box<crate::audio::rain_tuning::RainConfig>),
 }
 

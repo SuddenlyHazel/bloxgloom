@@ -11,7 +11,7 @@ pub(super) fn len(events: &[Event]) -> usize {
                 + match &e.kind {
                     Kind::Stop => 0,
                     Kind::Update { position, .. } => 9 + position.map_or(0, |_| 12),
-                    Kind::Play { clip, entity, .. } => 23 + clip.len() + entity.map_or(0, |_| 8),
+                    Kind::Play { clip, entity, .. } => 24 + clip.len() + entity.map_or(0, |_| 8),
                 }
         })
         .sum::<usize>()
@@ -67,6 +67,7 @@ pub(super) fn write(out: &mut Vec<u8>, id: u64, events: &[Event]) -> io::Result<
                 out.extend(pitch.to_le_bytes());
             }
             Kind::Play {
+                bus,
                 clip,
                 position,
                 entity,
@@ -75,6 +76,7 @@ pub(super) fn write(out: &mut Vec<u8>, id: u64, events: &[Event]) -> io::Result<
                 looping,
             } => {
                 out.push(0);
+                out.push(*bus as u8);
                 string(out, clip);
                 vector(out, position);
                 out.push(u8::from(entity.is_some()));
@@ -114,10 +116,13 @@ pub(super) fn read(c: &mut Cursor<'_>) -> io::Result<(u64, Vec<Event>)> {
                 }
             }
             0 => {
+                let bus = bloxgloom_host_api::sound::Bus::from_index(c.u8()?)
+                    .ok_or_else(|| invalid("invalid sound bus"))?;
                 let clip = read_string(c, 129)?;
                 let position = read_vector(c)?;
                 let entity = if flag(c)? { Some(c.u64()?) } else { None };
                 Kind::Play {
+                    bus,
                     clip,
                     position,
                     entity,
@@ -136,3 +141,6 @@ pub(super) fn read(c: &mut Cursor<'_>) -> io::Result<(u64, Vec<Event>)> {
     }
     Ok((id, events))
 }
+
+#[cfg(test)]
+mod tests;

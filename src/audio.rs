@@ -1,6 +1,8 @@
 //! Native client audio foundation. Simulation decisions stay on the server.
+mod buses;
 mod clip;
 mod limiter;
+pub mod mix_tuning;
 mod mixer;
 mod obstruction;
 pub(crate) mod output;
@@ -121,6 +123,7 @@ impl WeatherSound {
 }
 pub(crate) enum Command {
     Play {
+        bus: bloxgloom_host_api::sound::Bus,
         clip: Arc<Clip>,
         position: Option<[f32; 3]>,
         gain: f32,
@@ -131,6 +134,7 @@ pub(crate) enum Command {
     /// Start a positional voice with transmission already resolved, so short
     /// impacts cannot finish before their first obstruction result arrives.
     PlayObstructed {
+        bus: bloxgloom_host_api::sound::Bus,
         clip: Arc<Clip>,
         position: [f32; 3],
         gain: f32,

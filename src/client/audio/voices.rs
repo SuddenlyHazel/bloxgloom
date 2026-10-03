@@ -12,6 +12,7 @@ struct Voice {
     expires: Option<Instant>,
     pending: Option<Arc<crate::audio::Clip>>,
     looping: bool,
+    bus: bloxgloom_host_api::sound::Bus,
     deadline: Instant,
 }
 
@@ -94,6 +95,7 @@ impl State {
                     }
                 }
                 Kind::Play {
+                    bus,
                     clip,
                     position,
                     entity,
@@ -129,6 +131,7 @@ impl State {
                     });
                     if waiting
                         || self.send_command(Command::Play {
+                            bus,
                             id,
                             clip: clip.clone(),
                             position: Some(position),
@@ -148,6 +151,7 @@ impl State {
                                 expires,
                                 pending: waiting.then_some(clip),
                                 looping,
+                                bus,
                                 deadline: now + Duration::from_millis(100),
                             },
                         );
@@ -252,6 +256,7 @@ impl State {
                 now + Duration::from_secs_f32(clip.duration_seconds() / voice.pitch + 0.1)
             });
             if !self.send_command(Command::PlayObstructed {
+                bus: voice.bus,
                 clip: clip.clone(),
                 position: voice.position,
                 gain: voice.gain,

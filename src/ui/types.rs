@@ -119,6 +119,7 @@ pub struct UiSettings {
     pub audio_ambient: f32,
     pub audio_effects: f32,
     pub audio_preset: u8,
+    pub audio_mix: crate::audio::mix_tuning::MixConfig,
     pub rain_audio: crate::audio::rain_tuning::RainConfig,
 }
 
@@ -143,6 +144,7 @@ impl Default for UiSettings {
             audio_ambient: 1.0,
             audio_effects: 1.0,
             audio_preset: 0,
+            audio_mix: Default::default(),
             rain_audio: Default::default(),
         }
     }

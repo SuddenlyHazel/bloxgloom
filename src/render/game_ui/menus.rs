@@ -6,6 +6,7 @@ mod tests;
 
 mod admin;
 mod audio;
+mod audio_mix;
 mod audio_tuning;
 mod character;
 mod join;

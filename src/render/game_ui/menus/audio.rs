@@ -60,5 +60,7 @@ pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Int
         }
     });
     ui.separator();
+    super::audio_mix::draw(ui, frame, intents);
+    ui.separator();
     super::audio_tuning::draw(ui, frame, intents);
 }

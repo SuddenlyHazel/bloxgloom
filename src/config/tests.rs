@@ -36,6 +36,7 @@ fn config_round_trips_through_explicit_path() {
         audio_master: 0.4,
         audio_ambient: 0.2,
         audio_effects: 0.9,
+        audio_mix: Default::default(),
         rain_audio: Default::default(),
         selected_slot: 7,
         debug_hud: true,
@@ -325,4 +326,22 @@ fn live_rain_tuning_persists_and_old_configs_keep_native_defaults() {
         Default::default()
     );
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn mixer_controls_default_for_old_configs_and_round_trip_locally() {
+    assert_eq!(parse_config("version=1\n").audio_mix, Default::default());
+    let mut config = Config::default();
+    config.audio_mix.buses[0].gain = 0.3;
+    config.audio_mix.buses[2].compressor.enabled = true;
+    config.audio_mix.buses[2].compressor.ratio = 8.0;
+    config.audio_mix.master.release_ms = 250.0;
+    assert_eq!(
+        parse_config(&config.serialize()).audio_mix,
+        config.audio_mix
+    );
+    assert_eq!(
+        parse_config("version=1\naudio_mix=invalid\n").audio_mix,
+        Default::default()
+    );
 }

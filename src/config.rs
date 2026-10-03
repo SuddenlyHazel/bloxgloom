@@ -91,6 +91,7 @@ pub struct Config {
     pub audio_master: f32,
     pub audio_ambient: f32,
     pub audio_effects: f32,
+    pub audio_mix: crate::audio::mix_tuning::MixConfig,
     pub rain_audio: crate::audio::rain_tuning::RainConfig,
     pub selected_slot: usize,
     pub debug_hud: bool,
@@ -119,6 +120,7 @@ impl Default for Config {
             audio_master: 1.0,
             audio_ambient: 1.0,
             audio_effects: 1.0,
+            audio_mix: Default::default(),
             rain_audio: Default::default(),
             selected_slot: 1,
             debug_hud: false,
@@ -255,6 +257,7 @@ impl Config {
             audio_master: clamp_finite(self.audio_master, 0.0, 1.0, 1.0),
             audio_ambient: clamp_finite(self.audio_ambient, 0.0, 1.0, 1.0),
             audio_effects: clamp_finite(self.audio_effects, 0.0, 1.0, 1.0),
+            audio_mix: self.audio_mix.sanitized(),
             rain_audio: self.rain_audio.sanitized(),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
@@ -301,6 +304,10 @@ impl Config {
         text.push_str(&format!(
             "audio_master={}\naudio_ambient={}\naudio_effects={}\n",
             self.audio_master, self.audio_ambient, self.audio_effects
+        ));
+        text.push_str(&format!(
+            "audio_mix={}\n",
+            serde_json::to_string(&self.audio_mix).expect("sanitized audio mix")
         ));
         text.push_str(&format!(
             "rain_audio={}\n",
@@ -384,6 +391,13 @@ fn parse_config(contents: &str) -> Config {
             "audio_master" => config.audio_master = parse_clamped_float(value, 0.0, 1.0, 1.0),
             "audio_ambient" => config.audio_ambient = parse_clamped_float(value, 0.0, 1.0, 1.0),
             "audio_effects" => config.audio_effects = parse_clamped_float(value, 0.0, 1.0, 1.0),
+            "audio_mix" => {
+                if let Ok(profile) =
+                    serde_json::from_str::<crate::audio::mix_tuning::MixConfig>(value)
+                {
+                    config.audio_mix = profile.sanitized();
+                }
+            }
             "rain_audio" => {
                 if let Ok(profile) =
                     serde_json::from_str::<crate::audio::rain_tuning::RainConfig>(value)

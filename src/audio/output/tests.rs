@@ -223,3 +223,41 @@ fn latest_rain_tuning_survives_full_event_queue_and_reset() {
         "reset must restore tuning, not only volumes"
     );
 }
+
+#[test]
+fn audio_mix_latest_settings_survive_queue_pressure_and_session_reset() {
+    let shared = Arc::new(Shared::new(Controls::default()));
+    let (commands, _receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
+    let (complete, done) = mpsc::channel();
+    drop(complete);
+    let output = AudioOutput {
+        commands,
+        shared,
+        done,
+        worker: None,
+    };
+    for _ in 0..COMMAND_CAPACITY {
+        assert!(output.try_send(Command::Stop(1)));
+    }
+    let mut config = super::super::mix_tuning::MixConfig::default();
+    config.buses[1].gain = 0.0;
+    config.master.enabled = true;
+    output.set_mix_config(config);
+    output.reset();
+    let mut source = Source::new();
+    apply_latest_controls(&mut source, &output.shared);
+    let mut frames = [[0.0; 2]; 2048];
+    source.mixer.command(Command::Reset);
+    source.mixer.command(Command::Play {
+        bus: bloxgloom_host_api::sound::Bus::Effects,
+        clip: Arc::new(crate::audio::Clip::click()),
+        position: None,
+        gain: 1.0,
+        pitch: 1.0,
+        looping: true,
+        id: 2,
+    });
+    source.mixer.render(&mut frames);
+    assert!(frames.iter().all(|frame| *frame == [0.0; 2]));
+    assert_eq!(*output.shared.mix_config.lock().unwrap(), config);
+}

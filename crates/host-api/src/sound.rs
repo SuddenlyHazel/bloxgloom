@@ -1,4 +1,34 @@
 //! Transient presentation, staged until the server commit barrier. Not save data.
+/// Fixed presentation routes. Packages cannot add buses or change another source's controls.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Bus {
+    Ambient = 0,
+    #[default]
+    Effects = 1,
+    Ui = 2,
+    Music = 3,
+}
+impl Bus {
+    pub fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Self::Ambient),
+            1 => Some(Self::Effects),
+            2 => Some(Self::Ui),
+            3 => Some(Self::Music),
+            _ => None,
+        }
+    }
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "ambient" => Some(Self::Ambient),
+            "effects" => Some(Self::Effects),
+            "ui" => Some(Self::Ui),
+            "music" => Some(Self::Music),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Event {
     pub owner: String,
@@ -8,6 +38,7 @@ pub struct Event {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Play {
+        bus: Bus,
         clip: String,
         position: [f32; 3],
         entity: Option<u64>,
@@ -52,6 +83,7 @@ impl Event {
                 gain,
                 pitch,
                 looping,
+                ..
             } => {
                 key(clip)
                     && position(at)

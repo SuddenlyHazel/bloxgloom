@@ -61,7 +61,14 @@ pub(crate) fn decode(table: &Table) -> mlua::Result<(String, Kind)> {
                 Value::Boolean(v) => v,
                 _ => return Err(mlua::Error::external("expected looping boolean")),
             };
+            let bus = match table.raw_get::<Value>("bus")? {
+                Value::Nil => bloxgloom_host_api::sound::Bus::Effects,
+                Value::String(name) => bloxgloom_host_api::sound::Bus::parse(&name.to_str()?)
+                    .ok_or_else(|| mlua::Error::external("unknown sound bus"))?,
+                _ => return Err(mlua::Error::external("expected sound bus string")),
+            };
             Kind::Play {
+                bus,
                 clip: text(table, "clip", 129)?,
                 position,
                 entity,
@@ -74,3 +81,6 @@ pub(crate) fn decode(table: &Table) -> mlua::Result<(String, Kind)> {
     };
     Ok((voice, kind))
 }
+
+#[cfg(test)]
+mod tests;
