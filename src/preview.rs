@@ -142,6 +142,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Admin, "commands-bindings"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Dead, "death"),
+            (UiScreen::Dead, "death"),
             (UiScreen::Settings, "settings"),
             (UiScreen::Graphics, "graphics"),
             (UiScreen::Audio, "audio"),

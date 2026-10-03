@@ -357,7 +357,13 @@ pub(super) async fn run_perf_benchmark_async(
             near_ready.iter().copied(),
         );
         let ui_frame = UiFrame {
-            health: None,
+            health: Some(bloxgloom_host_api::player_health::View {
+                current: 100,
+                max: 100,
+                alive: true,
+                revision: 0,
+                life: 1,
+            }),
             chat: None,
             show_crosshair: true,
             character: None,

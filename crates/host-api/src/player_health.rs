@@ -33,17 +33,16 @@ impl State {
         if self.max == 0 || self.max > MAX_HEALTH || self.current > self.max || self.life == 0 {
             return Err(RegistrationError("invalid health state".into()));
         }
-        if let Some((life, position)) = self.respawn {
-            if life == 0
+        if let Some((life, position)) = self.respawn
+            && (life == 0
                 || life > self.life
                 || position
                     .iter()
-                    .any(|v| !v.is_finite() || v.abs() >= 1_000_000.)
-            {
-                return Err(RegistrationError(
-                    "invalid durable respawn checkpoint".into(),
-                ));
-            }
+                    .any(|v| !v.is_finite() || v.abs() >= 1_000_000.))
+        {
+            return Err(RegistrationError(
+                "invalid durable respawn checkpoint".into(),
+            ));
         }
         Ok(())
     }
@@ -74,7 +73,7 @@ impl State {
                     f32::from_le_bytes(bytes[25 + i * 4..29 + i * 4].try_into().unwrap())
                 });
                 if life == 0 {
-                    if position != [0.; 3] {
+                    if bytes[25..].iter().any(|value| *value != 0) {
                         return Err(RegistrationError("noncanonical respawn checkpoint".into()));
                     }
                     None

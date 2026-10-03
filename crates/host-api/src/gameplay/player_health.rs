@@ -12,6 +12,12 @@ impl Context<'_> {
             .into_iter()
             .find(|p| p.profile == profile)
             .ok_or_else(|| Error::Invalid("respawn actor unavailable".into()))?;
+        let health = self.player_health(profile, player.session)?;
+        if health.alive || health.revision != revision {
+            return self.fail(Error::Invalid(
+                "respawn requires current dead health revision".into(),
+            ));
+        }
         let position = match self.snapshot.native_respawn_position() {
             Ok(v) => v,
             Err(e) => return self.fail(e),
@@ -51,12 +57,16 @@ impl Context<'_> {
             .unwrap_or(captured))
     }
     fn health_view(&mut self, cell: &ProfileCell) -> Result<View, Error> {
-        let state = State::decode(&cell.state.data).map_err(|e| Error::Host(e.to_string()))?;
+        let state = match State::decode(&cell.state.data) {
+            Ok(state) => state,
+            Err(error) => return self.fail(Error::Host(error.to_string())),
+        };
         // Absence is logical revision zero; initialized owner revision zero is one.
         let revision = if cell.initialized {
-            cell.revision
-                .checked_add(1)
-                .ok_or_else(|| Error::Host("health revision exhausted".into()))?
+            match cell.revision.checked_add(1) {
+                Some(revision) => revision,
+                None => return self.fail(Error::Host("health revision exhausted".into())),
+            }
         } else {
             0
         };
@@ -91,7 +101,7 @@ impl Context<'_> {
     }
     fn health_stage(
         &mut self,
-        player: Player,
+        mut player: Player,
         mut cell: ProfileCell,
         state: State,
         before: View,
@@ -102,7 +112,14 @@ impl Context<'_> {
         if !self.plan.profile_states.contains_key(&key) && self.plan.profile_states.len() >= 64 {
             return self.fail(Error::Invalid("health profile write limit exceeded".into()));
         }
-        cell.state.data = state.encode().map_err(|e| Error::Invalid(e.to_string()))?;
+        let committed_revision = match before.revision.checked_add(1) {
+            Some(revision) => revision,
+            None => return self.fail(Error::Invalid("health revision exhausted".into())),
+        };
+        cell.state.data = match state.encode() {
+            Ok(bytes) => bytes,
+            Err(error) => return self.fail(Error::Invalid(error.to_string())),
+        };
         cell.state.public_data.clear();
         cell.next_tick = None;
         self.plan.profile_states.insert(key, cell);
@@ -112,16 +129,16 @@ impl Context<'_> {
             session: player.session,
             kind: PlayerOperationKind::HealthChanged {
                 health: View {
-                    revision: before
-                        .revision
-                        .checked_add(1)
-                        .ok_or_else(|| Error::Invalid("health revision exhausted".into()))?,
+                    revision: committed_revision,
                     ..health
                 },
                 respawn_position: position,
             },
         });
         if let Some((kind, cause)) = transition {
+            if let Some(position) = position {
+                player.position = position;
+            }
             let event = Event {
                 kind,
                 player,
@@ -189,10 +206,10 @@ impl Context<'_> {
         let mut state = State::decode(&cell.state.data).map_err(|e| Error::Host(e.to_string()))?;
         state.current = state.current.saturating_sub(damage.amount);
         let transition = if !state.alive() {
-            state.life = state
-                .life
-                .checked_add(1)
-                .ok_or_else(|| Error::Invalid("health life exhausted".into()))?;
+            let Some(life) = state.life.checked_add(1) else {
+                return self.fail(Error::Invalid("health life exhausted".into()));
+            };
+            state.life = life;
             Some((EventKind::Died, Some(cause.into())))
         } else {
             None
@@ -275,10 +292,9 @@ impl Context<'_> {
         {
             return self.fail(Error::Invalid("invalid respawn target or position".into()));
         }
-        let life = before
-            .life
-            .checked_add(1)
-            .ok_or_else(|| Error::Invalid("health life exhausted".into()))?;
+        let Some(life) = before.life.checked_add(1) else {
+            return self.fail(Error::Invalid("health life exhausted".into()));
+        };
         let state = State {
             current: before.max,
             max: before.max,

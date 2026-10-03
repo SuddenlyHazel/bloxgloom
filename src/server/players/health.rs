@@ -145,11 +145,10 @@ pub(in crate::server) fn publish(
     if health.life != before.life {
         let position = position.unwrap_or_else(|| state.clients[&id].position());
         if health.alive {
-            state
-                .position_store
-                .save_with_life(profile, position, health.life)?;
+            crate::server::movement::teleport_respawn(state, id, position, health.life)?;
+        } else {
+            crate::server::movement::teleport(state, id, position)?;
         }
-        crate::server::movement::teleport(state, id, position)?;
     }
     Ok(())
 }

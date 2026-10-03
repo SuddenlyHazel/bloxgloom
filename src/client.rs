@@ -1051,6 +1051,9 @@ impl ClientApp {
     }
 
     fn allocate_action_id(&mut self) -> Option<u128> {
+        if !self.health.alive {
+            return None;
+        }
         if self.pending_actions.len() >= MAX_OUTSTANDING_ACTIONS {
             return None;
         }

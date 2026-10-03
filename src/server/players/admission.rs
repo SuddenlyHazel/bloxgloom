@@ -44,6 +44,15 @@ pub(in crate::server) fn join_named_client(
     let health_state = bloxgloom_host_api::player_health::State::decode(&health_cell.state.data)
         .map_err(io::Error::other)?;
     let saved = state.position_store.load_with_life(profile)?;
+    if saved.is_some_and(|value| value.1 > health_state.life) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "position life exceeds durable health life",
+        ));
+    }
+    let recover_checkpoint = health_state
+        .respawn
+        .is_some_and(|(life, _)| saved.is_none_or(|value| value.1 < life));
     let saved = match health_state.respawn {
         Some((life, position)) if saved.is_none_or(|v| v.1 < life) => Some(position),
         _ => saved.map(|v| v.0),
@@ -73,14 +82,15 @@ pub(in crate::server) fn join_named_client(
         &inventory,
         appearance.legacy(),
     )?;
-    let applied_life = state
-        .position_store
-        .load_with_life(profile)?
-        .map_or(0, |v| v.1)
-        .max(health_state.respawn.map_or(0, |v| v.0));
-    state
-        .position_store
-        .save_with_life(profile, position, applied_life)?;
+    if recover_checkpoint {
+        let life = health_state
+            .respawn
+            .expect("validated pending checkpoint")
+            .0;
+        state
+            .position_store
+            .save_with_life(profile, position, life)?;
+    }
     let id = state.next_id;
     let next_id = crate::server::session_ids::next_after(id)?;
     let socket = socket.try_clone()?;
