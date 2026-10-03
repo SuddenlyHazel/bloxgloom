@@ -1142,6 +1142,15 @@ discovery has a native egui click regression. The follow-up passed 1,737 game
 tests and 60 host API tests (11 ignored), formatting, strict Clippy and the
 release build; admin previews were inspected at both screen sizes.
 
+The next usability follow-up adds XYZ and chunk coordinates to F3 and reports
+chunk crossings anywhere in the region demo, using exact-session timers to
+sample authoritative positions every five logical ticks. Stationary players
+receive no repeated crossing notices. Verification passed 1,738 game tests and
+60 host API tests (11 ignored), formatting, strict Clippy and the release build.
+F3 and combined chat/F3 previews were inspected at both screen sizes. The
+offscreen `perf 300 6` probe kept the same geometry and measured steady CPU/GPU
+median frame times of 0.660/0.786 ms.
+
 ## Suggested priority
 
 1. Health/combat/respawn and additional per-player modifier domains.
