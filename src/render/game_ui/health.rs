@@ -6,7 +6,12 @@ use egui::{Color32, RichText, Vec2};
 pub(super) fn hud(root: &mut egui::Ui, frame: &UiFrame<'_>) {
     let Some(health) = frame.health else { return };
     let viewport = root.max_rect();
-    let origin = egui::pos2(viewport.left() + 24., viewport.bottom() - 92.);
+    let x = if frame.chat.is_some_and(|chat| chat.open) {
+        viewport.right() - 204.
+    } else {
+        viewport.left() + 24.
+    };
+    let origin = egui::pos2(x, viewport.bottom() - 92.);
     let bar = egui::Rect::from_min_size(origin, Vec2::new(180., 12.));
     let painter = root.painter();
     painter.rect_filled(bar, 3., Color32::from_black_alpha(180));

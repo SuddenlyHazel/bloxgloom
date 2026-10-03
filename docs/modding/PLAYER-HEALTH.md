@@ -94,8 +94,8 @@ Dead players cannot move, jump, change movement posture, collect drops or perfor
 ordinary inventory/world actions. Movement velocity, held input, sprint and
 prediction are cleared at death/respawn through the existing reset barrier.
 The exact session epoch stays stable; a separate life envelope rejects old queued
-or newly replayed movement/actions after respawn. Chat and receipt ACKs remain
-usable. The initial life uses the existing unwrapped input form; later lives
+or newly replayed movement/actions after respawn. Chat protocol messages and receipt ACKs remain
+usable; the native death screen focuses on manual respawn. The initial life uses the existing unwrapped input form; later lives
 require the matching envelope. All queued commands retain their admitted life.
 
 The reserved `bloxgloom:player_health` profile system cannot be accessed through
