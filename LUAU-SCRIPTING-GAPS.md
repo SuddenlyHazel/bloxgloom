@@ -1134,6 +1134,14 @@ measured 29.173 µs per body with 64 captured colliders (1.867 ms for 64 bodies)
 it excludes terrain capture, WAL work and client rendering. Bodies currently
 respond to captured obstacles without reciprocal impulses or coupled islands.
 
+The playable-demo follow-up exposes clickable registered commands in the admin
+menu, adds `pace:self` so local movement tests need no player-name argument, and
+retains targeted server notices in chat history. The shipped region/chat and
+movement fixtures now have their own real nonblocking TCP regressions; command
+discovery has a native egui click regression. The follow-up passed 1,737 game
+tests and 60 host API tests (11 ignored), formatting, strict Clippy and the
+release build; admin previews were inspected at both screen sizes.
+
 ## Suggested priority
 
 1. Health/combat/respawn and additional per-player modifier domains.
