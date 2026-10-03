@@ -68,3 +68,9 @@ same-revision generation source edits reject without modifying saved bytes.
 transitive dependencies, helper extraction, unrelated packages and client-only
 generator edits. [Metadata tests](../../src/storage/metadata/tests.rs) cover
 bounded decoding and precise mismatch errors.
+
+Verified October 3, 2026: `cargo test --workspace` passed **1,699 game tests**
+and **52 host API tests**, with ten intentionally ignored game tests.
+`cargo fmt --all -- --check`, strict all-target/all-feature Clippy and
+`cargo build --release` passed. Restart/network evidence uses real nonblocking
+TCP; no live client window was available for this persistence change.
