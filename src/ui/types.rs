@@ -24,7 +24,8 @@ impl UiScreen {
     pub(crate) fn uses_egui(self) -> bool {
         matches!(
             self,
-            Self::Inventory
+            Self::Dead
+                | Self::Inventory
                 | Self::Container
                 | Self::Actions
                 | Self::Admin

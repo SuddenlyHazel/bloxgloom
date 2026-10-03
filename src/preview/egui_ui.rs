@@ -122,6 +122,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
     }
     let screens = [
         (UiScreen::Playing, "playing"),
+        (UiScreen::Dead, "death"),
         (UiScreen::Playing, "playing-debug"),
         (UiScreen::Playing, "chat-open"),
         (UiScreen::Playing, "chat-open-debug"),
@@ -205,6 +206,13 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         let preview = preview_frame(screen_kind, None, 1.0);
         let chat_preview = chat::session(label.starts_with("chat-open"));
         let frame = UiFrame {
+            health: Some(bloxgloom_host_api::player_health::View {
+                current: if screen_kind == UiScreen::Dead { 0 } else { 72 },
+                max: 100,
+                alive: screen_kind != UiScreen::Dead,
+                revision: 1,
+                life: 1,
+            }),
             chat: label.starts_with("chat-").then_some(&chat_preview),
             debug: if label.ends_with("-debug") {
                 Some(crate::ui::UiDebug {

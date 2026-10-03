@@ -105,6 +105,6 @@ impl Hook for ScriptCallback {
         if let Some(error) = rejected.into_inner() {
             return Err(error);
         }
-        result.map_err(|e| Error::Host(e.to_string()))
+        result.map_err(|e| Error::Invalid(e.to_string()))
     }
 }

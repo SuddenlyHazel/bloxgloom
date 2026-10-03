@@ -100,6 +100,12 @@ mod tests {
             health: dead,
         });
         assert_eq!(app.screen, UiScreen::Dead);
+        app.set_screen(UiScreen::Playing);
+        assert_eq!(
+            app.screen,
+            UiScreen::Dead,
+            "a stale menu intent hid manual respawn"
+        );
         assert!(!app.keys.forward);
         assert!(app.unacked.is_empty());
         app.queue_command(ClientMessage::Move {

@@ -537,6 +537,12 @@ impl ClientApp {
     }
 
     fn set_screen(&mut self, screen: UiScreen) {
+        let screen =
+            if !self.health.alive && !matches!(screen, UiScreen::Joining | UiScreen::JoinFailed) {
+                UiScreen::Dead
+            } else {
+                screen
+            };
         self.chat.open = false;
         if let Some(renderer) = &mut self.renderer {
             renderer.clear_game_ui_intents();

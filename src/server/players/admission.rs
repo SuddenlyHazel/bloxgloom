@@ -112,11 +112,6 @@ pub(in crate::server) fn join_named_client(
             id,
             seed: state.seed,
         },
-        ServerMessage::PlayerHealth {
-            profile,
-            session: action_epoch,
-            health,
-        },
         ServerMessage::OwnedEntity {
             id: owned_entity_id.get(),
         },
@@ -143,6 +138,11 @@ pub(in crate::server) fn join_named_client(
         },
         ServerMessage::Weather {
             snapshot: state.weather.snapshot(),
+        },
+        ServerMessage::PlayerHealth {
+            profile,
+            session: action_epoch,
+            health,
         },
     ] {
         if sender.try_send(message).is_err() {

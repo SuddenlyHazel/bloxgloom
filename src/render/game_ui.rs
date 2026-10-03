@@ -5,6 +5,7 @@ use crate::content::Catalog;
 use crate::ui::{UiControl, UiFrame, UiScreen};
 use winit::{event::WindowEvent, window::Window};
 
+mod health;
 mod hud;
 mod menus;
 mod view;
@@ -27,6 +28,9 @@ pub(crate) fn draw_screen(
         }
     } else if frame.screen == UiScreen::Playing {
         hud::draw(ui, frame, catalog);
+        health::hud(ui, frame);
+    } else if frame.screen == UiScreen::Dead {
+        health::death(ui, frame, intents);
     } else if matches!(frame.screen, UiScreen::Inventory | UiScreen::Container) {
         draw(ui, frame, catalog, search, filter, intents);
     } else {

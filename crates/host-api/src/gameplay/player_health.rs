@@ -196,7 +196,7 @@ impl Context<'_> {
                 Ok(_) => {
                     return self.fail(Error::Invalid("damage policy amount out of bounds".into()));
                 }
-                Err(e) => return self.fail(Error::Host(e)),
+                Err(e) => return self.fail(Error::Invalid(e)),
             };
             damage.amount = amount;
             if amount == 0 {
