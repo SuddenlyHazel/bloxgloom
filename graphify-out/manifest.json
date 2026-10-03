@@ -4038,9 +4038,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/SOURCES.md": {
-    "mtime": 1790912238.3391685,
-    "seen": 1791052677.813992,
-    "ast_hash": "50334ccab42336baebf014cb1c43fd23",
+    "mtime": 1791053405.6379714,
+    "seen": 1791053478.957502,
+    "ast_hash": "6145dac4b5ada0b8208101efc6c6a3fe",
     "semantic_hash": ""
   },
   "assets/textures/foliage/SOURCES.md": {
@@ -4398,9 +4398,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone.png": {
-    "mtime": 1790909774.6204338,
-    "seen": 1791052677.814178,
-    "ast_hash": "1291fd7d658ea055bc34bc087b2939b7",
+    "mtime": 1791053406.2287314,
+    "seen": 1791053478.957758,
+    "ast_hash": "680fbea98d93dbd09454c81925350a52",
     "semantic_hash": ""
   },
   "assets/textures/blocks/wood_side.png": {
@@ -8400,15 +8400,15 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone_n.png": {
-    "mtime": 1790909775.192782,
-    "seen": 1791052677.8141792,
-    "ast_hash": "4ebf5b384c8a74518185c6163f82af4d",
+    "mtime": 1791053406.2307441,
+    "seen": 1791053478.957759,
+    "ast_hash": "e3b7e68a0908c8224f122614fb991841",
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone_s.png": {
-    "mtime": 1790909775.2693954,
-    "seen": 1791052677.8141792,
-    "ast_hash": "3d970ce30266697bb8a33f37966cc165",
+    "mtime": 1791053406.2393253,
+    "seen": 1791053478.95776,
+    "ast_hash": "a337d3f2777a3078c8c7fc05ba1549b3",
     "semantic_hash": ""
   },
   "src/render/material/companions/tests/parallax.rs": {
@@ -9963,6 +9963,12 @@
     "mtime": 1791053297.3547962,
     "seen": 1791053353.393012,
     "ast_hash": "65519abf057cb076af5c9c8954fb17de",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/source/import_rock030.py": {
+    "mtime": 1791053405.6374166,
+    "seen": 1791053478.9557729,
+    "ast_hash": "8ed2d76e0372b4538d464806862618aa",
     "semantic_hash": ""
   }
 }

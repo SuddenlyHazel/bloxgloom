@@ -1196,3 +1196,20 @@ a new life; WAL replay does not repeat hook rewards. The runnable package is
 `fixtures/player-health/`. The authoritative implementation adds no implicit
 fall/weather/contact damage and no combat weapons or teams. See
 [the complete contract](docs/modding/PLAYER-HEALTH.md).
+
+## Audio and health integration — October 3, 2026
+
+Native buses/compression and scripted health/death/respawn are combined on wire
+32, client runtime 14 and default world folder v26. Integration review added a
+reservation fence for pending health-only writes before reconnect admission,
+and real TCP coverage of death-hook bus routing, rollback and receipt replay.
+The integrated workspace suite passed 1,768 application and 61 host API tests,
+with 12 opt-in tests ignored.
+
+A subsequent targeted check passed 13 application health tests and one host API
+test after preserving ordered respawn checkpoints across several life transitions
+in one transaction. It verifies later policies/hooks see the staged respawn
+position and reconnect agrees with the live avatar. Formatting, strict Clippy and
+the release build passed. Merged health/death/chat and audio mixer previews were
+inspected; renderer geometry stayed unchanged in `perf 300 6`. Geometry reverb,
+streamed music and device selection/recovery remain open.
