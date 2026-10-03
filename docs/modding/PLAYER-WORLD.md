@@ -28,3 +28,5 @@ Allow requires explicit `allow = true` and valid replacement text. Deny requires
 Text and denial reasons allow 1–512 UTF-8 bytes, exclude control characters, and must contain a non-whitespace character. Each session may submit four requests per two seconds. Monotonic request sequences suppress replays, including denied and throttled requests. The installation supports 32 chat hooks, up to eight per package.
 
 In game, T or Enter opens chat, Enter sends, Escape closes, and Up/Down browse the last 32 sent messages. The transcript retains 64 lines. Opening chat clears held movement and releases the cursor. Messages are not written to external services or save files.
+
+The server preserves valid UTF-8 exactly, but displayed glyphs depend on the native UI font. The current bundled font does not cover every Unicode character; CJK text can appear as missing-glyph boxes. Input controls and the caret use readable ASCII labels.

@@ -42,7 +42,7 @@ pub(crate) fn draw(root: &mut egui::Ui, chat: &Session) {
                     ui.separator();
                     let color = egui::Color32::LIGHT_GREEN;
                     let galley = ui.painter().layout_no_wrap(
-                        format!("> {}▏", chat.input),
+                        format!("> {}|", chat.input),
                         egui::FontId::proportional(14.0),
                         color,
                     );
@@ -58,7 +58,7 @@ pub(crate) fn draw(root: &mut egui::Ui, chat: &Session) {
                     );
                     ui.add(
                         egui::Label::new(
-                            egui::RichText::new("Enter sends · Esc closes · ↑/↓ history")
+                            egui::RichText::new("Enter sends · Esc closes · Up/Down history")
                                 .size(11.)
                                 .color(egui::Color32::GRAY),
                         )
