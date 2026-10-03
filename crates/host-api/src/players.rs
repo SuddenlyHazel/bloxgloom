@@ -15,6 +15,8 @@ pub enum EventKind {
     Spawned,
     ProfileTick,
     SessionTick,
+    RegionEntered,
+    RegionLeft,
 }
 impl EventKind {
     pub fn name(self) -> &'static str {
@@ -26,6 +28,8 @@ impl EventKind {
             Self::Spawned => "PlayerSpawned",
             Self::ProfileTick => "ProfileTick",
             Self::SessionTick => "SessionTick",
+            Self::RegionEntered => "RegionEntered",
+            Self::RegionLeft => "RegionLeft",
         }
     }
 }
@@ -35,6 +39,8 @@ pub struct Event {
     pub profile: u128,
     pub player: Option<Player>,
     pub transition: u64,
+    /// Namespaced region key, present only for region transitions.
+    pub region: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

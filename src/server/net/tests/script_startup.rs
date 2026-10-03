@@ -46,6 +46,8 @@ mod machine;
 mod moving;
 #[path = "script_startup/player.rs"]
 mod player;
+#[path = "script_startup/player_world.rs"]
+mod player_world;
 #[path = "script_startup/recipe_browser.rs"]
 mod recipe_browser;
 #[path = "script_startup/reload.rs"]

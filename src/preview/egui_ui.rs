@@ -2,6 +2,7 @@
 
 use super::*;
 mod audio;
+mod chat;
 
 pub fn render_egui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
@@ -121,6 +122,8 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
     }
     let screens = [
         (UiScreen::Playing, "playing"),
+        (UiScreen::Playing, "chat-open"),
+        (UiScreen::Playing, "chat-closed"),
         (UiScreen::Container, "container"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
@@ -198,11 +201,14 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
             &package_session
         };
         let preview = preview_frame(screen_kind, None, 1.0);
+        let chat_preview = chat::session(label == "chat-open");
         let frame = UiFrame {
+            chat: label.starts_with("chat-").then_some(&chat_preview),
             admin_enabled: screen_kind != UiScreen::Admin || label != "admin",
             flying: label != "admin-walking",
             flying_pending: label == "admin-flight-pending",
             character: (screen_kind == UiScreen::Character).then_some(crate::ui::CharacterPanel {
+                packaged: None,
                 cosmetics: [0; 4],
                 recipe: Some(crate::appearance::CharacterRecipe {
                     hair: 2,

@@ -66,6 +66,7 @@ pub(super) fn invoke(
                 cache: &mut state.profile_inventory_cache,
             }),
             profile_services: Some(&state.system_runtime),
+            player_modifiers: Some(&state.player_modifiers),
             players: &players,
             action_id: None,
             clock: Some(state.world_time.capture()),
@@ -120,8 +121,11 @@ pub(in crate::server) fn admit(
                 name: name.into(),
                 position,
                 appearance,
+                model: None,
+                model_visual: None,
             }),
             transition: epoch,
+            region: None,
         };
         let (result, _) = invoke(state, &reg, &event, inventory, None)?;
         let decision = result.decision;

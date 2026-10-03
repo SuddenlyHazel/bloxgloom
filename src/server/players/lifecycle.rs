@@ -64,7 +64,7 @@ pub(super) fn key(reg: &Registration, event: &Event) -> JobKey {
         event.kind.name(),
     )
 }
-fn enqueue(
+pub(super) fn enqueue(
     runtime: &mut Runtime,
     reg: Arc<Registration>,
     event: Event,
@@ -111,13 +111,16 @@ pub(in crate::server) fn joined(state: &mut State, id: u64) {
                     kind,
                     profile: player.profile,
                     transition: player.session,
+                    region: None,
                     player: Some(player.clone()),
                 },
                 None,
             );
         }
     }
+    super::regions::reconcile(state);
 }
+
 pub(in crate::server) fn leaving(state: &mut State, id: u64) {
     let Some(client) = state.clients.get(&id) else {
         return;
@@ -128,6 +131,7 @@ pub(in crate::server) fn leaving(state: &mut State, id: u64) {
         return;
     }
     state.roster_revision = state.roster_revision.wrapping_add(1);
+    super::regions::reconcile(state);
     let player = capture(state).into_iter().find(|p| p.profile == profile);
     let regs = state
         .world
@@ -149,6 +153,7 @@ pub(in crate::server) fn leaving(state: &mut State, id: u64) {
                     kind,
                     profile,
                     transition: epoch,
+                    region: None,
                     player: player.clone(),
                 },
                 final_session,
@@ -184,6 +189,7 @@ pub(in crate::server) fn drive(state: &mut State, tick: TickId) -> io::Result<()
                     kind: EventKind::ProfileTick,
                     profile,
                     transition: due,
+                    region: None,
                     player: players.iter().find(|p| p.profile == profile).cloned(),
                 },
                 None,
@@ -215,6 +221,7 @@ pub(in crate::server) fn drive(state: &mut State, tick: TickId) -> io::Result<()
                     kind: EventKind::SessionTick,
                     profile,
                     transition: due,
+                    region: None,
                     player: Some(player.clone()),
                 },
                 None,
@@ -232,14 +239,15 @@ pub(in crate::server) fn drive(state: &mut State, tick: TickId) -> io::Result<()
             break;
         };
         let job_key = key(&reg, &event);
-        if event.kind == EventKind::SessionTick
-            && event.player.as_ref().is_none_or(|p| {
-                !state
-                    .player_runtime
-                    .admitted
-                    .contains(&(p.profile, p.session))
-            })
-        {
+        if matches!(
+            event.kind,
+            EventKind::SessionTick | EventKind::RegionEntered
+        ) && event.player.as_ref().is_none_or(|p| {
+            !state
+                .player_runtime
+                .admitted
+                .contains(&(p.profile, p.session))
+        }) {
             state.player_runtime.active.remove(&job_key);
             continue;
         }

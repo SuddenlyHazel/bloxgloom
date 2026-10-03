@@ -75,6 +75,9 @@ impl Behavior for ScriptBehavior {
             |lua, entry| {
                 let fields = lua.create_table()?;
                 fields.set("kind", event.kind.name())?;
+                if let Some(region) = &event.region {
+                    fields.set("region", region.as_str())?;
+                }
                 fields.set("profile", super::handles::profile(lua, event.profile)?)?;
                 fields.set("identity_trust", "claimed_profile")?;
                 fields.set("transition", super::handles::tick(lua, event.transition)?)?;

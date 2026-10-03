@@ -1,0 +1,8 @@
+format 1
+package demo
+version 1.0.0
+entry main
+module main main.luau
+module players players.luau
+module chat chat.luau
+requires bloxgloom:players/v1
