@@ -24,6 +24,8 @@ mod lod_exploration;
 mod modifier_motion;
 #[path = "gameplay/observers.rs"]
 mod observers;
+#[path = "gameplay/player_health.rs"]
+mod player_health;
 #[path = "gameplay/player_inventory.rs"]
 mod player_inventory;
 #[path = "gameplay/player_modifiers.rs"]
@@ -438,6 +440,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 }),
             },
             Participants {
+                spawn_anchor: None,
                 actor_inventory_revision: None,
                 profile_inventories: None,
                 profile_services: None,

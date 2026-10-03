@@ -150,6 +150,7 @@ them. The currently accepted manifest capabilities are the names below.
 | `register_player_lifecycle` | `players/v1` | Eight; 128 in the installation |
 | `register_region` | `players/v1` | 32; 256 in the installation |
 | `register_chat_hook` | `players/v1` | Eight; 32 in the installation |
+| `register_damage_policy`, `register_health_hook` | `players/v1` | Eight each; 32 each in the installation |
 | `register_model`, `register_player_model` | `content/v1` | Eight shared model declarations; 128 in the installation |
 | `register_storage` | `content/v1`, `storage/v1`, `inventory_screens/v1` | Eight |
 | `register_creature` | `content/v1`, `mobile_entities/v1` | Eight |
@@ -1165,3 +1166,17 @@ See `fixtures/rain-collector/README.md` for an example combining these contracts
 - [Typed command arguments and canonical aliases](docs/modding/COMMANDS.md).
 - [Transactional machine processing and exact components](docs/modding/MACHINE-PROCESSING.md).
 - [Bitmap item icons and worker-based per-stack presentation](docs/modding/item-visuals.md).
+
+## Health and manual respawn
+
+Profiles have durable server-owned 100/100 health by default, with native health
+HUD/death screen and inventory kept on death. `c.player_health(session)` returns
+readonly current/max/alive and exact revision/life handles. With `players/v1`,
+`damage_player`, `heal_player`, `set_player_max_health` and `respawn_player` stage
+validated exact-session changes atomically with inventory/profile/world effects.
+Startup `register_damage_policy` callbacks make bounded pure damage decisions;
+`register_health_hook` callbacks stage `died`/`respawned` effects in the same WAL
+transaction. Dead gameplay and stale life inputs are fenced. See
+[the contract](docs/modding/PLAYER-HEALTH.md) and
+[playable fixture](fixtures/player-health/README.md). Automatic environmental
+and weapon damage, teams and additional modifier domains remain separate work.

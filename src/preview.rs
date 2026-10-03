@@ -141,6 +141,8 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Admin, "commands"),
             (UiScreen::Admin, "commands-bindings"),
             (UiScreen::Pause, "pause"),
+            (UiScreen::Dead, "death"),
+            (UiScreen::Dead, "death"),
             (UiScreen::Settings, "settings"),
             (UiScreen::Graphics, "graphics"),
             (UiScreen::Audio, "audio"),
@@ -1869,6 +1871,13 @@ fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
 
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
+        health: Some(bloxgloom_host_api::player_health::View::new(
+            bloxgloom_host_api::player_health::State {
+                current: if screen == UiScreen::Dead { 0 } else { 72 },
+                ..Default::default()
+            },
+            7,
+        )),
         chat: None,
         show_crosshair: true,
         character: None,
@@ -1930,6 +1939,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             ..UiSettings::default()
         },
         hovered: match screen {
+            UiScreen::Dead => Some(UiControl::Respawn),
             UiScreen::Joining | UiScreen::JoinFailed => None,
             UiScreen::Actions => Some(UiControl::Action(2)),
             UiScreen::Container => Some(UiControl::KilnSlot(1)),
@@ -1947,6 +1957,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        health: None,
         chat: None,
         show_crosshair: true,
         character: None,

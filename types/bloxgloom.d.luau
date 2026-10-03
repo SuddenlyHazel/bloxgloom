@@ -84,6 +84,8 @@ export type BloxStartupHost = {
     register_player_model: (declaration: BloxPlayerModelDeclaration) -> (),
     register_region: (key: string, minimum: BloxTriple, maximum: BloxTriple, own_service: string) -> (),
     register_chat_hook: (key: string, revision: number, module: string) -> (),
+    register_damage_policy: (key: string, revision: number, own_module: string) -> (),
+    register_health_hook: (key: string, revision: number, own_module: string) -> (),
     --- At most 256/package; encoded and decoded asset limits remain independent.
     register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
     --- At most 256/package; each block also consumes one of 512 total item slots.
@@ -165,6 +167,13 @@ export type BloxPlayerModelDeclaration = BloxModelDeclaration & {
     clips: {idle:string?,walk:string?,run:string?,crouch:string?,tool_left:string?,tool_right:string?}?,
     crossfade_s: number?, first_person_hide: {string}?, first_person_offset: BloxTriple?,
 }
+export type BloxPlayerHealth = {current:number,max:number,alive:boolean,revision:BloxRevision,life:BloxTick}
+export type BloxPlayerDamage = {player:BloxPlayerView,health:BloxPlayerHealth,amount:number,cause:string}
+--- Pure immutable decision. Return integer 0..1,000,000; zero cancels.
+export type BloxPlayerDamageCallback = (event:BloxPlayerDamage) -> number
+export type BloxPlayerHealthEvent = {kind:"died"|"respawned",player:BloxPlayerView,before:BloxPlayerHealth,health:BloxPlayerHealth,cause:string?}
+--- Transaction-bound hook; health mutations are forbidden recursively.
+export type BloxPlayerHealthCallback = (context:BloxGameplayContext,event:BloxPlayerHealthEvent) -> ()
 export type BloxPlayerModifierOptions = {
     speed: number?, sprint: number?, jump: number?, gravity: number?, duration_ticks: number?,
 }
@@ -474,6 +483,13 @@ export type BloxGameplayContext = BloxTagQueries & {
     set_player_modifier: (target: BloxProfileId | BloxSessionId, own_key: string, options: BloxPlayerModifierOptions) -> (),
     remove_player_modifier: (target: BloxProfileId | BloxSessionId, own_key: string) -> (),
     player_modifiers: (target: BloxProfileId | BloxSessionId) -> {BloxPlayerModifier},
+    player_health: (target:BloxSessionId) -> BloxPlayerHealth,
+    --- players/v1, exact online session/current revision. Amounts are integers 1..1,000,000.
+    damage_player: (target:BloxSessionId,revision:BloxRevision,amount:number,own_cause:string) -> (),
+    heal_player: (target:BloxSessionId,revision:BloxRevision,amount:number) -> (),
+    set_player_max_health: (target:BloxSessionId,revision:BloxRevision,max:number) -> (),
+    --- Dead target only; final authoritative terrain must be loaded, supported and unobstructed.
+    respawn_player: (target:BloxSessionId,revision:BloxRevision,x:number,y:number,z:number) -> (),
     set_player_model: (session: BloxSessionId, key: string?) -> (),
     set_player_model_variant: (session: BloxSessionId, group: string, option: string?) -> (),
     set_player_model_layer: (session: BloxSessionId, layer: string, visible: boolean?) -> (),

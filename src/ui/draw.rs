@@ -12,6 +12,7 @@ use super::{
 
 mod actions;
 mod container;
+mod health;
 mod join;
 mod screens;
 
@@ -48,6 +49,7 @@ impl UiBuilder<'_> {
             UiScreen::Container => self.draw_container(frame, layout, catalog),
             UiScreen::Actions => self.draw_actions(frame, layout),
             UiScreen::Admin => self.draw_admin(frame, layout, catalog),
+            UiScreen::Dead => self.draw_death(frame, layout),
             UiScreen::Pause => self.draw_pause(frame, layout),
             UiScreen::Settings | UiScreen::Graphics | UiScreen::Audio | UiScreen::Character => {
                 self.draw_settings(frame, layout)
@@ -59,6 +61,7 @@ impl UiBuilder<'_> {
     }
 
     fn draw_hud(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
+        self.draw_health(frame);
         let center_x = self.width * 0.5;
         let center_y = self.height * 0.5;
         if frame.screen == UiScreen::Playing && frame.show_crosshair {

@@ -12,6 +12,11 @@ impl InventoryProbe {
         }
     }
     pub(crate) fn accept(&mut self, message: ServerMessage) {
+        // This disconnected presentation harness has no Hello profile; adopt
+        // the server fixture's identity before exercising normal validation.
+        if let ServerMessage::PlayerHealth { profile, .. } = &message {
+            self.app.network.profile = *profile;
+        }
         self.app.accept(message);
         assert!(
             !self.app.disconnected,

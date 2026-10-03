@@ -1472,3 +1472,52 @@ fn player_modifiers_wire_rejects_invalid_identity_nonfinite_values_and_matches_q
     invalid[end - 4..].copy_from_slice(&f32::NAN.to_le_bytes());
     assert!(read_server(invalid.as_slice()).is_err());
 }
+
+#[test]
+fn player_health_protocol_derives_alive_and_bounds_life_envelopes() {
+    let health = bloxgloom_host_api::player_health::View::new(Default::default(), 7);
+    let message = ServerMessage::PlayerHealth {
+        profile: 1,
+        session: 5,
+        health,
+    };
+    let mut bytes = Vec::new();
+    write_server(&mut bytes, &message).unwrap();
+    assert_eq!(bytes.len(), server_wire_len(&message));
+    assert!(
+        matches!(read_server(bytes.as_slice()).unwrap(),ServerMessage::PlayerHealth{health:decoded,..} if decoded==health)
+    );
+    let bad = ServerMessage::PlayerHealth {
+        profile: 1,
+        session: 5,
+        health: bloxgloom_host_api::player_health::View {
+            alive: false,
+            ..health
+        },
+    };
+    assert!(write_server(Vec::new(), &bad).is_err());
+    let movement = ClientMessage::PlayerIntent {
+        life: 3,
+        message: Box::new(ClientMessage::Move {
+            seq: 19,
+            dx: 1.,
+            dy: 0.,
+            dz: 0.,
+        }),
+    };
+    let mut bytes = Vec::new();
+    write_client(&mut bytes, &movement).unwrap();
+    assert_eq!(read_client(bytes.as_slice()).unwrap(), movement);
+    let invalid = ClientMessage::PlayerIntent {
+        life: 3,
+        message: Box::new(movement),
+    };
+    assert!(write_client(Vec::new(), &invalid).is_err());
+    let unsupported = ClientMessage::PlayerIntent {
+        life: 3,
+        message: Box::new(ClientMessage::Ping { nonce: 1 }),
+    };
+    assert!(write_client(Vec::new(), &unsupported).is_err());
+    bytes[6..14].fill(0);
+    assert!(read_client(bytes.as_slice()).is_err());
+}

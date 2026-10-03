@@ -66,7 +66,9 @@ impl ClientApp {
         }
         // Keep control requests ordered before movement on the same connection.
         if self.sprint.pending.len() >= 16
-            || !self.network.send(ClientMessage::SetSprinting { sprinting })
+            || !self
+                .network
+                .send(self.health_intent_message(ClientMessage::SetSprinting { sprinting }))
         {
             self.fail_session("Sprint control queue unavailable");
             return;

@@ -170,6 +170,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            spawn_anchor: Some(state.spawn_anchor),
             actor_inventory_revision: None,
             profile_inventories: Some(crate::server::gameplay::InventoryCapture {
                 clients: &state.clients,

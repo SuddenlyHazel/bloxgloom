@@ -14,6 +14,22 @@ pub(in crate::server) fn teleport(
     id: u64,
     position: [f32; 3],
 ) -> io::Result<()> {
+    teleport_inner(state, id, position, None)
+}
+pub(in crate::server) fn teleport_respawn(
+    state: &mut State,
+    id: u64,
+    position: [f32; 3],
+    life: u64,
+) -> io::Result<()> {
+    teleport_inner(state, id, position, Some(life))
+}
+fn teleport_inner(
+    state: &mut State,
+    id: u64,
+    position: [f32; 3],
+    life: Option<u64>,
+) -> io::Result<()> {
     let Some(client) = state.clients.get(&id) else {
         return Ok(());
     };
@@ -30,7 +46,11 @@ pub(in crate::server) fn teleport(
         .map_or(client.movement.last_seq(), |m| {
             m.seq.max(client.movement.last_seq())
         });
-    if let Err(error) = state.position_store.save(profile, position) {
+    let saved = match life {
+        Some(life) => state.position_store.save_with_life(profile, position, life),
+        None => state.position_store.save(profile, position),
+    };
+    if let Err(error) = saved {
         state.durability.failed = true;
         return Err(error);
     }

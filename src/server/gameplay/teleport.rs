@@ -11,8 +11,13 @@ pub(super) fn validate(
 ) -> io::Result<()> {
     let catalog = world.catalog_arc();
     for operation in operations {
-        let PlayerOperationKind::Teleport(position) = operation.kind else {
-            continue;
+        let position = match operation.kind {
+            PlayerOperationKind::Teleport(position) => position,
+            PlayerOperationKind::HealthChanged {
+                respawn_position: Some(position),
+                ..
+            } => position,
+            _ => continue,
         };
         if position
             .iter()
@@ -49,6 +54,39 @@ pub(super) fn validate(
                 io::ErrorKind::PermissionDenied,
                 "teleport destination is obstructed",
             ));
+        }
+        if matches!(
+            operation.kind,
+            PlayerOperationKind::HealthChanged {
+                respawn_position: Some(_),
+                ..
+            }
+        ) {
+            let [x, y, z] = [
+                position[0].floor() as i32,
+                (position[1] - 0.001).floor() as i32,
+                position[2].floor() as i32,
+            ];
+            let Some(before) = reads.read(world, x, y, z)? else {
+                let key = crate::world::world_to_chunk(x, y, z).0;
+                if !requested.contains(&key) {
+                    requested.push(key);
+                }
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "respawn support unavailable",
+                ));
+            };
+            let block = edits
+                .iter()
+                .find(|&&(ex, ey, ez, _)| [ex, ey, ez] == [x, y, z])
+                .map_or(before, |e| e.3);
+            if catalog.block_flags(block) & crate::content::SOLID == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "respawn destination has no support",
+                ));
+            }
         }
     }
     Ok(())

@@ -4,7 +4,8 @@ Current assessment: October 3, 2026, after Phase 8, runtime tools, player servic
 dynamic UI, anchored entities, typed client replicas and the VM lifetime work
 recorded in section 6, plus package composition in section 7 and the smaller
 composable API goal below, plus player world hooks, movement modifiers, packaged
-player rigs and the opt-in Rapier moving-body mode.
+player rigs, the opt-in Rapier moving-body mode, durable player health/death/respawn
+and native mixer buses with compression.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
@@ -89,7 +90,7 @@ runtime movement or cosmetic-change authority.
 | --- | --- |
 | Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Account authentication remains separate |
 | Package-owned lifecycle/gameplay profile state, atomic profile inventory transactions and profile/session timers | Global account/role databases remain separate |
-| Admission/spawn/teleport, packaged player looks and profile/session movement modifiers | Health/combat/respawn and additional modifier domains remain open |
+| Admission/spawn/teleport, durable health/damage/death/manual respawn, packaged player looks and profile/session movement modifiers | Combat weapons, teams and additional modifier domains remain open |
 | Client lifecycle callbacks, targeted notices and bounded moderated native chat | Account authentication and durable chat history remain separate |
 | Native and Luau readonly post-commit observers | Exactly-once notification delivery; critical rewards use durable decisions |
 
@@ -225,15 +226,12 @@ recipient sessions cannot follow a profile through reconnect. Text is limited to
 512 UTF-8 bytes and four requests per two seconds. This is transient chat, without
 saved history or a separate chat-command grammar. See [player world rules](docs/modding/PLAYER-WORLD.md).
 
-Health, damage, death, respawn and teams remain separate mechanics.
-Movement modifiers now support profile and exact-session effects with optional
+Health, damage, death and manual respawn are now authoritative engine mechanics,
+including native UI and scripting policies/hooks. See [health](docs/modding/PLAYER-HEALTH.md).
+Movement modifiers support profile and exact-session effects with optional
 logical-tick expiry, authoritative speed/sprint/jump/gravity and client input fences.
-Additional modifier domains remain open.
-The player API should make those future additions straightforward, but adding
-an event named `PlayerDied` does not create authoritative health or combat.
-Initial player spawning already exists; configurable respawn and combat rules
-need additional engine behavior. Packaged player geometry and baked clips are
-implemented; they retain the shared authoritative player collision body.
+Combat weapons, teams and additional modifier domains remain open. Packaged
+player geometry and baked clips retain the shared authoritative collision body.
 
 #### Additional scope accepted for implementation
 
@@ -261,7 +259,7 @@ implemented; they retain the shared authoritative player collision body.
 
 The original player-service goal excluded region hooks, chat, movement modifiers
 and custom geometry; these are now implemented by the follow-up contracts linked
-below. Health/combat/respawn remain open, and save conversion remains excluded. Admission policy can implement package-owned bans/roles
+below. Health/manual respawn are implemented; combat weapons and teams remain open. Save conversion remains excluded. Admission policy can implement package-owned bans/roles
 through durable profile state; this goal does not prescribe a separate account
 or global role database.
 
@@ -323,7 +321,7 @@ bindings, operation limits, event ordering, retry/receipt semantics and remainin
 engine boundaries. Follow-up region hooks, chat, movement modifiers and packaged
 player rigs now have guides under [player world rules](docs/modding/PLAYER-WORLD.md),
 [modifiers](docs/modding/PLAYER-MODIFIERS.md) and [models](docs/modding/PLAYER-MODELS.md).
-Combat/respawn and authentication remain open; VM reuse is implemented in section 6.
+Health and manual respawn now have [their own contract](docs/modding/PLAYER-HEALTH.md). Combat weapons, teams and authentication remain open; VM reuse is implemented in section 6.
 Save conversion remains excluded.
 
 ### 3. Dynamic UI and input — closed within agreed scope
@@ -1158,9 +1156,12 @@ median frame times of 0.660/0.786 ms.
 
 ## Suggested priority
 
-1. Health/combat/respawn and additional per-player modifier domains.
-2. Advanced audio and live debugging/model asset iteration.
+1. Remaining audio services: geometry-based reverb, streamed music and device selection/recovery.
+2. Live debugging and model/texture asset iteration.
 3. Coupled rigid-body worlds and constraints, if needed by a future playable feature.
+
+Combat weapons and teams remain separate mechanics. Additional per-player modifier
+domains are deferred by request; the movement modifiers remain implemented.
 
 Vehicles and arbitrary animation graphs are explicitly parked. This goal uses
 baked GLB clips and simple crossfades. Region membership reconciles authoritative
@@ -1175,7 +1176,7 @@ equivalent-workload comparison; it is not required to close the scripting gaps.
 Implemented contracts and runnable fixtures are in [regions/chat](docs/modding/PLAYER-WORLD.md),
 [player modifiers](docs/modding/PLAYER-MODIFIERS.md), [player models](docs/modding/PLAYER-MODELS.md),
 and [moving entities](docs/modding/MOVING-ENTITIES.md). The default fresh save folder
-is `world-v25`; the appearance and moving-record formats changed without converters.
+is `world-v26`; health recovery adds a versioned position checkpoint without converters.
 
 VM lifetime and retained runtime state are implemented in section 6; larger-package
 composition is implemented in section 7.
@@ -1184,3 +1185,14 @@ Compatibility diagnostics, imported models and manual development reload are imp
 remains deferred; save conversion remains excluded during this prerelease. Filesystem/HTTP access, raw GPU access
 and marketplace/CDN infrastructure are separate product decisions, not assumed
 requirements for closing the gaps above.
+
+## Health follow-up
+
+The health follow-up provides durable profile current/max/alive state, bounded
+pure damage policies, transactional death/respawn hooks, exact-session/revision
+Luau APIs, native health/death UI and manual safe respawn. Inventory is preserved
+by default. Death/respawn life fences prevent old movement/action input crossing
+a new life; WAL replay does not repeat hook rewards. The runnable package is
+`fixtures/player-health/`. The authoritative implementation adds no implicit
+fall/weather/contact damage and no combat weapons or teams. See
+[the complete contract](docs/modding/PLAYER-HEALTH.md).

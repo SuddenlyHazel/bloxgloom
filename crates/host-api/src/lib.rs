@@ -18,6 +18,7 @@ pub mod machine;
 pub mod model;
 pub mod motion;
 pub mod player;
+pub mod player_health;
 pub mod player_modifiers;
 pub mod players;
 pub mod queries;
@@ -56,6 +57,18 @@ pub trait Registrar {
         Err(RegistrationError(
             "chat hooks unsupported by this registrar".into(),
         ))
+    }
+    fn damage_policy(
+        &mut self,
+        _registration: player_health::DamageRegistration,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError("damage policies unsupported".into()))
+    }
+    fn health_hook(
+        &mut self,
+        _registration: player_health::HookRegistration,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError("health hooks unsupported".into()))
     }
     fn model_asset(&mut self, _model: model::ModelAsset) -> Result<(), RegistrationError> {
         Err(RegistrationError(

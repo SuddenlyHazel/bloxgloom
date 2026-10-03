@@ -39,7 +39,25 @@ pub(in crate::server) fn join_named_client(
         Some(inventory) => inventory.clone(),
         None => loaded_inventory,
     };
-    let position = match state.position_store.load(profile)? {
+    let health = super::health::view(&state.system_runtime, profile)?;
+    let health_cell = super::health::capture_profile(&state.system_runtime, profile)?;
+    let health_state = bloxgloom_host_api::player_health::State::decode(&health_cell.state.data)
+        .map_err(io::Error::other)?;
+    let saved = state.position_store.load_with_life(profile)?;
+    if saved.is_some_and(|value| value.1 > health_state.life) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "position life exceeds durable health life",
+        ));
+    }
+    let recover_checkpoint = health_state
+        .respawn
+        .is_some_and(|(life, _)| saved.is_none_or(|value| value.1 < life));
+    let saved = match health_state.respawn {
+        Some((life, position)) if saved.is_none_or(|v| v.1 < life) => Some(position),
+        _ => saved.map(|v| v.0),
+    };
+    let position = match saved {
         Some(saved) => match spawn::collides_cached(state, saved)? {
             Some(false) => saved,
             Some(true) => spawn_position_cached(state)?,
@@ -64,6 +82,15 @@ pub(in crate::server) fn join_named_client(
         &inventory,
         appearance.legacy(),
     )?;
+    if recover_checkpoint {
+        let life = health_state
+            .respawn
+            .expect("validated pending checkpoint")
+            .0;
+        state
+            .position_store
+            .save_with_life(profile, position, life)?;
+    }
     let id = state.next_id;
     let next_id = crate::server::session_ids::next_after(id)?;
     let socket = socket.try_clone()?;
@@ -111,6 +138,11 @@ pub(in crate::server) fn join_named_client(
         },
         ServerMessage::Weather {
             snapshot: state.weather.snapshot(),
+        },
+        ServerMessage::PlayerHealth {
+            profile,
+            session: action_epoch,
+            health,
         },
     ] {
         if sender.try_send(message).is_err() {
@@ -196,6 +228,7 @@ pub(in crate::server) fn join_named_client(
             movement: MovementState::new(position, 0),
             pending_moves: VecDeque::new(),
             movement_reset: Default::default(),
+            health,
         },
     );
     if let Err(error) = state.queue_player_entity_deltas(vec![spawn_delta]) {

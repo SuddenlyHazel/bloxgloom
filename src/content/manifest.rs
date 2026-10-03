@@ -233,6 +233,11 @@ impl ContentManifest {
         resolved.player_rules = local.player_rules();
         resolved.player_selection = local.player_selection.clone();
         resolved.player_appearance = local.player_appearance.clone();
+        // Numeric remapping must retain frozen transient server rules too.
+        resolved.regions = local.regions.clone();
+        resolved.chat_hooks = local.chat_hooks.clone();
+        resolved.damage_policies = local.damage_policies.clone();
+        resolved.health_hooks = local.health_hooks.clone();
         for entry in self.entries.iter().filter(|entry| entry.kind == b'Q') {
             if let Some(registration) = local
                 .player_lifecycles

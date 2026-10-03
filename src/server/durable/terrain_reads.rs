@@ -114,7 +114,12 @@ impl TerrainReads {
                 ));
             }
         } else {
-            if self.profiles.len() >= 64 {
+            // One builtin actor health fence is compulsory for every gameplay
+            // action; retain the existing 64 package-profile read capacity.
+            let health_fence = usize::from(self.profiles.keys().any(|(system, _)| {
+                system.as_str() == bloxgloom_host_api::player_health::PROFILE_SYSTEM
+            }));
+            if self.profiles.len().saturating_sub(health_fence) >= 64 {
                 return Err(io::Error::new(
                     ErrorKind::QuotaExceeded,
                     "profile read budget exceeded",

@@ -14,6 +14,8 @@ pub(crate) struct Registration {
     player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
     regions: Vec<bloxgloom_host_api::regions::Registration>,
     chat_hooks: Vec<bloxgloom_host_api::chat::Registration>,
+    damage_policies: Vec<bloxgloom_host_api::player_health::DamageRegistration>,
+    health_hooks: Vec<bloxgloom_host_api::player_health::HookRegistration>,
     gameplay_observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     gameplay_entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     gameplay_handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
@@ -38,6 +40,24 @@ impl Registrar for Registration {
         self.room()?;
         registration.validate()?;
         self.regions.push(registration);
+        Ok(())
+    }
+    fn damage_policy(
+        &mut self,
+        registration: bloxgloom_host_api::player_health::DamageRegistration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        registration.validate()?;
+        self.damage_policies.push(registration);
+        Ok(())
+    }
+    fn health_hook(
+        &mut self,
+        registration: bloxgloom_host_api::player_health::HookRegistration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        registration.validate()?;
+        self.health_hooks.push(registration);
         Ok(())
     }
     fn chat_hook(
@@ -295,6 +315,8 @@ impl Registration {
             + self.player_lifecycles.len()
             + self.regions.len()
             + self.chat_hooks.len()
+            + self.damage_policies.len()
+            + self.health_hooks.len()
             + self.cubes.len()
             + self.definitions.len()
             + self.screens.len()
@@ -469,6 +491,12 @@ impl Registration {
             .extend(registration.definitions.clone());
         for region in &registration.regions {
             candidate.register_region(region.clone())?;
+        }
+        for policy in &registration.damage_policies {
+            candidate.register_damage_policy(policy.clone())?;
+        }
+        for hook in &registration.health_hooks {
+            candidate.register_health_hook(hook.clone())?;
         }
         for hook in &registration.chat_hooks {
             candidate.register_chat_hook(hook.clone())?;

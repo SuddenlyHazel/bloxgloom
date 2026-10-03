@@ -3,6 +3,7 @@
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error};
 pub(crate) mod admin;
 pub(crate) mod drop_stack;
+pub(crate) mod respawn;
 pub(crate) mod slot_move;
 
 pub(crate) struct Pickup;

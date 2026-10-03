@@ -20,6 +20,7 @@ impl ClientApp {
         self.flight = Default::default();
         self.chat = Default::default();
         self.movement_modifiers = Default::default();
+        self.health = bloxgloom_host_api::player_health::View::new(Default::default(), 0);
         if let Some(lane) = self.player_services.take() {
             lane.close(self.failure.as_deref().unwrap_or("session retired"));
         }

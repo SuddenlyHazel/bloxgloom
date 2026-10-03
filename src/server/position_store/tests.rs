@@ -69,3 +69,12 @@ fn position_checkpoint_does_not_share_inventory_temp_namespace() {
         b"in-progress inventory checkpoint"
     );
 }
+
+#[test]
+fn player_health_respawn_position_watermark_survives_later_normal_saves() {
+    let save = TestSave::new();
+    let store = PositionStore::new(&save.0).unwrap();
+    store.save_with_life(1, [4.5, 80., 0.5], 3).unwrap();
+    store.save(1, [6.5, 80., 0.5]).unwrap();
+    assert_eq!(store.load_with_life(1).unwrap(), Some(([6.5, 80., 0.5], 3)));
+}

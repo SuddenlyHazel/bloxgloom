@@ -89,6 +89,7 @@ pub(in crate::server) fn plan_event(
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            spawn_anchor: None,
             actor_inventory_revision: None,
             profile_inventories: moving.then_some(crate::server::gameplay::InventoryCapture {
                 clients: &state.clients,

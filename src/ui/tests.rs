@@ -14,6 +14,7 @@ fn joining_controls_fit_and_long_failures_keep_geometry_bounded() {
         for screen in [UiScreen::Joining, UiScreen::JoinFailed] {
             let layout = UiLayout::new(width, height, scale, screen);
             let frame = UiFrame {
+                health: None,
                 chat: None,
                 show_crosshair: true,
                 character: None,
@@ -60,6 +61,7 @@ fn maximum_registered_container_layout_and_geometry_stay_bounded() {
             UiLayout::new(width, height, scale, UiScreen::Container).with_container(Some(&screen));
         let stack = crate::inventory::Stack::new(crate::items::STICK, 128);
         let frame = UiFrame {
+            health: None,
             chat: None,
             show_crosshair: true,
             character: None,
@@ -495,6 +497,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             UiScreen::Graphics,
         ] {
             let frame = UiFrame {
+                health: None,
                 chat: None,
                 show_crosshair: true,
                 character: None,

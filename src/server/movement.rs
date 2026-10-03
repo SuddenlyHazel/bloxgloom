@@ -18,7 +18,7 @@ mod stance;
 pub(super) use stance::clear as clear_stance;
 mod teleport;
 pub(super) use coordinator::advance_players;
-pub(super) use teleport::{Reset, ready as movement_ready, teleport};
+pub(super) use teleport::{Reset, ready as movement_ready, teleport, teleport_respawn};
 
 /// Work executed by the player-movement worker pool in one simulation tick.
 /// The capacity denominator spans dispatch through the completed barrier;

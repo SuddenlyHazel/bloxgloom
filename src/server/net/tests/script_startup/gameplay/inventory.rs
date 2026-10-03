@@ -352,6 +352,7 @@ fn actor(state: &mut State, inventory: Inventory) -> TcpStream {
             movement: crate::server::movement::MovementState::new([0.5, 80., 0.5], 0),
             pending_moves: Default::default(),
             movement_reset: Default::default(),
+            health: bloxgloom_host_api::player_health::View::new(Default::default(), 0),
         },
     );
     peer
@@ -506,6 +507,7 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
             }),
         },
         Participants {
+            spawn_anchor: None,
             actor_inventory_revision: None,
             profile_inventories: None,
             profile_services: None,

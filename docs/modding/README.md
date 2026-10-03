@@ -19,6 +19,7 @@ impact on larger mods.
 - [Item visuals](item-visuals.md): bitmap icons and per-stack presentation callbacks.
 - [Native GLB models](AUTHORED-MODELS.md): authored clips, appearance layers and color controls.
 - [Player world rules](PLAYER-WORLD.md): transactional region hooks and bounded moderated chat.
+- [Health and respawn](PLAYER-HEALTH.md): transactional damage/heal, pure policies, death hooks and native manual respawn.
 - [Player modifiers](PLAYER-MODIFIERS.md): profile/session movement effects with optional expiry.
 - [Packaged player models](PLAYER-MODELS.md): native character selection, named looks and baked clips.
 - [Packaged GLB creatures](GLB-CREATURES.md): verified model delivery, replicated

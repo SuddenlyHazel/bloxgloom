@@ -10,6 +10,10 @@ pub struct PlayerOperation {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerOperationKind {
+    HealthChanged {
+        health: crate::player_health::View,
+        respawn_position: Option<[f32; 3]>,
+    },
     SessionModifier {
         key: String,
         value: Option<crate::player_modifiers::Effect>,

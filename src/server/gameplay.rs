@@ -6,6 +6,7 @@ use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, Snapshot};
 use std::io;
 mod entities;
 mod entity_inventory;
+mod health;
 pub(in crate::server) mod inventory;
 mod motion;
 mod player_inventory;
@@ -16,6 +17,7 @@ pub(in crate::server) use player_inventory::Capture as InventoryCapture;
 pub(in crate::server) use players::{PlayerDecision, invoke as invoke_player};
 
 pub(super) struct Participants<'a> {
+    pub spawn_anchor: Option<[f32; 3]>,
     /// Original actor revision when native work precedes the callback overlay.
     pub actor_inventory_revision: Option<u64>,
     pub profile_inventories: Option<InventoryCapture<'a>>,
@@ -60,6 +62,7 @@ pub(super) fn error(error: Error) -> io::Error {
 }
 
 struct WorldSnapshot<'a> {
+    spawn_anchor: Option<[f32; 3]>,
     actor_inventory_revision: Option<u64>,
     profile_inventories: Option<InventoryCapture<'a>>,
     profile_inventory_before: std::collections::BTreeMap<u128, crate::inventory::Inventory>,
@@ -84,6 +87,38 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn native_respawn_position(&mut self) -> Result<[f32; 3], Error> {
+        self.find_respawn()
+    }
+
+    fn player_health_cell(
+        &mut self,
+        profile: u128,
+    ) -> Result<bloxgloom_host_api::gameplay::ProfileCell, Error> {
+        if profile == 0 {
+            return Err(Error::Invalid("invalid health profile".into()));
+        }
+        let runtime = self
+            .profile_services
+            .ok_or_else(|| Error::Invalid("health profile state unavailable".into()))?;
+        let cell = super::players::health::capture_profile(runtime, profile)
+            .map_err(|e| Error::Host(e.to_string()))?;
+        self.reads
+            .profile(
+                &super::players::health::system(),
+                profile,
+                cell.initialized.then_some(cell.revision),
+            )
+            .map_err(|e| Error::Invalid(e.to_string()))?;
+        Ok(cell)
+    }
+    fn damage_policies(&self) -> Vec<bloxgloom_host_api::player_health::DamageRegistration> {
+        self.world.catalog().damage_policies().cloned().collect()
+    }
+    fn health_hooks(&self) -> Vec<bloxgloom_host_api::player_health::HookRegistration> {
+        self.world.catalog().health_hooks().cloned().collect()
+    }
+
     fn player_modifier_state(
         &mut self,
         namespace: &str,
@@ -556,6 +591,7 @@ pub(super) fn plan_with_lifecycles(
     // for existing harvest behavior; an expanded overlay is prepared below.
     let prepared = world.prepare_edits(edits)?;
     let mut snapshot = WorldSnapshot {
+        spawn_anchor: participants.spawn_anchor,
         actor_inventory_revision: participants.actor_inventory_revision,
         profile_inventories: participants.profile_inventories,
         profile_inventory_before: Default::default(),
@@ -593,6 +629,20 @@ pub(super) fn plan_with_lifecycles(
         seed,
         origins,
     };
+    if let Some((profile, _)) = actor
+        && snapshot.profile_services.is_some()
+    {
+        let health = snapshot.player_health_cell(profile).map_err(error)?;
+        let health = bloxgloom_host_api::player_health::State::decode(&health.state.data)
+            .map_err(io::Error::other)?;
+        let respawn = matches!(&action,Some(Event::ActionRequested{action,..}) if action==crate::gameplay::respawn::KEY);
+        if !health.alive() && !respawn {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "player is dead",
+            ));
+        }
+    }
     let mut context = Context::new(&mut snapshot, 4096);
     let mut placements = Vec::new();
     for &(x, y, z, state) in edits {

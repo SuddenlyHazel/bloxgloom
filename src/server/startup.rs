@@ -326,6 +326,7 @@ impl ServerStartup {
             )?);
         }
         configs.push(super::players::modifiers::config()?);
+        configs.push(super::players::health::config()?);
         for registration in self.catalog.player_lifecycles() {
             configs.push(super::players::state::config(registration)?);
         }

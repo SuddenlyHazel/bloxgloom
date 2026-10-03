@@ -1,0 +1,10 @@
+format 1
+package demo
+version 1.0.0
+entry main
+module main main.luau
+module action action.luau
+module hooks hooks.luau
+module damage damage.luau
+requires bloxgloom:players/v1
+requires bloxgloom:actions/v1

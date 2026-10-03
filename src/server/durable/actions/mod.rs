@@ -32,10 +32,21 @@ pub(in crate::server) fn plan_durable_request(
 ) -> io::Result<Option<CommitAction>> {
     match request {
         DurableRequest::Ecology { cell, rule } => ecology::plan(state, *cell, *rule, tick),
-        DurableRequest::Command { id, message, .. } => {
+        DurableRequest::Command {
+            id, message, life, ..
+        } => {
             let Some(client) = state.clients.get(id) else {
                 return Ok(None);
             };
+            let health =
+                crate::server::players::health::view(&state.system_runtime, client.profile)?;
+            if *life != health.life || (!health.alive && !crate::protocol::respawn_intent(message))
+            {
+                return Err(io::Error::new(
+                    ErrorKind::PermissionDenied,
+                    "stale life or player is dead",
+                ));
+            }
             let profile = client.profile;
             let action_id = match message {
                 ClientMessage::SetWorldTime { action_id, .. }
@@ -70,7 +81,7 @@ pub(in crate::server) fn plan_durable_request(
             // Keep the wire receipt identity, but resolve stock commands through
             // the same frozen action registry and gameplay context as packages.
             // Only edits retain their separate host reach/placement validation.
-            match message {
+            let result = match message {
                 ClientMessage::SetWorldTime { elapsed_ms, .. } => registered::plan_request(
                     state,
                     *id,
@@ -243,7 +254,20 @@ pub(in crate::server) fn plan_durable_request(
                 )
                 .map(Some),
                 _ => unreachable!(),
+            };
+            let mut action = result?;
+            if let Some(action) = &mut action {
+                let cell = crate::server::players::health::capture_profile(
+                    &state.system_runtime,
+                    profile,
+                )?;
+                action.terrain_reads.profile(
+                    &crate::server::players::health::system(),
+                    profile,
+                    cell.initialized.then_some(cell.revision),
+                )?;
             }
+            Ok(action)
         }
         DurableRequest::Pickup { id } => gameplay_pickup::plan(state, *id, tick.get()),
         DurableRequest::Expire => {
@@ -591,9 +615,10 @@ fn plan_gameplay_removals(
             action: None,
         },
         crate::server::gameplay::Participants {
+            spawn_anchor: None,
             actor_inventory_revision: Some(actor.2),
             profile_inventories: None,
-            profile_services: None,
+            profile_services: Some(&state.system_runtime),
             player_modifiers: None,
             players: &[],
             action_id: None,

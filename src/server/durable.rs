@@ -293,6 +293,7 @@ pub(super) enum DurableRequest {
         rule: crate::server::ecology::Rule,
     },
     Command {
+        life: u64,
         id: u64,
         message: ClientMessage,
         queued_at: Instant,
@@ -477,6 +478,12 @@ impl Durability {
 
     pub(super) fn profile_reserved(&self, profile: u128) -> bool {
         self.reserved.contains(&inventory_state_key(profile))
+            || self
+                .reserved
+                .contains(&crate::server::runtime::owner_codec::owner_state_key(
+                    &crate::server::players::health::system(),
+                    crate::server::parallel::OwnerKey::Profile(profile),
+                ))
             || self.catalog.player_lifecycles().any(|reg| {
                 crate::server::registry::SystemId::new(&reg.key).is_ok_and(|system| {
                     self.reserved

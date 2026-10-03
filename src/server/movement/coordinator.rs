@@ -17,6 +17,10 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
     let rules = state.world.catalog().player_rules();
     let mut active = Vec::new();
     for (&id, client) in &mut state.clients {
+        if !client.health.alive {
+            client.pending_moves.clear();
+            continue;
+        }
         if (client.movement_reset.pending || client.pending_moves.is_empty())
             && !client.movement.stance_pending()
             && client.movement.flying()

@@ -718,6 +718,26 @@ impl Catalog {
             })
             .expect("builtin pickup decision");
         catalog
+            .register_action(bloxgloom_host_api::actions::Action {
+                key: crate::gameplay::respawn::KEY.into(),
+                version: 1,
+                label: "Respawn".into(),
+                target: bloxgloom_host_api::actions::Target::Empty,
+                operation: bloxgloom_host_api::actions::Operation::Gameplay,
+                panel: None,
+                command: None,
+            })
+            .expect("builtin respawn action");
+        catalog
+            .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                key: crate::gameplay::respawn::KEY.into(),
+                version: 1,
+                event: bloxgloom_host_api::gameplay::EventKind::ActionRequested,
+                target: Some(crate::gameplay::respawn::KEY.into()),
+                handler: std::sync::Arc::new(crate::gameplay::respawn::Respawn),
+            })
+            .expect("builtin respawn handler");
+        catalog
     }
 }
 

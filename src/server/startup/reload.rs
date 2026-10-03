@@ -6,6 +6,7 @@ pub(in crate::server) struct Contract {
     catalog: u64,
     regions: Vec<(String, Vec<u8>)>,
     chat: Vec<(String, u64)>,
+    health: Vec<(u8, String, u64)>,
     creatures: Vec<(String, Vec<u8>)>,
     systems: Vec<SystemDescriptor>,
     codecs: Vec<(SystemId, u16, usize)>,
@@ -26,6 +27,16 @@ impl ServerStartup {
                 .catalog
                 .chat_hooks()
                 .map(|h| (h.key.clone(), h.revision))
+                .collect(),
+            health: self
+                .catalog
+                .damage_policies()
+                .map(|v| (0, v.key.clone(), v.revision))
+                .chain(
+                    self.catalog
+                        .health_hooks()
+                        .map(|v| (1, v.key.clone(), v.revision)),
+                )
                 .collect(),
             creatures: self
                 .catalog

@@ -10,8 +10,8 @@ asset sound motor assets/sounds/motor.wav
 A package named `factory` registers that clip as `factory:motor`. File paths never
 cross the wire or reach gameplay callbacks. The existing exact bundle hash,
 streaming verification and dependency checks cover audio bytes. Audio uses asset
-tag 10 in the existing canonical bundle grammars; wire version 31 and client
-runtime contract 13 require matching clients before downloading a bundle.
+tag 10 in the existing canonical bundle grammars; wire version 32 and client
+runtime contract 14 require matching clients before downloading a bundle.
 No save schema or numeric content IDs change.
 
 WAV accepts mono/stereo integer PCM at 8/16/24/32 bits or 32-bit float, 8–192 kHz.

@@ -32,7 +32,7 @@ settings exports current controls to the clipboard. Reset restores bypass defaul
 For one local process:
 
 ```sh
-cargo run --release -- local-packages fixtures/audio-machine/packages /tmp/bloxgloom-audio-mixer-test-v25
+cargo run --release -- local-packages fixtures/audio-machine/packages /tmp/bloxgloom-audio-mixer-test-v26
 ```
 
 `server/machine.luau` stages one-shots with state updates through `host.sound`.

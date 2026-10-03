@@ -15,6 +15,13 @@ pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) -> io::
             continue;
         };
         let (kicked, text) = match operation.kind {
+            PlayerOperationKind::HealthChanged {
+                health,
+                respawn_position,
+            } => {
+                super::health::publish(state, id, health, respawn_position)?;
+                continue;
+            }
             PlayerOperationKind::SessionModifier { key, value } => {
                 state.player_modifiers.apply(
                     operation.profile,

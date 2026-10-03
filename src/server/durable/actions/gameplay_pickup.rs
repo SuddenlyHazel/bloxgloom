@@ -13,6 +13,9 @@ pub(super) fn plan(
     let Some(client) = state.clients.get(&client_id) else {
         return Ok(None);
     };
+    if !client.health.alive {
+        return Ok(None);
+    }
     if state.durability.profile_reserved(client.profile) {
         return Err(io::Error::new(
             ErrorKind::WouldBlock,
@@ -61,9 +64,10 @@ pub(super) fn plan(
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            spawn_anchor: None,
             actor_inventory_revision: None,
             profile_inventories: None,
-            profile_services: None,
+            profile_services: Some(&state.system_runtime),
             player_modifiers: None,
             players: &[],
             action_id: None,

@@ -50,6 +50,7 @@ fn runtime_tools_action_retry_keeps_module_randomness_across_ticks_and_log_press
                 }),
             },
             Participants {
+                spawn_anchor: None,
                 actor_inventory_revision: None,
                 profile_inventories: None,
                 profile_services: None,

@@ -4,6 +4,7 @@ pub(super) mod admission;
 mod callbacks;
 pub(super) mod chat;
 pub(super) mod delivery;
+pub(super) mod health;
 pub(super) mod inventory;
 mod lifecycle;
 pub(super) mod modifiers;
