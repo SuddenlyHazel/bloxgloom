@@ -21,6 +21,7 @@ impl ClientApp {
         if !self.admin_enabled || self.flight.pending.is_some() {
             return;
         }
+        self.cancel_sprint();
         let flying = !self.flight.flying;
         if self.network.send(ClientMessage::SetFlying { flying }) {
             self.flight.pending = Some(flying);
@@ -28,6 +29,7 @@ impl ClientApp {
     }
     pub(in crate::client) fn accept_flying(&mut self, flying: bool) {
         let requested = self.flight.pending.take();
+        self.cancel_sprint();
         self.flight.flying = flying;
         if !flying {
             for (_, delta) in &mut self.unacked {

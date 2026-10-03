@@ -42,6 +42,7 @@ pub(in crate::server) fn teleport(
     client.pending_moves.clear();
     let crouching = client.movement.crouching;
     let requested = client.movement.requested_crouch;
+    let was_sprinting = client.movement.sprinting();
     let flying = client.movement.flying;
     client.movement = MovementState::new(position, floor);
     client.movement.crouching = crouching;
@@ -63,6 +64,9 @@ pub(in crate::server) fn teleport(
         reset: generation,
         position,
     });
+    if was_sprinting {
+        super::sprint::broadcast(state, id, false);
+    }
     if let Some(delta) = delta {
         state.queue_player_entity_deltas(vec![delta])?;
     }

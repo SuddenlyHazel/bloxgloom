@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn sprint_wire_checks_bool_identity_and_estimated_frame_size() {
+    for sprinting in [false, true] {
+        let request = ClientMessage::SetSprinting { sprinting };
+        let mut bytes = Vec::new();
+        write_client(&mut bytes, &request).unwrap();
+        assert_eq!(read_client(bytes.as_slice()).unwrap(), request);
+        *bytes.last_mut().unwrap() = 2;
+        assert!(read_client(bytes.as_slice()).is_err());
+        let mut bytes = Vec::new();
+        let response = ServerMessage::PlayerSprint {
+            entity_id: (1 << 63) | 5,
+            sprinting,
+        };
+        write_server(&mut bytes, &response).unwrap();
+        assert_eq!(bytes.len(), server_wire_len(&response));
+        assert!(
+            matches!(read_server(bytes.as_slice()).unwrap(), ServerMessage::PlayerSprint { entity_id, sprinting: actual } if entity_id == (1 << 63) | 5 && actual == sprinting)
+        );
+        *bytes.last_mut().unwrap() = 2;
+        assert!(read_server(bytes.as_slice()).is_err());
+    }
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::PlayerSprint {
+                entity_id: 5,
+                sprinting: true
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn flight_mode_and_jump_wire_validate_boolean_and_frame_size() {
     for flying in [false, true] {
         let request = ClientMessage::SetFlying { flying };

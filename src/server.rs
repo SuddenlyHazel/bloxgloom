@@ -302,6 +302,9 @@ impl State {
     fn remove_client(&mut self, id: u64) -> Option<Client> {
         players::leaving(self, id);
         let client = self.clients.remove(&id)?;
+        if client.movement.sprinting() {
+            movement::sprint::broadcast(self, id, false);
+        }
         if client.movement.crouching() {
             movement::clear_stance(self, id);
         }
@@ -706,6 +709,13 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             if let Some(client) = state.clients.get_mut(&id) {
                 client.movement.request_crouch(crouching);
             }
+            if crouching {
+                movement::sprint::stop(state, id);
+            }
+            Ok(())
+        }
+        ClientMessage::SetSprinting { sprinting } => {
+            movement::sprint::set_sprinting(state, id, sprinting);
             Ok(())
         }
         ClientMessage::SetFlying { flying } => {

@@ -519,8 +519,8 @@ impl ClientApp {
                         return;
                     }
                     match code {
-                        KeyCode::KeyW => self.keys.forward = pressed,
-                        KeyCode::KeyS => self.keys.back = pressed,
+                        KeyCode::KeyW => self.forward_input(pressed, event.repeat, Instant::now()),
+                        KeyCode::KeyS => self.backward_input(pressed),
                         KeyCode::KeyA => self.keys.left = pressed,
                         KeyCode::KeyD => self.keys.right = pressed,
                         KeyCode::Space => {

@@ -6,6 +6,7 @@ use glam::Vec3;
 use std::collections::HashMap;
 use std::sync::Arc;
 pub(super) mod flight;
+pub(super) mod sprint;
 mod teleport;
 
 #[cfg(test)]

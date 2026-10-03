@@ -64,6 +64,7 @@ impl Track {
             || previous.avatar.cosmetics != avatar.cosmetics
             || previous.avatar.character_recipe != avatar.character_recipe
             || previous.avatar.model_pose != avatar.model_pose
+            || previous.avatar.character_pose[3] != avatar.character_pose[3]
         {
             if now.duration_since(previous.at) > Duration::from_millis(200) {
                 self.samples.clear();
@@ -141,10 +142,9 @@ impl Track {
             visual.character_pose[0] = self.stride;
             visual.character_pose[1] = self.age;
             visual.character_pose[2] = self.gait;
-            // No sprint intent is replicated: derive the gait from actual
-            // presented ground speed. Custom movement rates remain supported.
-            let speed = if dt > 0.0 { distance / dt } else { 0.0 };
-            let running = ((speed - 3.5) / 3.5).clamp(0.0, 1.0) * moving;
+            // The server-approved sprint state chooses the baked run clip.
+            // Presented distance still stops feet at walls and stale snapshots.
+            let running = visual.character_pose[3].clamp(0.0, 1.0) * moving;
             self.run += (running - self.run) * (1.0 - (-10.0 * dt).exp());
             visual.character_pose[3] = self.run;
             self.crouch += (avatar.character_crouch - self.crouch) * (1.0 - (-16.0 * dt).exp());

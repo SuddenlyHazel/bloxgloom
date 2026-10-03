@@ -23,6 +23,45 @@ fn walking(y: f32) -> MovementState {
 }
 
 #[test]
+fn sprint_rate_is_authoritative_bounded_and_cannot_bank_faster_credit_after_stopping() {
+    let terrain = floor(false);
+    let walk = process_movement_batch(&terrain, walking(1.0), &[command(1, [0.24, 0.0, 0.0])]);
+    assert_eq!(walk.consumed, 0);
+    let mut state = walking(1.0);
+    assert!(state.request_sprint(true));
+    let sprint = process_movement_batch(&terrain, state, &[command(1, [0.24, 0.0, 0.0])]);
+    assert_eq!(sprint.consumed, 1);
+    assert_eq!(sprint.state.position()[1], 1.0);
+    close(sprint.state.position()[0], 1.74);
+    state = sprint.state;
+    for _ in 0..20 {
+        state.advance_idle_tick(terrain.player_rules());
+    }
+    let credit = state.credit_nanoblocks();
+    assert!(!state.request_sprint(true));
+    assert_eq!(
+        state.credit_nanoblocks(),
+        credit,
+        "duplicate requests cannot refill credit"
+    );
+    assert!(state.request_sprint(false));
+    assert_eq!(state.credit_nanoblocks(), 0);
+    assert_eq!(
+        process_movement_batch(&terrain, state, &[command(2, [0.24, 0.0, 0.0])]).consumed,
+        0
+    );
+    state.request_crouch(true);
+    assert!(!state.request_sprint(true));
+    state = MovementState::new([1.5, 1.0, 1.5], 0);
+    assert!(!state.request_sprint(true), "flight cannot sprint");
+    let mut state = walking(1.0);
+    state.request_sprint(true);
+    let excessive = process_movement_batch(&terrain, state, &[command(1, [4.0, 0.0, 0.0])]);
+    assert_eq!(excessive.acknowledgments[0].kind, AckKind::Rejected);
+    assert_eq!(excessive.state.position(), [1.5, 1.0, 1.5]);
+}
+
+#[test]
 fn walking_idle_gravity_accelerates_and_lands_exactly_without_command_credit() {
     let terrain = floor(false);
     let mut state = walking(6.0);

@@ -276,6 +276,8 @@ pub(crate) use lifecycle::tests::exercise_player_services;
 #[cfg(test)]
 pub(crate) use movement::flight::tests::exercise_player_flight;
 #[cfg(test)]
+pub(crate) use movement::sprint::tests::exercise_player_sprint;
+#[cfg(test)]
 pub(crate) use movement::teleport_tests::exercise_player_teleport;
 mod lod;
 mod mesh_queue;
@@ -349,6 +351,8 @@ struct ClientApp {
     weather: weather::State,
     owned_entity_id: Option<u64>,
     player_stances: BTreeMap<u64, bool>,
+    player_sprints: BTreeMap<u64, bool>,
+    sprint: movement::sprint::Sprint,
     crouch_requested: bool,
     flight: movement::flight::Flight,
     player_roster: Vec<crate::protocol::PlayerSummary>,
@@ -451,6 +455,8 @@ impl ClientApp {
             weather: weather::State::default(),
             owned_entity_id: None,
             player_stances: BTreeMap::new(),
+            player_sprints: BTreeMap::new(),
+            sprint: Default::default(),
             crouch_requested: false,
             flight: Default::default(),
             player_roster: vec![],
@@ -528,6 +534,7 @@ impl ClientApp {
             self.admin_binding_mode = false;
             self.admin_binding_selected = None;
         }
+        self.cancel_sprint();
         self.keys = Keys::default();
         self.next_break = None;
         self.focused_control = None;
@@ -957,6 +964,9 @@ impl ClientApp {
 
     fn set_grab(&mut self, grab: bool) {
         if !grab {
+            self.cancel_sprint();
+            self.keys = Keys::default();
+            self.grabbed = false;
             self.next_break = None;
             self.request_crouch(false);
         }
@@ -1191,6 +1201,10 @@ impl ClientApp {
                     self.player_stances.remove(&entity_id);
                 }
             }
+            ServerMessage::PlayerSprint {
+                entity_id,
+                sprinting,
+            } => self.accept_sprint(entity_id, sprinting),
             ServerMessage::FlyingMode { flying } => self.accept_flying(flying),
             ServerMessage::ActionSession {
                 epoch,
@@ -1646,7 +1660,7 @@ impl ClientApp {
             * self
                 .catalog
                 .player_rules()
-                .for_stance(self.crouching())
+                .for_movement(self.crouching(), self.sprinting())
                 .motion()
                 .intent_blocks_per_second
             * dt.min(0.05);
@@ -2022,6 +2036,11 @@ impl ClientApp {
         self.prepare_local_avatar(&mut visual_avatars);
         for avatar in &mut visual_avatars {
             avatar.character_crouch = if self.player_stances.contains_key(&avatar.id) {
+                1.0
+            } else {
+                0.0
+            };
+            avatar.character_pose[3] = if self.player_sprints.contains_key(&avatar.id) {
                 1.0
             } else {
                 0.0

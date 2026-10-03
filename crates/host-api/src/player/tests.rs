@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn sprint_rates_preserve_geometry_crouch_precedence_and_validated_burst_bound() {
+    let sprint = BUILTIN_RULES.for_movement(false, true);
+    sprint.validate().unwrap();
+    assert_eq!(sprint.body(), BUILTIN_BODY);
+    assert_eq!(sprint.motion().intent_blocks_per_second, 12.0);
+    assert_eq!(sprint.motion().budget_blocks_per_second, 15.0);
+    assert_eq!(
+        BUILTIN_RULES.for_movement(true, true),
+        BUILTIN_RULES.for_stance(true)
+    );
+    let fast = PlayerRules::new(
+        BUILTIN_BODY,
+        MotionRates {
+            intent_blocks_per_second: 15.0,
+            budget_blocks_per_second: 16.0,
+        },
+        BUILTIN_SPAWN,
+        1.6,
+    )
+    .unwrap();
+    assert_eq!(fast.for_movement(false, true), fast);
+    fast.for_movement(false, true).validate().unwrap();
+    assert_eq!(
+        PlayerRules::from_canonical_bytes(BUILTIN_RULES.canonical_bytes()).unwrap(),
+        BUILTIN_RULES
+    );
+}
+
+#[test]
 fn crouch_stance_derives_body_eye_and_rates_without_changing_frozen_contract() {
     let crouched = BUILTIN_RULES.for_stance(true);
     crouched.validate().unwrap();

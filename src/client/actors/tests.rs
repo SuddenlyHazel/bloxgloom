@@ -170,31 +170,32 @@ fn switching_actor_model_cannot_reuse_character_gait_or_old_pose() {
 }
 
 #[test]
-fn ground_speed_blends_walk_and_run_but_stale_or_airborne_motion_decays() {
+fn sprint_state_blends_run_but_walking_stale_and_airborne_motion_do_not() {
     let now = Instant::now();
-    let player = |x, airborne| VisualAvatar {
+    let player = |x, airborne, sprinting| VisualAvatar {
         model: AvatarModel::Player,
         airborne,
+        character_pose: [0.0, 0.0, 0.0, if sprinting { 1.0 } else { 0.0 }],
         ..avatar(x)
     };
-    let mut slow = Track::new(player(0.0, false), now);
-    let mut fast = Track::new(player(0.0, false), now);
-    let mut visual = player(0.0, false);
+    let mut slow = Track::new(player(0.0, false, false), now);
+    let mut fast = Track::new(player(0.0, false, false), now);
+    let mut visual = player(0.0, false, false);
     for i in 1..=30 {
         let at = now + STEP * i;
-        let walk = slow.update_mode(player(i as f32 * 0.08, false), at, true);
-        visual = fast.update_mode(player(i as f32 * 0.32, false), at, true);
+        let walk = slow.update_mode(player(i as f32 * 0.32, false, false), at, true);
+        visual = fast.update_mode(player(i as f32 * 0.32, false, true), at, true);
         assert!(walk.character_pose[3] < 0.001);
     }
     assert!(visual.character_pose[3] > 0.99);
     let frozen = visual.position.x;
     for i in 31..=70 {
-        visual = fast.update_mode(player(frozen, false), now + STEP * i, true);
+        visual = fast.update_mode(player(frozen, false, true), now + STEP * i, true);
     }
     assert!(visual.character_pose[2] < 0.001 && visual.character_pose[3] < 0.001);
     for i in 71..=110 {
         visual = fast.update_mode(
-            player(frozen + (i - 70) as f32 * 0.32, true),
+            player(frozen + (i - 70) as f32 * 0.32, true, true),
             now + STEP * i,
             true,
         );

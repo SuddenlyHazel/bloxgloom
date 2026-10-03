@@ -22,7 +22,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 27;
+const WIRE_VERSION: u8 = 28;
 pub(crate) mod lod;
 mod player_states;
 mod players;
@@ -58,6 +58,9 @@ pub enum ClientMessage {
         flying: bool,
     },
     Jump,
+    SetSprinting {
+        sprinting: bool,
+    },
     MovementReady {
         session: u64,
         reset: u64,
@@ -202,6 +205,10 @@ pub enum ServerMessage {
         entity_id: u64,
         crouching: bool,
     },
+    PlayerSprint {
+        entity_id: u64,
+        sprinting: bool,
+    },
     FlyingMode {
         flying: bool,
     },
@@ -325,6 +332,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             ServerMessage::LodInvalidate { .. } => 25,
             ServerMessage::LodInvalidateAll { .. } => 16,
             ServerMessage::PlayerStance { .. } => 8 + 1,
+            ServerMessage::PlayerSprint { .. } => 8 + 1,
             ServerMessage::FlyingMode { .. } => 1,
             ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
@@ -452,6 +460,10 @@ pub fn write_client_with_catalog(
             out.push(u8::from(*flying));
         }
         ClientMessage::Jump => out.push(24),
+        ClientMessage::SetSprinting { sprinting } => {
+            out.push(25);
+            out.push(u8::from(*sprinting));
+        }
         ClientMessage::MovementReady {
             session,
             reset,
@@ -716,6 +728,17 @@ pub fn write_server_with_catalog(
             out.push(27);
             out.extend(entity_id.to_le_bytes());
             out.push(u8::from(*crouching));
+        }
+        ServerMessage::PlayerSprint {
+            entity_id,
+            sprinting,
+        } => {
+            if *entity_id <= 1 << 63 {
+                return Err(invalid("invalid sprint entity"));
+            }
+            out.push(46);
+            out.extend(entity_id.to_le_bytes());
+            out.push(u8::from(*sprinting));
         }
         ServerMessage::FlyingMode { flying } => {
             out.push(45);
@@ -1314,6 +1337,13 @@ pub fn read_client_with_catalog(
             },
         },
         24 => ClientMessage::Jump,
+        25 => ClientMessage::SetSprinting {
+            sprinting: match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid sprint state")),
+            },
+        },
         19 => {
             let recipe = match c.u8()? {
                 0 => None,
@@ -1579,6 +1609,21 @@ pub fn read_server_with_catalog(
             ServerMessage::PlayerStance {
                 entity_id,
                 crouching,
+            }
+        }
+        46 => {
+            let entity_id = c.u64()?;
+            if entity_id <= 1 << 63 {
+                return Err(invalid("invalid sprint entity"));
+            }
+            let sprinting = match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid sprint state")),
+            };
+            ServerMessage::PlayerSprint {
+                entity_id,
+                sprinting,
             }
         }
         45 => ServerMessage::FlyingMode {

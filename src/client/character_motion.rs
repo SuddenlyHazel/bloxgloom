@@ -16,6 +16,9 @@ impl ClientApp {
 
     pub(super) fn request_crouch(&mut self, crouching: bool) {
         let crouching = crouching && self.screen == UiScreen::Playing && self.grabbed;
+        if crouching {
+            self.cancel_sprint();
+        }
         if crouching != self.crouch_requested {
             self.crouch_requested = crouching;
             self.queue_command(ClientMessage::SetCrouching { crouching });

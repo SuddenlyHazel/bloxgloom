@@ -12,6 +12,7 @@ use std::time::Duration;
 mod coordinator;
 mod ground;
 pub(super) use ground::set_flying;
+pub(in crate::server) mod sprint;
 mod stance;
 pub(super) use stance::clear as clear_stance;
 mod teleport;
@@ -55,6 +56,7 @@ pub struct MovementState {
     crouching: bool,
     requested_crouch: bool,
     flying: bool,
+    sprinting: bool,
     vertical_velocity: f32,
     jump_requested: bool,
 }
@@ -68,6 +70,7 @@ impl MovementState {
             crouching: false,
             requested_crouch: false,
             flying: true,
+            sprinting: false,
             vertical_velocity: 0.0,
             jump_requested: false,
         }
@@ -112,7 +115,7 @@ impl MovementState {
     /// job. The coordinator calls exactly one of this or
     /// `process_movement_batch` for each player on each tick.
     pub fn advance_idle_tick(&mut self, rules: PlayerRules) {
-        let rules = rules.for_stance(self.crouching);
+        let rules = rules.for_movement(self.crouching, self.sprinting);
         self.credit_nanoblocks = self
             .credit_nanoblocks
             .saturating_add(credit_per_tick(rules))
@@ -201,7 +204,9 @@ fn process_commands(
     mut state: MovementState,
     commands: &[MovementCommand],
 ) -> MovementBatch {
-    let rules = view.player_rules().for_stance(state.crouching);
+    let rules = view
+        .player_rules()
+        .for_movement(state.crouching, state.sprinting);
 
     let work_count = commands.len().min(MAX_COMMANDS_PER_TICK);
     let mut acknowledgments = Vec::with_capacity(work_count);

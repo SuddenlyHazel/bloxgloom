@@ -50,6 +50,8 @@ mod player;
 mod recipe_browser;
 #[path = "script_startup/showcase.rs"]
 mod showcase;
+#[path = "script_startup/sprint.rs"]
+mod sprint;
 #[path = "script_startup/system.rs"]
 mod system;
 #[path = "script_startup/tags.rs"]

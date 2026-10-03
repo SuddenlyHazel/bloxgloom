@@ -147,6 +147,20 @@ impl PlayerRules {
         self
     }
 
+    /// Ephemeral sprint rates share the same validated burst/collision bounds.
+    /// Crouching takes precedence; the frozen contract and save identity stay fixed.
+    pub fn for_movement(self, crouching: bool, sprinting: bool) -> Self {
+        let mut rules = self.for_stance(crouching);
+        if sprinting && !crouching {
+            let multiplier = (16.0 / rules.motion.budget_blocks_per_second).min(1.5);
+            rules.motion.intent_blocks_per_second =
+                (rules.motion.intent_blocks_per_second * multiplier as f32).min(16.0);
+            rules.motion.budget_blocks_per_second =
+                (rules.motion.budget_blocks_per_second * multiplier).min(16.0);
+        }
+        rules
+    }
+
     pub const fn body(self) -> Body {
         self.body
     }

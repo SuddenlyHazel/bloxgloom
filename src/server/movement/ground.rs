@@ -7,6 +7,14 @@ const TERMINAL_SPEED: f32 = 24.0;
 const JUMP_SPEED: f32 = 8.0;
 
 pub(in crate::server) fn set_flying(state: &mut crate::server::State, id: u64, flying: bool) {
+    if flying
+        && state
+            .clients
+            .get(&id)
+            .is_some_and(|c| state.admin_profile == Some(c.profile))
+    {
+        super::sprint::stop(state, id);
+    }
     if let Some(client) = state.clients.get_mut(&id) {
         if state.admin_profile == Some(client.profile) && client.movement.flying != flying {
             client.movement.flying = flying;

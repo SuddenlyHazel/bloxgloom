@@ -15,6 +15,8 @@ impl ClientApp {
         {
             self.fail_session("Player teleport has wrong session identity");
         } else if reset > self.movement_reset {
+            self.cancel_sprint();
+            self.keys = Default::default();
             self.movement_reset = reset;
             self.unacked.clear();
             self.lod.reset();

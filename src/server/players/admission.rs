@@ -142,7 +142,26 @@ pub(in crate::server) fn join_named_client(
         entity_id: owned_entity_id.get(),
         crouching: false,
     });
-    for message in stances {
+    let mut sprints = state
+        .clients
+        .iter()
+        .filter(|(_, client)| client.movement.sprinting())
+        .map(|(&session, _)| ServerMessage::PlayerSprint {
+            entity_id: crate::server::entities::EntityId::for_player_session(session)
+                .unwrap()
+                .get(),
+            sprinting: true,
+        })
+        .collect::<Vec<_>>();
+    sprints.sort_unstable_by_key(|message| match message {
+        ServerMessage::PlayerSprint { entity_id, .. } => *entity_id,
+        _ => unreachable!(),
+    });
+    sprints.push(ServerMessage::PlayerSprint {
+        entity_id: owned_entity_id.get(),
+        sprinting: false,
+    });
+    for message in stances.into_iter().chain(sprints) {
         if sender.try_send(message).is_err() {
             state.player_entities.discard_session(id);
             return Err(io::Error::new(

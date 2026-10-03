@@ -12,6 +12,9 @@ impl ClientApp {
         self.character_motion = Default::default();
         self.next_break = None;
         self.player_stances.clear();
+        self.player_sprints.clear();
+        self.sprint = Default::default();
+        self.keys = Default::default();
         self.crouch_requested = false;
         self.flight = Default::default();
         if let Some(lane) = self.player_services.take() {
