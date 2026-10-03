@@ -75,9 +75,18 @@ pub(super) fn prepare(
     for _ in 0..16 {
         output = frame(vec![]);
     }
-    if label == "audio-mixer"
-        && let Some(pos) = centre(&output, "Ambient bus")
-    {
+    let display_header = if label == "audio-mixer" {
+        for _ in 0..30 {
+            if centre(&output, "Ambient bus").is_some() {
+                break;
+            }
+            frame(wheel(-60.0));
+            for _ in 0..16 {
+                output = frame(vec![]);
+            }
+        }
+        let pos =
+            centre(&output, "Ambient bus").ok_or("Mixer preview could not reach Ambient bus")?;
         for pressed in [true, false] {
             frame(vec![
                 egui::Event::PointerMoved(pos),
@@ -92,10 +101,13 @@ pub(super) fn prepare(
         for _ in 0..16 {
             output = frame(vec![]);
         }
-    }
+        "Ambient bus"
+    } else {
+        header
+    };
     // Put the expanded section near the top of the scrollable card.
     for _ in 0..3 {
-        if let Some(pos) = centre(&output, header) {
+        if let Some(pos) = centre(&output, display_header) {
             frame(wheel(-(pos.y - size.y.min(720.0) * 0.18)));
         }
         for _ in 0..16 {

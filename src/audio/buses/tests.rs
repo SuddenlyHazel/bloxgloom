@@ -155,8 +155,10 @@ fn session_reset_discards_envelopes_but_retains_bus_configuration() {
 #[test]
 fn nonfinite_inputs_do_not_poison_subsequent_audio() {
     let mut processor = Processor::default();
-    let mut config = MixConfig::default();
-    config.master = enabled();
+    let config = MixConfig {
+        master: enabled(),
+        ..MixConfig::default()
+    };
     processor.set_config(config);
     let output = processor.process([[f32::NAN, f32::INFINITY]; 4], [1.0; 3]);
     assert_eq!(output, [0.0; 2]);

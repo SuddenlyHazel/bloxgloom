@@ -526,7 +526,7 @@ fn mixer_copy_and_reset_use_current_local_controls() {
     frame.settings.audio_mix.master.enabled = true;
     let draw = |events| {
         let mut intents = Vec::new();
-        let output = context.run_ui(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -537,6 +537,7 @@ fn mixer_copy_and_reset_use_current_local_controls() {
             },
             |ui| super::audio_mix::draw(ui, &frame, &mut intents),
         );
+        output.textures_delta.clear();
         (output, intents)
     };
     let click = |pos, pressed| {
