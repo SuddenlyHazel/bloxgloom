@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 mod record;
 pub use record::*;
+mod physics;
+pub use physics::*;
 
 pub const MAX_SPEED: f32 = 64.0;
 pub const MAX_ACCELERATION: f32 = 128.0;
@@ -61,6 +63,7 @@ pub struct MovingEntity {
     pub max_state_bytes: u16,
     pub max_public_bytes: u16,
     pub body: Body,
+    pub physics: Option<Physics>,
     pub lifetime_ticks: u32,
     pub interval: u32,
     pub source_exclusion_ticks: u32,
@@ -77,6 +80,22 @@ impl std::fmt::Debug for MovingEntity {
     }
 }
 impl MovingEntity {
+    /// Conservative terrain capture/spawn envelope under arbitrary rotation.
+    /// Actual rigid-body contacts use the oriented cuboid in Rapier.
+    pub fn capture_half_extents(&self) -> [f32; 3] {
+        if self.physics.is_some() {
+            let radius = self
+                .body
+                .half_extents
+                .iter()
+                .map(|v| v * v)
+                .sum::<f32>()
+                .sqrt();
+            [radius; 3]
+        } else {
+            self.body.half_extents
+        }
+    }
     pub fn validate(&self) -> Result<(), RegistrationError> {
         crate::gameplay::EntityDefinition {
             key: self.key.clone(),
@@ -88,6 +107,15 @@ impl MovingEntity {
         }
         .validate()?;
         self.body.validate()?;
+        if let Some(physics) = self.physics {
+            physics.validate()?;
+            if self.handles_impact || self.body.response == Response::Stop {
+                return Err(RegistrationError(
+                    "rigid bodies require slide/bounce and cannot pause for impact callbacks"
+                        .into(),
+                ));
+            }
+        }
         if self.max_state_bytes > 65000
             || self.max_public_bytes > 4000
             || !(1..=MAX_LIFETIME_TICKS).contains(&self.lifetime_ticks)
@@ -112,7 +140,7 @@ impl MovingEntity {
     /// Frozen collision/model policy participates in catalog compatibility.
     pub fn fingerprint_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![
-            1,
+            2,
             self.body.collisions.terrain as u8,
             self.body.collisions.players as u8,
             self.body.collisions.creatures as u8,
@@ -127,6 +155,17 @@ impl MovingEntity {
             self.body.max_acceleration,
         ]) {
             bytes.extend(value.to_le_bytes());
+        }
+        bytes.push(self.physics.is_some() as u8);
+        if let Some(physics) = self.physics {
+            for value in [
+                physics.linear_damping,
+                physics.angular_damping,
+                physics.friction,
+                physics.max_angular_speed,
+            ] {
+                bytes.extend(value.to_le_bytes());
+            }
         }
         bytes.extend(self.max_state_bytes.to_le_bytes());
         bytes.extend(self.max_public_bytes.to_le_bytes());

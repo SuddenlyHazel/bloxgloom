@@ -27,18 +27,18 @@ pub(super) fn prepare(
         let catalog = catalog.ok_or_else(|| reject("moving owner catalog missing"))?;
         let record = services::spawn_record(catalog, namespace, &spawn, context.tick)
             .map_err(|e| reject(e.to_string()))?;
-        let body = services::declaration(catalog, &spawn.key, namespace)
-            .map_err(|e| reject(e.to_string()))?
-            .body;
+        let declaration = services::declaration(catalog, &spawn.key, namespace)
+            .map_err(|e| reject(e.to_string()))?;
+        let half = declaration.capture_half_extents();
         // Validate complete body against the captured neighborhood before staging.
-        for x in (spawn.position[0] - body.half_extents[0]).floor() as i32
-            ..=(spawn.position[0] + body.half_extents[0]).ceil() as i32 - 1
+        for x in (spawn.position[0] - half[0]).floor() as i32
+            ..=(spawn.position[0] + half[0]).ceil() as i32 - 1
         {
-            for y in (spawn.position[1] - body.half_extents[1]).floor() as i32
-                ..=(spawn.position[1] + body.half_extents[1]).ceil() as i32 - 1
+            for y in (spawn.position[1] - half[1]).floor() as i32
+                ..=(spawn.position[1] + half[1]).ceil() as i32 - 1
             {
-                for z in (spawn.position[2] - body.half_extents[2]).floor() as i32
-                    ..=(spawn.position[2] + body.half_extents[2]).ceil() as i32 - 1
+                for z in (spawn.position[2] - half[2]).floor() as i32
+                    ..=(spawn.position[2] + half[2]).ceil() as i32 - 1
                 {
                     context
                         .block([x, y, z])

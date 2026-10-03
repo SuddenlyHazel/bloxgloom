@@ -46,7 +46,7 @@ binary length equal to `max_state_bytes`; the first `max_public_bytes` are expos
 as public authored bytes. A zero public prefix is allowed. The host separately
 encodes its motion envelope; `c.entity_state` and `c.update_entity` operate on
 authored state rather than that envelope. Use `revision` when behavior or schema
-changes; frozen source and body/model policy also participate in compatibility.
+changes; declared schema/version and body/model policy participate in compatibility.
 
 `model` may be omitted. A declared model has 1–16 colored cuboids, each with
 strictly ordered min/max coordinates within ±4 blocks and RGB values in `[0,1]`.
@@ -83,14 +83,41 @@ commit. Supply the complete launch options and the same key. A reference from
 another invocation is rejected; failed replacement preserves no partial launch.
 
 `c.motion(id)` returns an owned captured pose or nil: position, velocity,
-acceleration, quaternion orientation, exact revision and grounded status. All
+acceleration, quaternion orientation, angular velocity, exact revision and grounded status. All
 nested tables are readonly. `c.motion_contact(id)` separately returns nil or a
 readonly `{motion_revision, tick, target, normal}` captured from the same owned
 record. Contact is historical host input; capture current target state before
 applying a conditional effect. `c.set_motion(id, revision, options)` accepts velocity,
-acceleration and orientation. Revision is a `BloxRevision` token, not a numeric
+acceleration, angular velocity and orientation. Revision is a `BloxRevision` token, not a numeric
 counter. It cannot change position. Other packages' motion cannot be mutated
 through ordinary owned services.
+
+## Opt-in rigid bodies
+
+Add a `physics` table to use Rapier 3D in double precision for oriented cuboid collision, contact friction, linear/angular damping and physical rotation. Omitting it retains the existing axis-aligned projectile solver and response behavior.
+
+```luau
+physics = {
+    linear_damping = 0.2, angular_damping = 0.5,
+    friction = 0.7, max_angular_speed = 4,
+}
+-- Spawn options accept angular_velocity in world-space radians/second:
+c.spawn_moving_entity("demo:crate", {
+    position={2.5,83,0.5}, angular_velocity={0,2,0}, state="C",
+})
+-- Steer with the captured exact motion revision:
+c.set_motion(id, pose.revision, {angular_velocity={1,0,0}})
+```
+
+Damping coefficients must be finite in 0–32, friction in 0–4 and the angular speed cap in 0–8 radians/second. Defaults are zero damping, friction 0.5 and angular cap 8. A zero angular cap locks rotation. Initial orientations must be unit quaternions; explicit orientation changes on active rigid bodies are rejected because they would teleport the collision shape. Use angular velocity instead.
+
+Rigid bodies require `slide` or `bounce` response and cannot declare `handles_impact=true`; startup rejects these unsupported combinations. The legacy impact solver retains its exact first-contact pause and durable callback semantics. Rigid body contact queries expose the captured resolved contact after each step, and ordinary tick/expiry callbacks remain supported.
+
+The server reconstructs a bounded Rapier world from committed motion and sorted captured terrain/player/creature obstacles for each fixed step. Sleeping is disabled. The resulting motion and orientation publish only through the existing revision-fenced WAL entity transaction. Missing terrain defers the step. Angular state survives restart and reaches replicas in the canonical motion projection; clients interpolate committed poses. Rapier owns integration and oriented contact resolution. A rotation-invariant bounding radius conservatively captures terrain and validates spawn space; the actual contact shape is the oriented cuboid. This can reject a spawn in a tight opening even when its current orientation would fit.
+
+Obstacle poses and velocities are snapshots: the rigid body responds to them, but this implementation does not publish reciprocal impulses into players or creatures, and moving bodies do not form a coupled dynamic island. If an obstacle impulse would move a body beyond its captured speed envelope, the candidate step is deferred without publication and retried against later snapshots. Rebuilding the bounded world discards solver warm-start caches, making committed-state restart behavior reproducible at a CPU cost. The ignored `rapier_bounded_snapshot_step_benchmark` test measures that cost in release mode. No vehicle or joint APIs are included.
+
+The playable example is [rigid-bodies](../../fixtures/rigid-bodies/README.md).
 
 Vector inputs must be plain dense numeric sequences with finite components.
 All motion operations join the same transaction as inventory, authored state,

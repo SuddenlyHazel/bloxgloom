@@ -137,7 +137,7 @@ fn plan_inner(
         velocity[axis] += acceleration[axis] * DT;
     }
     clamp(&mut velocity, f64::from(declaration.body.max_speed));
-    let half = declaration.body.half_extents.map(f64::from);
+    let half = declaration.capture_half_extents().map(f64::from);
     let displacement = velocity.map(|v| v * DT);
     // Reflected paths stay within a conservative captured envelope. Dynamic
     // responses can add speed, so their envelope uses the declared speed cap.
@@ -290,40 +290,67 @@ fn plan_inner(
             .collect();
         #[cfg(test)]
         let solve_started = std::time::Instant::now();
-        let step = match solver::integrate_with_contact_policy(
-            solver::State {
+        let result = if declaration.physics.is_some() {
+            super::rigid::integrate(
+                record.motion,
+                &declaration,
                 position,
                 velocity,
-                acceleration: [0.0; 3],
-            },
-            solver::Body {
-                half_extents: half,
-                response: match declaration.body.response {
-                    bloxgloom_host_api::motion::Response::Stop => solver::Response::Stop,
-                    bloxgloom_host_api::motion::Response::Bounce => solver::Response::Bounce,
-                    bloxgloom_host_api::motion::Response::Slide => solver::Response::Slide,
+                &step_colliders,
+                solver::Limits {
+                    colliders: MAX_COLLIDERS,
+                    sweep_cells: MAX_SWEEP_CELLS,
+                    contacts: 4,
+                    world_min: [
+                        -999_998.0,
+                        f64::from(crate::world::BEDROCK_Y) + half[1] + 0.0001,
+                        -999_998.0,
+                    ],
+                    world_max: [999_998.0; 3],
                 },
-                restitution: f64::from(declaration.body.restitution),
-            },
-            DT,
-            &step_colliders,
-            solver::Limits {
-                colliders: MAX_COLLIDERS,
-                sweep_cells: MAX_SWEEP_CELLS,
-                contacts: 4,
-                world_min: [
-                    -999_998.0,
-                    f64::from(crate::world::BEDROCK_Y) + half[1] + 0.0001,
-                    -999_998.0,
-                ],
-                world_max: [999_998.0; 3],
-            },
-            solver::ContactPolicy {
-                previous,
-                pause_on_new: declaration.handles_impact,
-                max_speed: f64::from(declaration.body.max_speed),
-            },
-        ) {
+            )
+            .map(|step| {
+                record.motion.orientation = step.orientation;
+                record.motion.angular_velocity = step.angular_velocity;
+                step.translation
+            })
+        } else {
+            solver::integrate_with_contact_policy(
+                solver::State {
+                    position,
+                    velocity,
+                    acceleration: [0.0; 3],
+                },
+                solver::Body {
+                    half_extents: half,
+                    response: match declaration.body.response {
+                        bloxgloom_host_api::motion::Response::Stop => solver::Response::Stop,
+                        bloxgloom_host_api::motion::Response::Bounce => solver::Response::Bounce,
+                        bloxgloom_host_api::motion::Response::Slide => solver::Response::Slide,
+                    },
+                    restitution: f64::from(declaration.body.restitution),
+                },
+                DT,
+                &step_colliders,
+                solver::Limits {
+                    colliders: MAX_COLLIDERS,
+                    sweep_cells: MAX_SWEEP_CELLS,
+                    contacts: 4,
+                    world_min: [
+                        -999_998.0,
+                        f64::from(crate::world::BEDROCK_Y) + half[1] + 0.0001,
+                        -999_998.0,
+                    ],
+                    world_max: [999_998.0; 3],
+                },
+                solver::ContactPolicy {
+                    previous,
+                    pause_on_new: declaration.handles_impact,
+                    max_speed: f64::from(declaration.body.max_speed),
+                },
+            )
+        };
+        let step = match result {
             Ok(step) => step,
             Err(solver::Error::WorldBoundary) => {
                 world_boundary = true;
@@ -519,7 +546,7 @@ fn plan_inner(
     .map_err(io::Error::other)?;
     Ok(Some(commit(reads, transaction)))
 }
-fn clamp(v: &mut [f64; 3], max: f64) {
+pub(super) fn clamp(v: &mut [f64; 3], max: f64) {
     let length = v.iter().map(|x| x * x).sum::<f64>().sqrt();
     if length > max {
         for x in v {
@@ -530,6 +557,7 @@ fn clamp(v: &mut [f64; 3], max: f64) {
 fn solver_error(error: solver::Error) -> io::Error {
     io::Error::new(
         match error {
+            solver::Error::MotionBudget => ErrorKind::WouldBlock,
             solver::Error::ColliderCapacity | solver::Error::SweepCapacity => {
                 ErrorKind::QuotaExceeded
             }

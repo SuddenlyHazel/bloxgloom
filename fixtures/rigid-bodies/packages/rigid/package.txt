@@ -1,0 +1,10 @@
+format 2
+package rigid
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:actions/v1
+requires bloxgloom:moving_entities/v1
+module server main server/main.luau
+module server launch server/launch.luau
+module server body server/body.luau

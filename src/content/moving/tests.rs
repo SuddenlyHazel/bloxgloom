@@ -27,6 +27,7 @@ fn maximum_authored_state_with_long_pending_contact_fits_durable_envelope() {
         velocity: [0.0; 3],
         acceleration: [0.0; 3],
         orientation: [0.0, 0.0, 0.0, 1.0],
+        angular_velocity: [0.0; 3],
         revision: 7,
         grounded: true,
     };
@@ -83,6 +84,7 @@ fn declaration(key: &str) -> MovingEntity {
             max_speed: 64.0,
             max_acceleration: 128.0,
         },
+        physics: None,
         lifetime_ticks: 1000,
         interval: 10,
         source_exclusion_ticks: 20,

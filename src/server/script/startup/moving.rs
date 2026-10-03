@@ -149,6 +149,7 @@ fn parse(
         max_state_bytes: state_bytes,
         max_public_bytes: public_bytes,
         body,
+        physics: physics(field(&d, "physics")?)?,
         lifetime_ticks,
         interval,
         source_exclusion_ticks,
@@ -264,6 +265,34 @@ fn number(value: Value, min: f32, max: f32) -> Result<f32, &'static str> {
         return Err("moving number out of bounds");
     }
     Ok(converted)
+}
+fn physics(value: Value) -> Result<Option<motion::Physics>, &'static str> {
+    if value.is_nil() {
+        return Ok(None);
+    }
+    let table = table(value)?;
+    for pair in table.clone().pairs::<Value, Value>().take(5) {
+        let (Value::String(key), _) = pair.map_err(|_| "invalid physics option")? else {
+            return Err("invalid physics option");
+        };
+        if !matches!(
+            key.to_str().map_err(|_| "invalid physics option")?.as_ref(),
+            "linear_damping" | "angular_damping" | "friction" | "max_angular_speed"
+        ) {
+            return Err("unknown physics option");
+        }
+    }
+    Ok(Some(motion::Physics {
+        linear_damping: optional_number(field(&table, "linear_damping")?, 0.0, 32.0, 0.0)?,
+        angular_damping: optional_number(field(&table, "angular_damping")?, 0.0, 32.0, 0.0)?,
+        friction: optional_number(field(&table, "friction")?, 0.0, 4.0, 0.5)?,
+        max_angular_speed: optional_number(
+            field(&table, "max_angular_speed")?,
+            0.0,
+            motion::MAX_ANGULAR_SPEED,
+            motion::MAX_ANGULAR_SPEED,
+        )?,
+    }))
 }
 fn optional_number(value: Value, min: f32, max: f32, default: f32) -> Result<f32, &'static str> {
     if value.is_nil() {

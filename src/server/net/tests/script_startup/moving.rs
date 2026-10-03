@@ -10,6 +10,8 @@ mod cold;
 mod lifecycle;
 #[path = "moving/load.rs"]
 mod load;
+#[path = "moving/rigid.rs"]
+mod rigid;
 const REGISTER: &str = r#"return function(h)
     h.register_moving_entity{key='demo:projectile',module='demo:behavior',schema=1,revision=1,
         max_state_bytes=1,max_public_bytes=1,interval=1000,lifetime_ticks=1000,

@@ -64,6 +64,7 @@ fn catalog() -> Arc<Catalog> {
             max_speed: 8.0,
             max_acceleration: 8.0,
         },
+        physics: None,
         lifetime_ticks: 100,
         interval: 3,
         source_exclusion_ticks: 0,
@@ -81,6 +82,7 @@ fn spawn() -> MovingSpawn {
         position: [0.5; 3],
         velocity: [1.0, 0.0, 0.0],
         orientation: [0.0, 0.0, 0.0, 1.0],
+        angular_velocity: [0.0; 3],
         state: vec![1],
         source: None,
     }

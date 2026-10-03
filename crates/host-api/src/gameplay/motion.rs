@@ -9,6 +9,7 @@ pub struct MovingSpawn {
     pub position: [f32; 3],
     pub velocity: [f32; 3],
     pub orientation: [f32; 4],
+    pub angular_velocity: [f32; 3],
     pub state: Vec<u8>,
     pub source: Option<u64>,
 }
@@ -17,6 +18,7 @@ pub struct MotionChange {
     pub velocity: Option<[f32; 3]>,
     pub acceleration: Option<[f32; 3]>,
     pub orientation: Option<[f32; 4]>,
+    pub angular_velocity: Option<[f32; 3]>,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MotionCommand {
@@ -52,6 +54,7 @@ impl Context<'_> {
             velocity: spawn.velocity,
             acceleration: [0.0; 3],
             orientation: spawn.orientation,
+            angular_velocity: spawn.angular_velocity,
             revision: 0,
             grounded: false,
         };
@@ -89,6 +92,7 @@ impl Context<'_> {
             velocity: spawn.velocity,
             acceleration: [0.0; 3],
             orientation: spawn.orientation,
+            angular_velocity: spawn.angular_velocity,
             revision: 0,
             grounded: false,
         };
@@ -192,6 +196,9 @@ impl Context<'_> {
         if change.orientation.is_some() {
             entry.change.orientation = change.orientation;
         }
+        if change.angular_velocity.is_some() {
+            entry.change.angular_velocity = change.angular_velocity;
+        }
         Ok(true)
     }
 }
@@ -204,5 +211,8 @@ fn apply(motion: &mut Motion, change: MotionChange) {
     }
     if let Some(value) = change.orientation {
         motion.orientation = value;
+    }
+    if let Some(value) = change.angular_velocity {
+        motion.angular_velocity = value;
     }
 }

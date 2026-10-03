@@ -98,7 +98,7 @@ pub(in crate::server) fn spawn_record(
     {
         return Err(Error::BudgetExceeded);
     }
-    let half = d.body.half_extents;
+    let half = d.capture_half_extents();
     if spawn
         .position
         .iter()
@@ -115,6 +115,7 @@ pub(in crate::server) fn spawn_record(
         velocity: spawn.velocity,
         acceleration: [0.0; 3],
         orientation: spawn.orientation,
+        angular_velocity: spawn.angular_velocity,
         revision: 0,
         grounded: false,
     };
@@ -157,6 +158,15 @@ pub(in crate::server) fn apply_command(
     if record.motion.revision != command.expected_revision {
         return Err(Error::Deferred("moving entity revision changed".into()));
     }
+    let declaration = catalog
+        .entity_type_id_by_key(key)
+        .and_then(|id| catalog.moving_entity(id))
+        .ok_or_else(|| Error::Invalid("missing motion declaration".into()))?;
+    if declaration.physics.is_some() && command.change.orientation.is_some() {
+        return Err(Error::Invalid(
+            "rigid body orientation is integrated; use angular_velocity to steer".into(),
+        ));
+    }
     if let Some(v) = command.change.velocity {
         record.motion.velocity = v;
     }
@@ -165,6 +175,9 @@ pub(in crate::server) fn apply_command(
     }
     if let Some(v) = command.change.orientation {
         record.motion.orientation = v;
+    }
+    if let Some(v) = command.change.angular_velocity {
+        record.motion.angular_velocity = v;
     }
     let d = catalog
         .entity_type_id_by_key(key)

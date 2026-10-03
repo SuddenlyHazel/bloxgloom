@@ -10,6 +10,7 @@ fn moving_events_preserve_exact_ids_revisions_and_readonly_nested_values() {
         velocity: [4.0, 5.0, 6.0],
         acceleration: [0.0; 3],
         orientation: [0.0, 0.0, 0.0, 1.0],
+        angular_velocity: [0.0; 3],
         revision,
         grounded: true,
     };
@@ -29,7 +30,13 @@ fn moving_events_preserve_exact_ids_revisions_and_readonly_nested_values() {
         revision
     );
     assert!(value.is_readonly() && motion.is_readonly());
-    for name in ["position", "velocity", "acceleration", "orientation"] {
+    for name in [
+        "position",
+        "velocity",
+        "acceleration",
+        "orientation",
+        "angular_velocity",
+    ] {
         assert!(motion.get::<Table>(name).unwrap().is_readonly());
     }
     assert!(motion.get::<bool>("grounded").unwrap());

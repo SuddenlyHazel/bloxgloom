@@ -7,6 +7,7 @@ fn record() -> Record {
             velocity: [1.0, 2.0, 3.0],
             acceleration: [0.0; 3],
             orientation: [0.0, 0.0, 0.0, 1.0],
+            angular_velocity: [0.0; 3],
             revision: 19,
             grounded: false,
         },

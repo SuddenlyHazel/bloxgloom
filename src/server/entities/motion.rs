@@ -1,6 +1,7 @@
 //! Server moving-object capture, integration and durable reaction lifecycle.
 pub(in crate::server) mod cadence;
 pub(in crate::server) mod colliders;
+mod rigid;
 pub(in crate::server) mod services;
 pub(in crate::server) mod solver;
 mod tick;

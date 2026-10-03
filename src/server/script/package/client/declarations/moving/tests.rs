@@ -40,6 +40,7 @@ fn declaration() -> MovingEntity {
             max_speed: 32.0,
             max_acceleration: 64.0,
         },
+        physics: None,
         lifetime_ticks: 100,
         interval: 2,
         source_exclusion_ticks: 3,
@@ -82,6 +83,27 @@ fn moving_metadata_preserves_native_catalog_and_has_inert_codec() {
     assert_eq!(actual.schema_fingerprint, u64::MAX);
     assert!(actual.state.validate(&[]).is_err());
     assert!(actual.state.public(&[]).is_err());
+}
+
+#[test]
+fn moving_rigid_metadata_roundtrips_policy_and_catalog_fingerprint() {
+    let inner = base(true);
+    let mut d = declaration();
+    d.handles_impact = false;
+    d.physics = Some(bloxgloom_host_api::motion::Physics {
+        linear_damping: 2.0,
+        angular_damping: 3.0,
+        friction: 0.75,
+        max_angular_speed: 4.0,
+    });
+    let mut writer = Writer(MAGIC.to_vec());
+    writer.field(&inner).unwrap();
+    writer.count(1).unwrap();
+    encode(&mut writer, &d).unwrap();
+    let decoded = decode_bytes(&writer.0).unwrap();
+    let actual = &decoded.declarations.as_ref().unwrap().moving[0];
+    assert_eq!(d.physics, actual.physics);
+    assert_eq!(d.fingerprint_bytes(), actual.fingerprint_bytes());
 }
 #[test]
 fn moving_metadata_rejects_missing_capability_overflow_and_nesting() {

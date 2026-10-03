@@ -57,6 +57,8 @@ pub enum Error {
     ColliderCapacity,
     SweepCapacity,
     WorldBoundary,
+    /// A snapshot obstacle impulse exceeded the captured body travel budget.
+    MotionBudget,
 }
 
 #[derive(Clone, Copy, Debug)]

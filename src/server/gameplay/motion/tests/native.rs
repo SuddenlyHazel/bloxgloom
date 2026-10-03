@@ -49,6 +49,7 @@ fn fixture() -> (Arc<Catalog>, EntityStore, MovingSpawn) {
                 max_speed: 16.0,
                 max_acceleration: 32.0,
             },
+            physics: None,
             lifetime_ticks: 100,
             interval: 10,
             source_exclusion_ticks: 4,
@@ -75,6 +76,7 @@ fn fixture() -> (Arc<Catalog>, EntityStore, MovingSpawn) {
         position: [0.5, 300.5, 0.5],
         velocity: [1.0, 0.0, 0.0],
         orientation: [0.0, 0.0, 0.0, 1.0],
+        angular_velocity: [0.0; 3],
         state: vec![42],
         source: None,
     };

@@ -27,6 +27,7 @@ pub(in crate::server::script) fn motion(
     value.set("position", triple(lua, motion.position)?)?;
     value.set("velocity", triple(lua, motion.velocity)?)?;
     value.set("acceleration", triple(lua, motion.acceleration)?)?;
+    value.set("angular_velocity", triple(lua, motion.angular_velocity)?)?;
     let orientation = lua.create_sequence_from(motion.orientation)?;
     orientation.set_readonly(true);
     value.set("orientation", orientation)?;

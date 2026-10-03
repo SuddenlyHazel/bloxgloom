@@ -6,8 +6,9 @@ pub struct Motion {
     pub position: [f32; 3],
     pub velocity: [f32; 3],
     pub acceleration: [f32; 3],
-    /// Unit quaternion [x, y, z, w]; presentation only.
+    /// Unit quaternion [x, y, z, w]; physical for opt-in rigid bodies.
     pub orientation: [f32; 4],
+    pub angular_velocity: [f32; 3],
     pub revision: u64,
     pub grounded: bool,
 }
@@ -19,6 +20,8 @@ impl Motion {
             .any(|x| !x.is_finite() || x.abs() > 16_000_000.0)
             || self.velocity.iter().any(|x| !x.is_finite())
             || self.acceleration.iter().any(|x| !x.is_finite())
+            || self.angular_velocity.iter().any(|x| !x.is_finite())
+            || length(self.angular_velocity) > super::MAX_ANGULAR_SPEED + 0.001
             || length(self.velocity) > super::MAX_SPEED + 0.001
             || length(self.acceleration) > super::MAX_ACCELERATION + 0.001
             || self.orientation.iter().any(|x| !x.is_finite())
@@ -98,7 +101,7 @@ impl Record {
 
     pub fn encode(&self) -> Result<Vec<u8>, RegistrationError> {
         self.validate()?;
-        let mut out = vec![1];
+        let mut out = vec![2];
         put_motion(&mut out, self.motion);
         out.extend(self.simulation_tick.to_le_bytes());
         out.extend(self.remaining_ticks.to_le_bytes());
@@ -148,7 +151,7 @@ impl Record {
     }
     pub fn decode(bytes: &[u8]) -> Result<Self, RegistrationError> {
         let mut c = Cursor(bytes);
-        if c.byte()? != 1 {
+        if c.byte()? != 2 {
             return Err(invalid());
         }
         let motion = c.motion()?;
@@ -274,7 +277,7 @@ impl Projection {
         if self.data.len() > 4096 {
             return Err(invalid());
         }
-        let mut out = vec![1];
+        let mut out = vec![2];
         put_motion(&mut out, self.motion);
         out.extend(self.tick.to_le_bytes());
         out.push(self.stopped as u8);
@@ -284,7 +287,7 @@ impl Projection {
     }
     pub fn decode(bytes: &[u8]) -> Result<Self, RegistrationError> {
         let mut c = Cursor(bytes);
-        if c.byte()? != 1 {
+        if c.byte()? != 2 {
             return Err(invalid());
         }
         let motion = c.motion()?;
@@ -328,6 +331,7 @@ fn put_motion(out: &mut Vec<u8>, value: Motion) {
         .chain(value.velocity)
         .chain(value.acceleration)
         .chain(value.orientation)
+        .chain(value.angular_velocity)
     {
         out.extend(x.to_le_bytes());
     }
@@ -425,6 +429,7 @@ impl<'a> Cursor<'a> {
             velocity: self.vector()?,
             acceleration: self.vector()?,
             orientation: self.quaternion()?,
+            angular_velocity: self.vector()?,
             revision: self.u64()?,
             grounded: self.boolean()?,
         })

@@ -121,6 +121,8 @@ pub(in crate::server::script) fn parse_spawn(
         position: vector(field(&options, "position")?)?,
         velocity,
         orientation,
+        angular_velocity: optional_vector(field(&options, "angular_velocity")?)?
+            .unwrap_or([0.0; 3]),
         state: state.as_bytes().to_vec(),
         source,
     })
@@ -128,7 +130,7 @@ pub(in crate::server::script) fn parse_spawn(
 pub(in crate::server::script) fn parse_change(options: Value) -> Result<MotionChange, Error> {
     let options = table(options)?;
     // Position is deliberately absent: steering cannot teleport a body.
-    for pair in options.clone().pairs::<Value, Value>().take(4) {
+    for pair in options.clone().pairs::<Value, Value>().take(5) {
         let (Value::String(key), _) = pair.map_err(|_| invalid("invalid motion field"))? else {
             return Err(invalid("invalid motion field"));
         };
@@ -136,10 +138,10 @@ pub(in crate::server::script) fn parse_change(options: Value) -> Result<MotionCh
             key.to_str()
                 .map_err(|_| invalid("invalid motion field"))?
                 .as_ref(),
-            "velocity" | "acceleration" | "orientation"
+            "velocity" | "acceleration" | "orientation" | "angular_velocity"
         ) {
             return Err(invalid(
-                "motion changes accept only velocity, acceleration and orientation",
+                "motion changes accept velocity, acceleration, orientation and angular_velocity",
             ));
         }
     }
@@ -147,6 +149,7 @@ pub(in crate::server::script) fn parse_change(options: Value) -> Result<MotionCh
         velocity: optional_vector(field(&options, "velocity")?)?,
         acceleration: optional_vector(field(&options, "acceleration")?)?,
         orientation: optional_vector(field(&options, "orientation")?)?,
+        angular_velocity: optional_vector(field(&options, "angular_velocity")?)?,
     })
 }
 

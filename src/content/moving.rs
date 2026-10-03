@@ -35,7 +35,9 @@ impl EntityState for State {
         Projection {
             motion: record.motion,
             tick: record.simulation_tick,
-            stopped: record.pending.is_some() || record.motion.velocity == [0.0; 3],
+            stopped: record.pending.is_some()
+                || (record.motion.velocity == [0.0; 3]
+                    && record.motion.angular_velocity == [0.0; 3]),
             data: self.0.state.public(&record.state)?,
         }
         .encode()
@@ -49,6 +51,8 @@ pub(crate) fn validate_motion(
     let length = |v: [f32; 3]| v.into_iter().map(|x| x * x).sum::<f32>().sqrt();
     if length(motion.velocity) > declaration.body.max_speed + 0.001
         || length(motion.acceleration) > declaration.body.max_acceleration + 0.001
+        || length(motion.angular_velocity)
+            > declaration.physics.map_or(0.0, |p| p.max_angular_speed) + 0.001
     {
         return Err(RegistrationError(
             "motion exceeds declared speed/acceleration".into(),

@@ -89,6 +89,7 @@ impl Snapshot for World {
             velocity: [0.0; 3],
             acceleration: [0.0; 3],
             orientation: [0.0, 0.0, 0.0, 1.0],
+            angular_velocity: [0.0; 3],
             revision: 17,
             grounded: false,
         }))
@@ -539,6 +540,7 @@ fn moving_spawn_references_are_local_and_never_predict_durable_ids() {
                 position: [0.0; 3],
                 velocity: [0.0; 3],
                 orientation: [0.0, 0.0, 0.0, 1.0],
+                angular_velocity: [0.0; 3],
                 state: vec![1],
                 source: None,
             };

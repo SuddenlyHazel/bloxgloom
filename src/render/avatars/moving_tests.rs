@@ -36,6 +36,7 @@ pub(super) fn catalog(half: [f32; 3]) -> crate::content::Catalog {
                 max_speed: 16.0,
                 max_acceleration: 16.0,
             },
+            physics: None,
             lifetime_ticks: 100,
             interval: 1,
             source_exclusion_ticks: 0,

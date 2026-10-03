@@ -1,4 +1,4 @@
-//! V45 transports closed moving-body/model declarations around an existing
+//! V50 transports closed moving-body/model/physics declarations around an existing
 //! artifact. Private records, callbacks and server source are never exported.
 use super::*;
 use bloxgloom_host_api::{
@@ -8,7 +8,7 @@ use bloxgloom_host_api::{
     motion::{Body, CollisionMask, MovingEntity, Response},
 };
 use std::sync::Arc;
-pub(in crate::server::script::package::client) const MAGIC: &[u8] = b"BGCLIENT\x2d";
+pub(in crate::server::script::package::client) const MAGIC: &[u8] = b"BGCLIENT\x32";
 struct InertState;
 impl EntityState for InertState {
     fn validate(&self, _data: &[u8]) -> Result<(), RegistrationError> {
@@ -123,6 +123,19 @@ pub(in crate::server::script::package::client) fn decode(
         };
         let handles_impact = flags & 1 != 0;
         let handles_expiry = flags & 2 != 0;
+        let [physics_tag] = reader.field(1)? else {
+            return Err(invalid());
+        };
+        let physics = match physics_tag {
+            0 => None,
+            1 => Some(bloxgloom_host_api::motion::Physics {
+                linear_damping: float(&mut reader)?,
+                angular_damping: float(&mut reader)?,
+                friction: float(&mut reader)?,
+                max_angular_speed: float(&mut reader)?,
+            }),
+            _ => return Err(invalid()),
+        };
         let lifetime_ticks = number(&mut reader)?;
         let interval = number(&mut reader)?;
         let source_exclusion_ticks = number(&mut reader)?;
@@ -154,6 +167,7 @@ pub(in crate::server::script::package::client) fn decode(
             max_state_bytes,
             max_public_bytes,
             body,
+            physics,
             lifetime_ticks,
             interval,
             source_exclusion_ticks,
@@ -206,6 +220,17 @@ fn encode(writer: &mut Writer, d: &MovingEntity) -> Result<(), ScriptError> {
         d.body.response as u8,
         d.handles_impact as u8 | (d.handles_expiry as u8) << 1,
     ])?;
+    writer.field(&[d.physics.is_some() as u8])?;
+    if let Some(physics) = d.physics {
+        for x in [
+            physics.linear_damping,
+            physics.angular_damping,
+            physics.friction,
+            physics.max_angular_speed,
+        ] {
+            writer.field(&x.to_le_bytes())?;
+        }
+    }
     for x in [d.lifetime_ticks, d.interval, d.source_exclusion_ticks] {
         writer.field(&x.to_le_bytes())?;
     }

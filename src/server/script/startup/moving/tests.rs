@@ -72,6 +72,36 @@ fn moving_startup_collects_frozen_body_and_three_handlers() {
 }
 
 #[test]
+fn moving_rigid_policy_is_validated_and_participates_in_frozen_identity() {
+    let startup = format!(
+        "local d={};d.handles_impact=false;d.physics={{linear_damping=2,angular_damping=3,friction=1,max_angular_speed=4}};h.register_moving_entity(d)",
+        declaration()
+    );
+    let fixture = Fixture::new(&startup, true);
+    let declarations = fixture.discover().unwrap();
+    let d = &declarations.moving[0];
+    assert_eq!(d.physics.unwrap().friction, 1.0);
+    let mut changed = d.clone();
+    changed.physics.as_mut().unwrap().friction = 0.5;
+    assert_ne!(d.fingerprint_bytes(), changed.fingerprint_bytes());
+    for edit in [
+        "d.handles_impact=true",
+        "d.body.response='stop'",
+        "d.physics.linear_damping=33",
+        "d.physics.angular_damping=0/0",
+        "d.physics.friction=5",
+        "d.physics.max_angular_speed=9",
+        "d.physics.hidden=1",
+    ] {
+        let startup = format!(
+            "local d={};d.handles_impact=false;d.physics={{}};{edit};h.register_moving_entity(d)",
+            declaration()
+        );
+        assert!(Fixture::new(&startup, true).discover().is_err(), "{edit}");
+    }
+}
+
+#[test]
 fn moving_startup_rejects_capability_and_caught_invalid_declarations_atomically() {
     let startup = format!("h.register_moving_entity{}", declaration());
     assert!(Fixture::new(&startup, false).error().contains("requires"));

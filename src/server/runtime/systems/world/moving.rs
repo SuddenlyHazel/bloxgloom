@@ -32,7 +32,7 @@ pub(super) fn validate(
         return Ok(());
     };
     let record = Record::decode(bytes).map_err(|e| io::Error::new(ErrorKind::InvalidInput, e.0))?;
-    let half = d.body.half_extents;
+    let half = d.capture_half_extents();
     for x in (position[0] - half[0]).floor() as i32..=(position[0] + half[0]).ceil() as i32 - 1 {
         for y in (position[1] - half[1]).floor() as i32..=(position[1] + half[1]).ceil() as i32 - 1
         {
