@@ -24,6 +24,10 @@ pub(in crate::server) fn handle_live_message(
     message: ClientMessage,
     _tick: TickId,
 ) -> io::Result<()> {
+    let (life, message) = match message {
+        ClientMessage::PlayerIntent { life, message } => (life, *message),
+        message => (1, message),
+    };
     let action_id = match &message {
         ClientMessage::SetWorldTime { action_id, .. }
         | ClientMessage::Edit { action_id, .. }
@@ -42,6 +46,7 @@ pub(in crate::server) fn handle_live_message(
             defer_action(state, id, action_id);
         } else {
             state.durability.queued.push_back(DurableRequest::Command {
+                life,
                 id,
                 message,
                 queued_at: Instant::now(),
@@ -60,6 +65,14 @@ pub(in crate::server) fn handle_live_message(
                 .and_modify(|pending| pending.1 = pending.1.max(through_seq))
                 .or_insert((epoch, through_seq));
         }
+        return Ok(());
+    }
+    if crate::protocol::health_intent(&message)
+        && state
+            .clients
+            .get(&id)
+            .is_some_and(|client| client.health.life != life || !client.health.alive)
+    {
         return Ok(());
     }
     handle_message(state, id, message)

@@ -142,6 +142,7 @@ pub(super) fn place(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            spawn_anchor: None,
             actor_inventory_revision: Some(inventory_before.revision),
             profile_inventories: None,
             profile_services: None,
@@ -298,6 +299,7 @@ pub(super) fn remove(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            spawn_anchor: None,
             actor_inventory_revision: None,
             profile_inventories: None,
             profile_services: None,

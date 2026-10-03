@@ -37,6 +37,15 @@ impl UiLayout {
             UiScreen::Inventory => layout.add_inventory(),
             UiScreen::Container | UiScreen::Actions => {}
             UiScreen::Admin => layout.add_admin(),
+            UiScreen::Dead => layout.hits.push(HitRect {
+                control: UiControl::Respawn,
+                rect: UiRect {
+                    x: width as f32 * 0.5 - 100. * scale,
+                    y: height as f32 * 0.5 + 28. * scale,
+                    width: 200. * scale,
+                    height: 40. * scale,
+                },
+            }),
             UiScreen::Pause => layout.add_pause(),
             UiScreen::Settings | UiScreen::Graphics | UiScreen::Audio | UiScreen::Character => {
                 layout.add_settings()

@@ -30,6 +30,7 @@ pub(crate) mod moving;
 mod observers;
 mod owner_systems;
 pub(crate) mod player;
+mod player_health;
 mod player_world;
 mod players;
 mod public;
@@ -218,6 +219,10 @@ pub enum RegistrationError {
 pub struct Catalog {
     regions: std::collections::BTreeMap<String, bloxgloom_host_api::regions::Registration>,
     chat_hooks: std::collections::BTreeMap<String, bloxgloom_host_api::chat::Registration>,
+    damage_policies:
+        std::collections::BTreeMap<String, bloxgloom_host_api::player_health::DamageRegistration>,
+    health_hooks:
+        std::collections::BTreeMap<String, bloxgloom_host_api::player_health::HookRegistration>,
     block_acoustics: HashMap<String, bloxgloom_host_api::content::Acoustics>,
     pub(crate) sounds: HashSet<String>,
     models: std::collections::BTreeMap<u32, (String, std::sync::Arc<models::Prepared>)>,
@@ -313,6 +318,8 @@ impl Catalog {
             player_lifecycles: Default::default(),
             regions: Default::default(),
             chat_hooks: Default::default(),
+            damage_policies: Default::default(),
+            health_hooks: Default::default(),
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),
             anchored_entities: Vec::new(),

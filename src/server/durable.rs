@@ -293,6 +293,7 @@ pub(super) enum DurableRequest {
         rule: crate::server::ecology::Rule,
     },
     Command {
+        life: u64,
         id: u64,
         message: ClientMessage,
         queued_at: Instant,

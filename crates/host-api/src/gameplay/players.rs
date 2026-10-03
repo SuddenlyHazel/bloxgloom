@@ -37,6 +37,10 @@ impl Context<'_> {
                         player.appearance = [palettes[0], palettes[1], palettes[2], 0]
                     }
                     super::PlayerOperationKind::Teleport(position) => player.position = position,
+                    super::PlayerOperationKind::HealthChanged {
+                        respawn_position: Some(position),
+                        ..
+                    } => player.position = position,
                     super::PlayerOperationKind::Model(ref model) => {
                         player.model = model.clone();
                         player.model_visual = model

@@ -305,6 +305,7 @@ fn add_clients_and_seed_drops(
                 movement: MovementState::new(position, 0),
                 pending_moves: Default::default(),
                 movement_reset: Default::default(),
+                health: bloxgloom_host_api::player_health::View::new(Default::default(), 0),
             },
         );
         receivers.push(receiver);

@@ -58,6 +58,7 @@ pub(super) fn invoke(
         &mut reads,
         &mut requested,
         crate::server::gameplay::Participants {
+            spawn_anchor: None,
             actor_inventory_revision: None,
             profile_inventories: Some(crate::server::gameplay::InventoryCapture {
                 clients: &state.clients,

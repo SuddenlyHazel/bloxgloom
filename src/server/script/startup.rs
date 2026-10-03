@@ -58,6 +58,7 @@ mod icons;
 mod item;
 pub(in crate::server::script) mod models;
 mod player;
+mod player_health;
 mod player_world;
 mod storage;
 pub(in crate::server::script) use storage::Declaration as StorageDeclaration;
@@ -92,6 +93,8 @@ pub(in crate::server) struct Declarations {
     pub(super) player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
     pub(super) regions: Vec<bloxgloom_host_api::regions::Registration>,
     pub(super) chat_hooks: Vec<bloxgloom_host_api::chat::Registration>,
+    pub(super) damage_policies: Vec<bloxgloom_host_api::player_health::DamageRegistration>,
+    pub(super) health_hooks: Vec<bloxgloom_host_api::player_health::HookRegistration>,
     pub(super) observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     pub(super) systems: Vec<bloxgloom_host_api::system::System>,
     pub(super) storage: Vec<StorageDeclaration>,
@@ -128,6 +131,8 @@ impl Declarations {
         let mut player_lifecycles = Vec::new();
         let mut regions = Vec::new();
         let mut chat_hooks = Vec::new();
+        let mut damage_policies = Vec::new();
+        let mut health_hooks = Vec::new();
         let mut observers = Vec::new();
         let mut storage = Vec::new();
         let mut creatures = Vec::new();
@@ -209,6 +214,8 @@ impl Declarations {
             player_lifecycles.extend(declarations.player_lifecycles);
             regions.extend(declarations.regions);
             chat_hooks.extend(declarations.chat_hooks);
+            damage_policies.extend(declarations.damage_policies);
+            health_hooks.extend(declarations.health_hooks);
             observers.extend(declarations.observers);
             entities.extend(declarations.entities);
             storage.extend(declarations.storage);
@@ -250,6 +257,8 @@ impl Declarations {
             player_lifecycles,
             regions,
             chat_hooks,
+            damage_policies,
+            health_hooks,
             observers,
             storage,
             creatures,
@@ -264,6 +273,8 @@ impl Declarations {
             .sort_by(|a, b| a.definition.key.cmp(&b.definition.key));
         result.regions.sort_by(|a, b| a.key.cmp(&b.key));
         result.chat_hooks.sort_by(|a, b| a.key.cmp(&b.key));
+        result.damage_policies.sort_by(|a, b| a.key.cmp(&b.key));
+        result.health_hooks.sort_by(|a, b| a.key.cmp(&b.key));
         result.systems.sort_by(|a, b| a.key.cmp(&b.key));
         result.generation.sort_by(|a, b| a.key.cmp(&b.key));
         composition::validate(&result.packages, &result.systems)?;
@@ -311,6 +322,12 @@ impl Extension for Declarations {
         }
         for region in &self.regions {
             registrar.region(region.clone())?;
+        }
+        for policy in &self.damage_policies {
+            registrar.damage_policy(policy.clone())?;
+        }
+        for hook in &self.health_hooks {
+            registrar.health_hook(hook.clone())?;
         }
         for hook in &self.chat_hooks {
             registrar.chat_hook(hook.clone())?;
@@ -378,6 +395,8 @@ pub(super) struct Pending {
     pub(super) player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
     pub(super) regions: Vec<bloxgloom_host_api::regions::Registration>,
     pub(super) chat_hooks: Vec<bloxgloom_host_api::chat::Registration>,
+    pub(super) damage_policies: Vec<bloxgloom_host_api::player_health::DamageRegistration>,
+    pub(super) health_hooks: Vec<bloxgloom_host_api::player_health::HookRegistration>,
     pub(super) observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
@@ -527,6 +546,20 @@ pub(super) fn invoke(
         false,
     )?;
     let weather_observer = super::observers::declarer(
+        lua,
+        Rc::clone(&pending),
+        namespace,
+        Arc::clone(snapshot),
+        true,
+    )?;
+    let damage_policy = player_health::declare(
+        lua,
+        Rc::clone(&pending),
+        namespace,
+        Arc::clone(snapshot),
+        false,
+    )?;
+    let health_hook = player_health::declare(
         lua,
         Rc::clone(&pending),
         namespace,
@@ -793,6 +826,8 @@ pub(super) fn invoke(
     host.set("register_player_model", register_player_model)?;
     host.set("register_region", region)?;
     host.set("register_chat_hook", chat)?;
+    host.set("register_damage_policy", damage_policy)?;
+    host.set("register_health_hook", health_hook)?;
     host.set("register_item", register)?;
     host.set("register_texture", register_texture)?;
     host.set("register_block", register_block)?;

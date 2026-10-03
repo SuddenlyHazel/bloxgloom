@@ -5,6 +5,7 @@ use crate::inventory::{SLOTS, Stack};
 pub enum UiScreen {
     #[default]
     Playing,
+    Dead,
     Inventory,
     Container,
     Actions,
@@ -79,6 +80,7 @@ pub enum UiControl {
     AdminBindingRow(u8),
     OpenAdmin,
     Resume,
+    Respawn,
     OpenSettings,
     OpenAudio,
     AudioTest,
@@ -169,6 +171,7 @@ pub(crate) struct JoinProgress {
 /// Values needed to draw a frame. Borrow status text to avoid per-frame string allocation.
 #[derive(Clone, Debug)]
 pub struct UiFrame<'a> {
+    pub health: Option<bloxgloom_host_api::player_health::View>,
     pub(crate) chat: Option<&'a crate::client::chat::Session>,
     pub show_crosshair: bool,
     pub(crate) package_ui: Option<&'a super::authored::Session>,
@@ -199,6 +202,7 @@ pub struct UiFrame<'a> {
 impl Default for UiFrame<'_> {
     fn default() -> Self {
         Self {
+            health: None,
             chat: None,
             package_ui: None,
             show_crosshair: true,

@@ -160,6 +160,7 @@ struct Client {
     movement: MovementState,
     pending_moves: VecDeque<MovementCommand>,
     movement_reset: movement::Reset,
+    health: bloxgloom_host_api::player_health::View,
 }
 
 impl Client {
@@ -817,6 +818,10 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             reset,
             next_seq,
         } => movement::movement_ready(state, id, session, reset, next_seq),
+        ClientMessage::PlayerIntent { .. } => Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "health envelope bypassed coordinator",
+        )),
         ClientMessage::Edit { .. }
         | ClientMessage::InventoryMove { .. }
         | ClientMessage::DropStack { .. }
@@ -834,7 +839,7 @@ fn queue_move(state: &mut State, id: u64, seq: u64, delta: [f32; 3]) -> io::Resu
     let Some(client) = state.clients.get_mut(&id) else {
         return Ok(());
     };
-    if client.movement_reset.pending {
+    if !client.health.alive || client.movement_reset.pending {
         return Ok(());
     };
     if seq <= client.movement.last_seq()

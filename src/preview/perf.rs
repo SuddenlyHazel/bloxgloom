@@ -357,6 +357,7 @@ pub(super) async fn run_perf_benchmark_async(
             near_ready.iter().copied(),
         );
         let ui_frame = UiFrame {
+            health: None,
             chat: None,
             show_crosshair: true,
             character: None,

@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MAGIC: &[u8; 4] = b"BGPS";
-const VERSION: u16 = 1;
-const LEN: usize = 4 + 2 + 16 + 12 + 4;
+const VERSION: u16 = 2;
+const LEN: usize = 4 + 2 + 16 + 12 + 8 + 4;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct PositionStore {
@@ -26,7 +26,11 @@ impl PositionStore {
         self.root.join(format!("{profile:032x}.pos"))
     }
 
+    #[cfg(test)]
     pub(super) fn load(&self, profile: u128) -> io::Result<Option<[f32; 3]>> {
+        Ok(self.load_with_life(profile)?.map(|value| value.0))
+    }
+    pub(super) fn load_with_life(&self, profile: u128) -> io::Result<Option<([f32; 3], u64)>> {
         validate_profile(profile)?;
         let file = match File::open(self.path(profile)) {
             Ok(file) => file,
@@ -39,7 +43,7 @@ impl PositionStore {
             || &bytes[..4] != MAGIC
             || u16::from_le_bytes(bytes[4..6].try_into().unwrap()) != VERSION
             || u128::from_le_bytes(bytes[6..22].try_into().unwrap()) != profile
-            || u32::from_le_bytes(bytes[34..38].try_into().unwrap()) != checksum(&bytes[..34])
+            || u32::from_le_bytes(bytes[42..46].try_into().unwrap()) != checksum(&bytes[..42])
         {
             return Err(invalid("invalid player position file"));
         }
@@ -48,10 +52,22 @@ impl PositionStore {
             f32::from_le_bytes(bytes[start..start + 4].try_into().unwrap())
         });
         validate_position(position)?;
-        Ok(Some(position))
+        Ok(Some((
+            position,
+            u64::from_le_bytes(bytes[34..42].try_into().unwrap()),
+        )))
     }
 
     pub(super) fn save(&self, profile: u128, position: [f32; 3]) -> io::Result<()> {
+        let life = self.load_with_life(profile)?.map_or(0, |value| value.1);
+        self.save_with_life(profile, position, life)
+    }
+    pub(super) fn save_with_life(
+        &self,
+        profile: u128,
+        position: [f32; 3],
+        life: u64,
+    ) -> io::Result<()> {
         validate_profile(profile)?;
         validate_position(position)?;
         let mut bytes = Vec::with_capacity(LEN);
@@ -61,6 +77,7 @@ impl PositionStore {
         for coordinate in position {
             bytes.extend_from_slice(&coordinate.to_le_bytes());
         }
+        bytes.extend(life.to_le_bytes());
         bytes.extend_from_slice(&checksum(&bytes).to_le_bytes());
         let temporary = self.root.join(format!(
             ".{profile:032x}.pos.{}.{}.tmp",

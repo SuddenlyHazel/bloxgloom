@@ -13,6 +13,7 @@ mod handlers;
 mod inventory;
 mod motion;
 mod observations;
+mod player_health;
 mod player_models;
 mod player_modifiers;
 mod player_operations;
@@ -74,6 +75,20 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn native_respawn_position(&mut self) -> Result<[f32; 3], Error> {
+        Err(Error::Invalid("native spawn unavailable".into()))
+    }
+
+    fn player_health_cell(&mut self, _profile: u128) -> Result<ProfileCell, Error> {
+        Err(Error::Invalid("health unavailable".into()))
+    }
+    fn damage_policies(&self) -> Vec<crate::player_health::DamageRegistration> {
+        vec![]
+    }
+    fn health_hooks(&self) -> Vec<crate::player_health::HookRegistration> {
+        vec![]
+    }
+
     fn player_modifier_state(
         &mut self,
         _namespace: &str,
@@ -244,6 +259,7 @@ pub struct Context<'a> {
     blocks: BTreeMap<Cell, Block>,
     block_preimages: BTreeMap<Cell, Block>,
     inventories: BTreeMap<InventoryId, Vec<Slot>>,
+    health_hook_active: bool,
     handler_namespace: Option<String>,
     handler_key: Option<String>,
     // Cached state carries the namespace whose access the snapshot validated.
@@ -311,6 +327,7 @@ impl<'a> Context<'a> {
             blocks: BTreeMap::new(),
             block_preimages: BTreeMap::new(),
             inventories: BTreeMap::new(),
+            health_hook_active: false,
             handler_namespace: None,
             handler_key: None,
             entity_overlay: BTreeMap::new(),

@@ -106,6 +106,9 @@ pub(in crate::server) fn prepare_writes(
         let reg = if key == bloxgloom_host_api::player_modifiers::PROFILE_SYSTEM {
             internal = super::modifiers::registration();
             &internal
+        } else if key == bloxgloom_host_api::player_health::PROFILE_SYSTEM {
+            internal = super::health::registration();
+            &internal
         } else {
             catalog
                 .player_lifecycles()

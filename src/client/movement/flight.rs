@@ -23,7 +23,10 @@ impl ClientApp {
         }
         self.cancel_sprint();
         let flying = !self.flight.flying;
-        if self.network.send(ClientMessage::SetFlying { flying }) {
+        if self
+            .network
+            .send(self.health_intent_message(ClientMessage::SetFlying { flying }))
+        {
             self.flight.pending = Some(flying);
         }
     }
@@ -50,7 +53,8 @@ impl ClientApp {
             && self.grabbed
             && self.screen == UiScreen::Playing
         {
-            self.network.send(ClientMessage::Jump);
+            self.network
+                .send(self.health_intent_message(ClientMessage::Jump));
         }
     }
 }

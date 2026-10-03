@@ -126,6 +126,7 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
             movement: MovementState::new(position, 0),
             pending_moves: Default::default(),
             movement_reset: Default::default(),
+            health: bloxgloom_host_api::player_health::View::new(Default::default(), 0),
         },
     );
     peer
@@ -133,6 +134,7 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
 
 fn edit_request(message: ClientMessage) -> DurableRequest {
     DurableRequest::Command {
+        life: 1,
         id: 1,
         message,
         queued_at: Instant::now(),

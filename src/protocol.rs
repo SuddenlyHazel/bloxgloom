@@ -22,8 +22,10 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 30;
+const WIRE_VERSION: u8 = 32;
 mod chat;
+#[path = "protocol/health.rs"]
+mod health_protocol;
 pub(crate) mod lod;
 mod player_state;
 mod player_states;
@@ -46,6 +48,10 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    PlayerIntent {
+        life: u64,
+        message: Box<ClientMessage>,
+    },
     Chat {
         sequence: u64,
         text: String,
@@ -180,6 +186,11 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PlayerHealth {
+        profile: u128,
+        session: u64,
+        health: bloxgloom_host_api::player_health::View,
+    },
     Chat {
         message: bloxgloom_host_api::chat::Message,
     },
@@ -370,6 +381,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             ServerMessage::PlayerSprint { .. } => 8 + 1,
             ServerMessage::FlyingMode { .. } => 1,
             ServerMessage::SimulationClock { .. } => 8,
+            ServerMessage::PlayerHealth { .. } => 16 + 8 + 4 + 4 + 8 + 8,
             ServerMessage::PlayerModifiers { .. } => 16 + 8 + 8 + 12 + 16,
             ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
@@ -479,6 +491,17 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::PlayerIntent { life, message } => {
+            if *life == 0 || !health_intent(message) {
+                return Err(invalid("invalid health intent envelope"));
+            }
+            let mut inner = Vec::new();
+            write_client_with_catalog(&mut inner, message, content_catalog)?;
+            out.push(29);
+            out.extend(life.to_le_bytes());
+            out.extend((inner.len() as u32).to_le_bytes());
+            out.extend(inner);
+        }
         ClientMessage::Chat { sequence, text } => {
             if *sequence == 0 {
                 return Err(invalid("invalid chat sequence"));
@@ -810,6 +833,14 @@ pub fn write_server_with_catalog(
         ServerMessage::SimulationClock { tick } => {
             out.push(51);
             out.extend(tick.to_le_bytes());
+        }
+        ServerMessage::PlayerHealth {
+            profile,
+            session,
+            health,
+        } => {
+            out.push(52);
+            health_protocol::write(&mut out, *profile, *session, *health)?;
         }
         ServerMessage::PlayerModifiers {
             profile,
@@ -1257,6 +1288,25 @@ pub fn read_client_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        29 => {
+            let life = c.u64()?;
+            let length = c.u32()? as usize;
+            if life == 0 || length > MAX_FRAME {
+                return Err(invalid("invalid health intent envelope"));
+            }
+            let inner = c.take(length)?;
+            if inner.get(5) == Some(&29) || inner.len() < 6 {
+                return Err(invalid("nested health intent envelope"));
+            }
+            let message = read_client_with_catalog(inner, content_catalog)?;
+            if !health_intent(&message) {
+                return Err(invalid("unsupported health intent"));
+            }
+            ClientMessage::PlayerIntent {
+                life,
+                message: Box::new(message),
+            }
+        }
         27 => {
             let sequence = c.u64()?;
             if sequence == 0 {
@@ -1686,6 +1736,7 @@ pub fn read_server_with_catalog(
             &mut c,
             content_catalog,
         )?),
+        52 => health_protocol::read(&mut c)?,
         17 => ServerMessage::WorldCommitPart(entities::read_commit_part(&mut c, content_catalog)?),
         18 => {
             let id = c.u64()?;
@@ -1842,4 +1893,33 @@ fn validate_teleport(
         return Err(invalid("invalid player teleport"));
     }
     Ok(())
+}
+
+/// Commands whose result depends on the current player life.
+pub(crate) fn health_intent(message: &ClientMessage) -> bool {
+    matches!(
+        message,
+        ClientMessage::Move { .. }
+            | ClientMessage::Edit { .. }
+            | ClientMessage::InventoryMove { .. }
+            | ClientMessage::DropStack { .. }
+            | ClientMessage::AdminGive { .. }
+            | ClientMessage::AdminSpawnEntity { .. }
+            | ClientMessage::EntityInteract { .. }
+            | ClientMessage::SetWorldTime { .. }
+            | ClientMessage::SetCrouching { .. }
+            | ClientMessage::SetSprinting { .. }
+            | ClientMessage::SetFlying { .. }
+            | ClientMessage::Jump
+    )
+}
+pub(crate) fn respawn_intent(message: &ClientMessage) -> bool {
+    match message {
+        ClientMessage::PlayerIntent { message, .. } => respawn_intent(message),
+        ClientMessage::EntityInteract { payload, .. } => {
+            bloxgloom_host_api::actions::Request::decode(payload)
+                .is_some_and(|r| r.key == crate::gameplay::respawn::KEY)
+        }
+        _ => false,
+    }
 }

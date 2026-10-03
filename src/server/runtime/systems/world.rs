@@ -460,6 +460,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             action: None,
         },
         Participants {
+            spawn_anchor: None,
             actor_inventory_revision: None,
             profile_inventories: None,
             profile_services: None,

@@ -36,6 +36,7 @@ mod character_motion;
 pub(crate) mod chat;
 pub(crate) mod drops;
 mod fire;
+mod health;
 mod interactions;
 pub(crate) mod item_visuals;
 use drops::DropAnimator;
@@ -125,7 +126,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
         | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings | UiScreen::Character => UiScreen::Pause,
         UiScreen::Graphics | UiScreen::Audio => UiScreen::Settings,
-        UiScreen::Joining | UiScreen::JoinFailed => screen,
+        UiScreen::Joining | UiScreen::JoinFailed | UiScreen::Dead => screen,
     }
 }
 
@@ -196,6 +197,7 @@ fn action_id(session: u64, sequence: u64) -> u128 {
 
 fn command_action_id(message: &ClientMessage) -> Option<u128> {
     match message {
+        ClientMessage::PlayerIntent { message, .. } => command_action_id(message),
         ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
@@ -313,6 +315,7 @@ struct Keys {
 struct ClientApp {
     chat: chat::Session,
     movement_modifiers: bloxgloom_host_api::player_modifiers::Movement,
+    health: bloxgloom_host_api::player_health::View,
     observations: Arc<presentation::Observations>,
     package_ui: Option<crate::ui::authored::Session>,
     visual_session: Option<presentation::VisualSession>,
@@ -421,6 +424,7 @@ impl ClientApp {
         Self {
             chat: chat::Session::default(),
             movement_modifiers: Default::default(),
+            health: bloxgloom_host_api::player_health::View::new(Default::default(), 0),
             observations: Arc::new(Default::default()),
             package_ui: network.package_ui(),
             visual_session: network.visual_session(),
@@ -747,6 +751,7 @@ impl ClientApp {
             }
             UiControl::KilnSlot(_) => {}
             UiControl::InventorySlot(_) => {}
+            UiControl::Respawn => self.request_respawn(),
             UiControl::Resume => self.set_screen(UiScreen::Playing),
             UiControl::OpenAudio => self.set_screen(UiScreen::Audio),
             UiControl::AudioTest => self.audio.test_sound(),
@@ -853,6 +858,7 @@ impl ClientApp {
 
     fn focus_order(&self) -> Vec<UiControl> {
         match self.screen {
+            UiScreen::Dead => vec![UiControl::Respawn],
             UiScreen::Actions => self.action_panel().map_or_else(Vec::new, |p| {
                 p.widgets
                     .iter()
@@ -1001,9 +1007,20 @@ impl ClientApp {
     }
 
     fn queue_command(&mut self, message: ClientMessage) {
+        if !self.health.alive
+            && crate::protocol::health_intent(&message)
+            && !crate::protocol::respawn_intent(&message)
+        {
+            return;
+        }
         if self.disconnected {
             return;
         }
+        let message = if crate::protocol::health_intent(&message) {
+            self.health_intent_message(message)
+        } else {
+            message
+        };
         if let ClientMessage::Edit {
             action_id, x, y, z, ..
         } = &message
@@ -1257,6 +1274,11 @@ impl ClientApp {
                 }
                 self.position = predicted;
             }
+            ServerMessage::PlayerHealth {
+                profile,
+                session,
+                health,
+            } => self.accept_health(profile, session, health),
             ServerMessage::PlayerModifiers {
                 profile,
                 session,
@@ -1711,12 +1733,15 @@ impl ClientApp {
         if self.unacked.len() >= 256 {
             return;
         }
-        if self.network.send(ClientMessage::Move {
-            seq,
-            dx: delta.x,
-            dy: delta.y,
-            dz: delta.z,
-        }) {
+        if self
+            .network
+            .send(self.health_intent_message(ClientMessage::Move {
+                seq,
+                dx: delta.x,
+                dy: delta.y,
+                dz: delta.z,
+            }))
+        {
             self.position = predict_player_movement_with_mode(
                 &self.chunks,
                 &self.catalog,
@@ -2003,6 +2028,7 @@ impl ClientApp {
         self.character_editor
             .observe(self.replicas.owned_appearance(self.owned_entity_id));
         let ui = UiFrame {
+            health: Some(self.health),
             chat: Some(&self.chat),
             show_crosshair: self.perspective != crate::render::camera::Perspective::Front,
             character: (self.screen == UiScreen::Character).then(|| self.character_editor.panel()),
