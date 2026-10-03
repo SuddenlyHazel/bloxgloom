@@ -1,8 +1,8 @@
-//! V48 binds package-owned opaque GLB/control payloads to prepared model assets.
+//! V49 binds package-owned opaque GLB/control payloads to prepared model assets.
 //! Decoding runs during verified artifact preparation, before session publication.
 use super::*;
 use crate::server::script::startup::models::PackageModel;
-pub(in crate::server::script::package::client) const MAGIC: &[u8] = b"BGCLIENT\x30";
+pub(in crate::server::script::package::client) const MAGIC: &[u8] = b"BGCLIENT\x31";
 
 pub(super) fn wrap(
     bundle: ClientBundle,
@@ -21,6 +21,15 @@ pub(super) fn wrap(
         writer.field(model.asset.as_bytes())?;
         writer.field(model.controls_asset.as_deref().unwrap_or("").as_bytes())?;
         writer.field(&model.definition.scale.to_le_bytes())?;
+        let player = model
+            .definition
+            .player
+            .as_ref()
+            .map(|p| p.encode())
+            .transpose()
+            .map_err(|e| error("<player-model>", e.0))?
+            .unwrap_or_default();
+        writer.field(&player)?;
     }
     ClientBundle::decode_verify(&writer.0, CacheKey(Sha256::digest(&writer.0).into()))
 }
@@ -64,6 +73,13 @@ pub(in crate::server::script::package::client) fn decode(
         let asset = reader.text(129)?;
         let controls_asset = reader.text(129)?;
         let scale = f32::from_le_bytes(reader.field(4)?.try_into().map_err(|_| invalid())?);
+        let player = match reader.field(8192)? {
+            [] => None,
+            bytes => Some(
+                bloxgloom_host_api::model::PlayerModel::decode(bytes)
+                    .map_err(|e| error(owner, e.0))?,
+            ),
+        };
         let payload = |name: &str, kind: u32| -> Result<Vec<u8>, ScriptError> {
             let (namespace, local) = name.split_once(':').ok_or_else(invalid)?;
             if namespace != owner || !identifier(local) {
@@ -88,6 +104,7 @@ pub(in crate::server::script::package::client) fn decode(
             payload(&controls_asset, 12)?
         };
         let definition = bloxgloom_host_api::model::ModelAsset {
+            player,
             key: key.clone(),
             glb,
             controls,

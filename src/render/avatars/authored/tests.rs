@@ -129,6 +129,7 @@ pub(in crate::render::avatars) fn catalog()
     let mut catalog = crate::content::Catalog::builtins();
     catalog
         .register_model_asset(&bloxgloom_host_api::model::ModelAsset {
+            player: None,
             key: "render:creature".into(),
             glb: include_bytes!("../../../../fixtures/authored-model/model.glb").to_vec(),
             controls: include_bytes!("../../../../fixtures/authored-model/controls.json").to_vec(),
@@ -329,6 +330,7 @@ fn authored_palette_admission_is_bounded_and_completed_clips_do_not_restart() {
         "late snapshot must seed the baked clip phase"
     );
     for _ in 0..100 {
+        actor.model_pose.as_mut().unwrap().sample_tick += 5;
         renderer.set_at(&queue, &[actor], 0.1);
     }
     assert_eq!(
@@ -362,4 +364,235 @@ fn authored_palette_admission_is_bounded_and_completed_clips_do_not_restart() {
             .all(|m| m.is_finite()),
         "invalid public clip indices must fall back without indexing outside the shared asset"
     );
+}
+
+#[test]
+fn gpu_packaged_players_render_baked_clips_looks_and_owner_only_node_hiding() {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_model_asset(&bloxgloom_host_api::model::ModelAsset {
+            key: "render:player".into(),
+            glb: include_bytes!("../../../../fixtures/authored-model/model.glb").to_vec(),
+            controls: include_bytes!("../../../../fixtures/authored-model/controls.json").to_vec(),
+            scale: 1.0,
+            player: Some(bloxgloom_host_api::model::PlayerModel {
+                idle: Some("idle".into()),
+                walk: Some("bounce".into()),
+                run: Some("bounce".into()),
+                crouch: Some("nod".into()),
+                first_person_hide: vec!["eyes_classic".into(), "eyes_sleepy".into()],
+                ..Default::default()
+            }),
+        })
+        .unwrap();
+    let id = catalog.player_model_id("render:player").unwrap();
+    let mut a = avatar(
+        11,
+        crate::content::MOSSBUN_ENTITY_TYPE,
+        0.0,
+        [100, 150, 255],
+    );
+    a.model = AvatarModel::PackagedPlayer(id);
+    let render = |a: &VisualAvatar, view| {
+        super::super::tests::render_avatars_with_view(&device, &queue, &catalog, &[*a], None, view)
+    };
+    let idle = render(&a, None);
+    a.model_pose.as_mut().unwrap().layers[1] = 1;
+    let hat = render(&a, None);
+    assert!(
+        idle.iter().zip(&hat).filter(|(a, b)| a != b).count() > 20,
+        "packaged player's hat layer must alter production render"
+    );
+    let own = render(
+        &a,
+        Some(super::super::FirstPersonView {
+            id: 11,
+            eye_height: 1.6,
+            pitch: 0.0,
+        }),
+    );
+    assert!(
+        hat.iter().zip(&own).filter(|(a, b)| a != b).count() > 20,
+        "owner color pass must hide configured eyes"
+    );
+    assert_eq!(
+        hat,
+        render(
+            &a,
+            Some(super::super::FirstPersonView {
+                id: 12,
+                eye_height: 1.6,
+                pitch: 0.0
+            })
+        ),
+        "another player must retain configured first-person geometry"
+    );
+    let visual = a.model_pose.as_mut().unwrap();
+    visual.playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: 2,
+        speed: 1.0,
+        looping: false,
+        crossfade_s: 0.0,
+        started_tick: 0,
+        sequence: 1,
+    });
+    visual.sequence = 1;
+    visual.sample_tick = 20;
+    let nod = render(&a, None);
+    assert!(
+        hat.iter().zip(&nod).filter(|(a, b)| a != b).count() > 20,
+        "baked player nod must deform actual GPU geometry"
+    );
+    if let Some(path) = std::env::var_os("BLOXGLOOM_GLB_PLAYER_PREVIEW") {
+        let width = super::super::tests::WIDTH;
+        let height = super::super::tests::HEIGHT;
+        let mut pixels = Vec::new();
+        for row in 0..height as usize {
+            for image in [&idle, &hat, &own, &nod] {
+                pixels.extend_from_slice(
+                    &image[row * width as usize * 4..(row + 1) * width as usize * 4],
+                );
+            }
+        }
+        let mut png = png::Encoder::new(std::fs::File::create(path).unwrap(), width * 4, height);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+    }
+}
+
+#[test]
+fn explicit_baked_playback_resynchronizes_from_host_phase_and_freezes_with_stale_clock() {
+    let model = model();
+    let mut animator = animation::Animator::new(&model);
+    let mut target = playback(&model, "nod");
+    target.serial = Some((10, 1));
+    target.fade_s = 0.0;
+    target.start_s = 0.3;
+    animator.step(&model, target, 0.1);
+    let pose = animator.matrices.clone();
+    animator.step(&model, target, 0.1);
+    assert_eq!(
+        animator.matrices, pose,
+        "unchanged server phase cannot invent extra clip time"
+    );
+    target.start_s = 0.7;
+    animator.step(&model, target, 0.1);
+    let expected = model.sample(Some("nod"), 0.7).unwrap();
+    assert!(
+        animator
+            .matrices
+            .iter()
+            .zip(expected)
+            .all(|(a, b)| a.abs_diff_eq(b, 1e-5)),
+        "same playback identity must accept a late authoritative phase sample"
+    );
+}
+
+#[test]
+fn gpu_packaged_master_humanoid_keeps_embedded_art_variants_and_baked_running() {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_model_asset(&bloxgloom_host_api::model::ModelAsset {
+            key: "render:master_player".into(),
+            glb: include_bytes!("../../../../assets/models/player/master/model.glb").to_vec(),
+            controls: include_bytes!("../../../../assets/models/player/master/controls.json")
+                .to_vec(),
+            scale: 1.0,
+            player: Some(bloxgloom_host_api::model::PlayerModel {
+                idle: Some("idle".into()),
+                walk: Some("walk".into()),
+                run: Some("run".into()),
+                crouch: Some("crouch".into()),
+                tool_left: Some("tool_use_left".into()),
+                tool_right: Some("tool_use_right".into()),
+                ..Default::default()
+            }),
+        })
+        .unwrap();
+    let id = catalog.player_model_id("render:master_player").unwrap();
+    let mut a = avatar(11, crate::content::MOSSBUN_ENTITY_TYPE, 0.0, [255; 3]);
+    a.model = AvatarModel::PackagedPlayer(id);
+    a.model_pose = Some(VisualState::default());
+    let render = |a: &VisualAvatar| {
+        super::super::tests::render_avatars(&device, &queue, &catalog, &[*a], None)
+    };
+    let original = render(&a);
+    assert!(
+        original
+            .chunks_exact(4)
+            .filter(|p| p[..3].iter().any(|c| *c > 10))
+            .count()
+            > 300,
+        "generic package renderer must draw the full textured humanoid"
+    );
+    let visual = a.model_pose.as_mut().unwrap();
+    visual.variants[0] = 1;
+    visual.variants[1] = 3;
+    visual.tints[0] = Some(bloxgloom_host_api::entity::Tint {
+        rgb: [200, 70, 220],
+        mode: TintMode::Replace,
+    });
+    let changed = render(&a);
+    assert!(
+        original
+            .iter()
+            .zip(&changed)
+            .filter(|(a, b)| a != b)
+            .count()
+            > 100,
+        "named body/hair choices and material tint must alter the embedded GLB art"
+    );
+    let run_clip = catalog
+        .player_model(id)
+        .unwrap()
+        .schema()
+        .clips
+        .iter()
+        .position(|name| name == "run")
+        .unwrap() as u16;
+    let visual = a.model_pose.as_mut().unwrap();
+    visual.playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: run_clip,
+        speed: 1.0,
+        looping: true,
+        crossfade_s: 0.0,
+        started_tick: 0,
+        sequence: 1,
+    });
+    visual.sequence = 1;
+    visual.sample_tick = 13;
+    let running = render(&a);
+    assert!(
+        changed.iter().zip(&running).filter(|(a, b)| a != b).count() > 100,
+        "baked master run clip must deform the generic player geometry"
+    );
+    if let Some(path) = std::env::var_os("BLOXGLOOM_GLB_HUMANOID_PREVIEW") {
+        let width = super::super::tests::WIDTH;
+        let height = super::super::tests::HEIGHT;
+        let mut pixels = Vec::new();
+        for row in 0..height as usize {
+            for image in [&original, &changed, &running] {
+                pixels.extend_from_slice(
+                    &image[row * width as usize * 4..(row + 1) * width as usize * 4],
+                );
+            }
+        }
+        let mut png = png::Encoder::new(std::fs::File::create(path).unwrap(), width * 3, height);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+    }
 }

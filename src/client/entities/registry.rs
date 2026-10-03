@@ -212,6 +212,15 @@ impl EntityClientRegistry {
                 continue;
             };
             if let Some(avatar) = (adapter.project_avatar)(entity)? {
+                if entity.entity_type == crate::content::EntityTypeId(2)
+                    && let Some(catalog) = &self.inventory_catalog
+                {
+                    let appearance =
+                        crate::appearance::AppearanceState::decode(&entity.payload).ok_or(())?;
+                    if !catalog.valid_appearance_state(appearance) {
+                        return Err(());
+                    }
+                }
                 avatars.push(avatar);
             }
         }

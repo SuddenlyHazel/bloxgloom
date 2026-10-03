@@ -13,7 +13,7 @@ struct Input {
     @location(5) part: u32, @location(6) origin: vec3f, @location(7) yaw_scale: vec2f,
     @location(8) light_levels: vec4u, @location(9) bounce: vec4u,
     @location(10) glow_bounce: vec4u, @location(11) tint: vec3f,
-    @location(12) offsets: vec2u,
+    @location(12) offsets: vec2u, @location(13) first_person_offset: vec3f,
 };
 struct Output {
     @builtin(position) clip: vec4f, @location(0) world: vec3f,
@@ -28,7 +28,8 @@ fn vertex(input: Input, shadow: bool) -> Output {
     let j = input.joints + vec4u(input.offsets.x);
     let transform = joints[j.x]*input.weights.x + joints[j.y]*input.weights.y
         + joints[j.z]*input.weights.z + joints[j.w]*input.weights.w;
-    let local = (transform * vec4f(input.position,1.0)).xyz * input.yaw_scale.y;
+    var local = (transform * vec4f(input.position,1.0)).xyz * input.yaw_scale.y;
+    if !shadow { local += input.first_person_offset; }
     // Cofactors implement the inverse transpose for nonuniform animated scales.
     let a = transform[0].xyz; let b = transform[1].xyz; let c = transform[2].xyz;
     let determinant = dot(a,cross(b,c));
@@ -56,6 +57,7 @@ fn color(input: Output) -> vec4f {
     return vec4f(select(sample.rgb*part.color.rgb,part.color.rgb,part.color.w>0.5),1.0);
 }
 @fragment fn fs_main(input: Output, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+    if parts[input.part].flags.y != 0u { discard; }
     let receiver=bg_shadow_receiver(input.world);
     let rgb=color(input).rgb;
     let normal = normalize(select(-input.normal,input.normal,front));

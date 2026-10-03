@@ -12,6 +12,7 @@ pub(super) struct Instance {
     pub glow_bounce: [u8; 4],
     pub tint: [f32; 3],
     pub offsets: [u32; 2],
+    pub first_person_offset: [f32; 3],
 }
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -173,7 +174,7 @@ impl Gpu {
             immediate_size: 0,
         });
         let vertex_attributes = wgpu::vertex_attr_array![0=>Float32x3,1=>Float32x3,2=>Float32x2,3=>Uint32x4,4=>Float32x4,5=>Uint32];
-        let instance_attributes = wgpu::vertex_attr_array![6=>Float32x3,7=>Float32x2,8=>Uint8x4,9=>Uint8x4,10=>Uint8x4,11=>Float32x3,12=>Uint32x2];
+        let instance_attributes = wgpu::vertex_attr_array![6=>Float32x3,7=>Float32x2,8=>Uint8x4,9=>Uint8x4,10=>Uint8x4,11=>Float32x3,12=>Uint32x2,13=>Float32x3];
         let buffers = [
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,

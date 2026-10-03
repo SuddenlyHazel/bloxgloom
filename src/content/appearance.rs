@@ -62,6 +62,12 @@ impl Catalog {
     ) -> bool {
         self.valid_appearance(appearance.legacy())
             && appearance.character.is_none_or(|recipe| recipe.valid())
+            && appearance.packaged.is_none_or(|p| {
+                appearance.character.is_none()
+                    && self
+                        .player_model(p.model)
+                        .is_some_and(|model| model.schema().accepts(&p.visual))
+            })
     }
 
     pub(crate) fn valid_appearance(&self, appearance: [u8; 4]) -> bool {

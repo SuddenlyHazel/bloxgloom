@@ -45,8 +45,10 @@ pub(crate) fn patches(
     let mut out = Vec::new();
     let mut characters = 0;
     for avatar in avatars.iter().take(MAX_AVATARS) {
-        if avatar.model != AvatarModel::Player
-            || !avatar.position.is_finite()
+        if !matches!(
+            avatar.model,
+            AvatarModel::Player | AvatarModel::PackagedPlayer(_)
+        ) || !avatar.position.is_finite()
             || avatar.position.abs().max_element() > 1_000_000.0
             || avatar.position.distance_squared(eye) > MAX_DISTANCE * MAX_DISTANCE
             || avatar.light_levels[..2] == [0, 0]

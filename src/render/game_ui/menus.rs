@@ -54,7 +54,7 @@ pub(super) fn draw(
                     .show(ui, |ui| match frame.screen {
                         UiScreen::Pause => pause(ui, intents),
                         UiScreen::Audio => audio::draw(ui, frame, intents),
-                        UiScreen::Character => character::draw(ui, frame, intents),
+                        UiScreen::Character => character::draw(ui, frame, catalog, intents),
                         UiScreen::Settings | UiScreen::Graphics => settings(ui, frame, intents),
                         UiScreen::Actions => actions(ui, frame, intents),
                         UiScreen::Admin => admin(ui, frame, catalog, intents),

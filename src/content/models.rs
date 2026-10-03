@@ -23,6 +23,7 @@ impl Drop for Reservation {
 pub(crate) struct Prepared {
     pub model: Arc<Model>,
     pub scale: f32,
+    pub player: Option<bloxgloom_host_api::model::PlayerModel>,
     pub fingerprint: u64,
     visual_schema: bloxgloom_host_api::entity::VisualSchema,
     bytes: usize,
@@ -92,6 +93,14 @@ pub(crate) fn prepare(asset: &ModelAsset) -> Result<Arc<Prepared>, Error> {
         hash.update((bytes.len() as u64).to_le_bytes());
         hash.update(bytes);
     }
+    let player_bytes = asset
+        .player
+        .as_ref()
+        .map(|p| p.encode())
+        .transpose()?
+        .unwrap_or_default();
+    hash.update((player_bytes.len() as u64).to_le_bytes());
+    hash.update(&player_bytes);
     let key: [u8; 32] = hash.finalize().into();
     let mut cache = PREPARED.lock().unwrap();
     cache.retain(|_, model| model.strong_count() != 0);
@@ -120,6 +129,20 @@ pub(crate) fn prepare(asset: &ModelAsset) -> Result<Arc<Prepared>, Error> {
     }
     let reservation = Reservation(bytes);
     let model = Model::from_glb(&asset.glb, controls).map_err(fail)?;
+    if let Some(player) = &asset.player {
+        for clip in player.clips().into_iter().flatten() {
+            if !model.clips.iter().any(|c| &c.name == clip) {
+                return Err(fail(format!("unknown player clip: {clip}")));
+            }
+        }
+        for node in &player.first_person_hide {
+            if model.nodes.iter().filter(|n| &n.name == node).count() != 1 {
+                return Err(fail(format!(
+                    "missing or ambiguous first-person node: {node}"
+                )));
+            }
+        }
+    }
     if model.clips.len() > 256 || model.clips.iter().any(|c| c.name.len() > 96) {
         return Err(fail("model clip names must be at most 96 bytes".into()));
     }
@@ -128,10 +151,12 @@ pub(crate) fn prepare(asset: &ModelAsset) -> Result<Arc<Prepared>, Error> {
     hash_bytes(&mut fingerprint, &asset.glb);
     hash_bytes(&mut fingerprint, &asset.controls);
     hash_bytes(&mut fingerprint, &asset.scale.to_le_bytes());
+    hash_bytes(&mut fingerprint, &player_bytes);
     let prepared = Arc::new(Prepared {
         visual_schema: schema(&model),
         model: Arc::new(model),
         scale: asset.scale,
+        player: asset.player.clone(),
         fingerprint,
         bytes,
         _reservation: reservation,
@@ -242,6 +267,19 @@ impl Catalog {
         self.model_keys.insert(key.clone(), id);
         self.models.insert(id, (key, model));
         Ok(())
+    }
+    pub(crate) fn model_key(&self, id: u32) -> Option<&str> {
+        Some(&self.models.get(&id)?.0)
+    }
+    pub(crate) fn player_model(&self, id: u32) -> Option<&Arc<Prepared>> {
+        let prepared = &self.models.get(&id)?.1;
+        prepared.player.as_ref()?;
+        Some(prepared)
+    }
+    pub(crate) fn player_model_id(&self, key: &str) -> Option<u32> {
+        let id = *self.model_keys.get(key)?;
+        self.player_model(id)?;
+        Some(id)
     }
     pub(crate) fn model_by_key(&self, key: &str) -> Option<&Arc<Prepared>> {
         let id = self.model_keys.get(key)?;

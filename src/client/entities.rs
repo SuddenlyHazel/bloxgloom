@@ -167,6 +167,15 @@ impl Replicas {
     ) -> Option<crate::appearance::AppearanceState> {
         let avatar = self.avatars.get(&owned?)?;
         Some(crate::appearance::AppearanceState {
+            packaged: match avatar.model {
+                crate::render::AvatarModel::PackagedPlayer(model) => {
+                    Some(crate::appearance::PackagedAppearance {
+                        model,
+                        visual: avatar.model_pose?,
+                    })
+                }
+                _ => None,
+            },
             palettes: [
                 avatar.cosmetics[0],
                 avatar.cosmetics[1],

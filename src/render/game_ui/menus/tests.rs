@@ -274,6 +274,7 @@ fn native_character_menu_keeps_apply_visible_and_blocks_repeat_while_pending() {
         let mut frame = UiFrame {
             screen: UiScreen::Character,
             character: Some(crate::ui::CharacterPanel {
+                packaged: None,
                 cosmetics: [0; 4],
                 recipe: Some(crate::appearance::CharacterRecipe {
                     iris: Some([12, 170, 255]),

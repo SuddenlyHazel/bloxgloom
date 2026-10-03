@@ -109,7 +109,10 @@ impl Track {
             avatar.pose[0]
         } else if distance > 0.0001 {
             delta.x.atan2(delta.z)
-        } else if visual.model == AvatarModel::Player {
+        } else if matches!(
+            visual.model,
+            AvatarModel::Player | AvatarModel::PackagedPlayer(_)
+        ) {
             // Players currently replicate position, not a look vector. Preserve
             // their last movement heading instead of turning north when idle.
             self.yaw
@@ -125,7 +128,10 @@ impl Track {
             self.yaw += angle * (1.0 - (-14.0 * dt).exp());
         }
         visual.pose[0] = self.yaw;
-        if visual.model == AvatarModel::Player {
+        if matches!(
+            visual.model,
+            AvatarModel::Player | AvatarModel::PackagedPlayer(_)
+        ) {
             // Authored locomotion is presentation-only. Distance drives walk phase;
             // a stale snapshot stops feet rather than inventing movement.
             self.age += dt;

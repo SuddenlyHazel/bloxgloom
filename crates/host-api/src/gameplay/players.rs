@@ -11,6 +11,9 @@ pub struct Player {
     pub position: [f32; 3],
     /// Frozen palette indices: skin, shirt, pants and reserved flags.
     pub appearance: [u8; 4],
+    /// Public package rig and appearance captured with the directory fence.
+    pub model: Option<String>,
+    pub model_visual: Option<crate::entity::VisualState>,
 }
 
 impl Context<'_> {
@@ -34,6 +37,45 @@ impl Context<'_> {
                         player.appearance = [palettes[0], palettes[1], palettes[2], 0]
                     }
                     super::PlayerOperationKind::Teleport(position) => player.position = position,
+                    super::PlayerOperationKind::Model(ref model) => {
+                        player.model = model.clone();
+                        player.model_visual = model
+                            .as_ref()
+                            .map(|_| crate::entity::VisualState::default());
+                    }
+                    super::PlayerOperationKind::ModelVisual(visual) => {
+                        player.model_visual = Some(visual)
+                    }
+                    super::PlayerOperationKind::Animation {
+                        ref clip,
+                        speed,
+                        looping,
+                        crossfade_s,
+                    } => {
+                        if let (Some(model), Some(visual)) =
+                            (&player.model, &mut player.model_visual)
+                            && let Some(schema) = self.snapshot.player_model_schema(model)
+                            && let Some(index) = schema.clips.iter().position(|name| name == clip)
+                            && let Some(sequence) = visual.sequence.checked_add(1)
+                        {
+                            visual.sequence = sequence;
+                            visual.sample_tick = self.snapshot.tick();
+                            visual.playback = Some(crate::entity::ClipPlayback {
+                                clip: index as u16,
+                                speed,
+                                looping,
+                                crossfade_s,
+                                started_tick: visual.sample_tick,
+                                sequence,
+                            });
+                        }
+                    }
+                    super::PlayerOperationKind::StopAnimation(crossfade_s) => {
+                        if let Some(visual) = &mut player.model_visual {
+                            visual.playback = None;
+                            visual.transition_s = crossfade_s;
+                        }
+                    }
                     _ => {}
                 }
             }

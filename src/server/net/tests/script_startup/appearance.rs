@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 mod characters;
 #[path = "appearance/operations.rs"]
 mod operations;
+#[path = "appearance/player_models.rs"]
+mod player_models;
 
 const CALL: &str = "h.register_player_appearance('demo:wardrobe', 1, 'bloxgloom:humanoid/v1', {skins={{0.1,0.9,0.2}}, shirts={{0.9,0.1,0.2}}, pants={{0.1,0.2,0.9}}})";
 fn source(extra: &str) -> String {
@@ -48,7 +50,15 @@ impl Peer {
             panic!("missing exact appearance bundle")
         };
         let bundle = crate::client::bundle::receive(&mut stream, identity, None).unwrap();
-        assert!(bundle.bytes().starts_with(b"BGCLIENT\x0d"));
+        assert!(
+            bundle
+                .bytes()
+                .starts_with(if expected.models().count() == 0 {
+                    b"BGCLIENT\x0d"
+                } else {
+                    b"BGCLIENT\x31"
+                })
+        );
         let local = bundle.session_catalog().unwrap();
         let (fingerprint, bytes) = receive_content_manifest(&mut stream);
         let catalog = ContentManifest::decode(&bytes)

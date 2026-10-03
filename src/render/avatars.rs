@@ -25,9 +25,10 @@ use wgpu::util::DeviceExt;
 
 pub(crate) const MAX_AVATARS: usize = 512;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum AvatarModel {
     Player,
+    PackagedPlayer(u32),
     Registered(crate::content::EntityTypeId),
     Moving(crate::content::EntityTypeId),
 }
@@ -252,6 +253,7 @@ impl AvatarRenderer {
 
     pub(crate) fn set_first_person(&mut self, view: Option<FirstPersonView>) {
         self.characters.first_person = view;
+        self.authored.first_person = view;
     }
 
     /// Caller supplies nearest first. The bounded instance buffer never grows

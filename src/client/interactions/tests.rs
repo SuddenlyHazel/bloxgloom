@@ -87,6 +87,7 @@ fn avatar(app: &ClientApp) -> crate::render::VisualAvatar {
             position: app.position.to_array(),
         },
         payload: crate::appearance::AppearanceState {
+            packaged: None,
             palettes: [0; 3],
             character: Some(Default::default()),
         }

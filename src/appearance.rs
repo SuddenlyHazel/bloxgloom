@@ -1,12 +1,14 @@
 //! Bounded, public character selections shared by server, protocol and client.
 //! These are catalog IDs and color bytes, never paths, profile IDs or model data.
 mod catalog;
+mod packaged;
+pub(crate) use packaged::PackagedAppearance;
 pub(crate) fn fingerprint() -> &'static [u8; 32] {
     catalog::fingerprint()
 }
 
 pub(crate) const CHARACTER_RECIPE_BYTES: usize = 12;
-pub(crate) const MAX_APPEARANCE_BYTES: usize = 4 + CHARACTER_RECIPE_BYTES;
+pub(crate) const MAX_APPEARANCE_BYTES: usize = 8 + bloxgloom_host_api::entity::MAX_VISUAL_BYTES;
 pub(crate) const BODIES: [&str; 2] = ["flat_chest", "defined_chest_sports_bra"];
 /// sRGB highlight color from the kit's default tousled-crop metadata (#BE7940).
 pub(crate) const DEFAULT_HAIR_COLOR: [u8; 3] = [190, 121, 64];
@@ -110,9 +112,10 @@ impl CharacterRecipe {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct AppearanceState {
     pub palettes: [u8; 3],
+    pub packaged: Option<PackagedAppearance>,
     /// None uses the articulated default with these same palettes.
     pub character: Option<CharacterRecipe>,
 }
@@ -123,13 +126,25 @@ impl AppearanceState {
     }
     pub fn encode(self) -> Vec<u8> {
         let mut bytes = self.legacy().to_vec();
+        if let Some(packaged) = self.packaged {
+            bytes[3] = 1;
+            bytes.extend(packaged.encode());
+            return bytes;
+        }
         if let Some(recipe) = self.character {
             bytes.extend(recipe.encode());
         }
         bytes
     }
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if !matches!(bytes.len(), 4 | MAX_APPEARANCE_BYTES) || bytes[3] != 0 {
+        if bytes.len() >= 8 && bytes.len() <= MAX_APPEARANCE_BYTES && bytes[3] == 1 {
+            return Some(Self {
+                palettes: [bytes[0], bytes[1], bytes[2]],
+                character: None,
+                packaged: Some(PackagedAppearance::decode(&bytes[4..])?),
+            });
+        }
+        if !matches!(bytes.len(), 4 | 16) || bytes[3] != 0 {
             return None;
         }
         let character = if bytes.len() == 4 {
@@ -140,6 +155,7 @@ impl AppearanceState {
         Some(Self {
             palettes: [bytes[0], bytes[1], bytes[2]],
             character,
+            packaged: None,
         })
     }
 }

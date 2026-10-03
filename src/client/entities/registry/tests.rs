@@ -71,6 +71,7 @@ fn authored_native_updates_are_schema_checked_before_replica_avatar_install() {
     let mut catalog = Catalog::builtins();
     catalog
         .register_model_asset(&bloxgloom_host_api::model::ModelAsset {
+            player: None,
             key: "demo:model".into(),
             glb: std::fs::read(root.join("sprout.glb")).unwrap(),
             controls: std::fs::read(root.join("looks.json")).unwrap(),

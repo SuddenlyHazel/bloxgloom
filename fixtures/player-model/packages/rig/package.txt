@@ -1,0 +1,12 @@
+format 2
+package rig
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:players/v1
+requires bloxgloom:actions/v1
+module server main server/main.luau
+module server joined server/joined.luau
+module server nod server/nod.luau
+asset model player assets/models/model.glb
+asset model-controls looks assets/models/controls.json

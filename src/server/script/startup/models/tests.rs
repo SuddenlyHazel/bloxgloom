@@ -46,7 +46,7 @@ fn packaged_glbs_are_verified_prepared_and_bound_to_handshake_identity() {
     );
     let declarations = Declarations::discover(&fixture.0).unwrap();
     let bundle = &declarations.client_bundle;
-    assert_eq!(&bundle.bytes()[..9], b"BGCLIENT\x30");
+    assert_eq!(&bundle.bytes()[..9], b"BGCLIENT\x31");
     let client = bundle.session_catalog().unwrap();
     let mut server = crate::content::Catalog::builtins();
     crate::server::lifecycle::Registration::install(&declarations, &mut server).unwrap();
@@ -96,4 +96,21 @@ fn bad_model_inputs_poison_caught_startup_and_never_publish_partial_models() {
             "{input}"
         );
     }
+}
+
+#[test]
+fn packaged_player_settings_round_trip_verified_client_metadata_and_reject_bad_clip_names() {
+    let fixture = Fixture::new(
+        "h.register_player_model{key='demo:player',asset='demo:player',controls='demo:looks',clips={idle='idle',walk='walk',run='run',crouch='crouch',tool_left='tool_use_left',tool_right='tool_use_right'},first_person_offset={0,0,-0.2},crossfade_s=0.15}",
+    );
+    let declarations = Declarations::discover(&fixture.0).unwrap();
+    let client = declarations.client_bundle.session_catalog().unwrap();
+    let id = client.player_model_id("demo:player").unwrap();
+    let settings = client.player_model(id).unwrap().player.as_ref().unwrap();
+    assert_eq!(settings.run.as_deref(), Some("run"));
+    assert_eq!(settings.first_person_offset, [0.0, 0.0, -0.2]);
+    let invalid = Fixture::new(
+        "h.register_player_model{key='demo:player',asset='demo:player',clips={idle='missing'}}",
+    );
+    assert!(Declarations::discover(&invalid.0).is_err());
 }

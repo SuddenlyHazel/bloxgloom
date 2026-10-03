@@ -9,6 +9,7 @@ use wgpu::util::DeviceExt;
 
 pub(crate) struct CharacterPreview {
     renderer: AvatarRenderer,
+    player_clips: std::collections::HashMap<u32, [Option<u16>; 6]>,
     color: wgpu::Texture,
     sampled_texture: wgpu::Texture,
     depth: wgpu::TextureView,
@@ -79,8 +80,36 @@ impl CharacterPreview {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
+        let player_clips = catalog
+            .models()
+            .filter_map(|(id, model)| {
+                let p = model.player.as_ref()?;
+                let index = |name: &Option<String>| {
+                    name.as_ref().and_then(|name| {
+                        model
+                            .model
+                            .clips
+                            .iter()
+                            .position(|c| &c.name == name)
+                            .map(|i| i as u16)
+                    })
+                };
+                Some((
+                    id,
+                    [
+                        index(&p.idle),
+                        index(&p.walk),
+                        index(&p.crouch),
+                        index(&p.tool_left),
+                        index(&p.tool_right),
+                        index(&p.run),
+                    ],
+                ))
+            })
+            .collect();
         Self {
             renderer,
+            player_clips,
             color,
             sampled_texture,
             sampled,
@@ -104,14 +133,33 @@ impl CharacterPreview {
         ];
         self.renderer
             .preview_character_clip(clips[usize::from(panel.clip.min(5))], panel.time);
+        let mut visual = panel.packaged.map(|p| p.visual);
+        if let Some(packaged) = panel.packaged
+            && let Some(state) = &mut visual
+            && let Some(clips) = self.player_clips.get(&packaged.model)
+            && let Some(clip) = clips[panel.clip.min(5) as usize].or(clips[0])
+        {
+            state.sample_tick = (panel.time.max(0.0) as f64 * 50.0) as u64;
+            state.sequence = (panel.time.max(0.0) as f64 * 1000.0) as u32;
+            state.playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+                clip,
+                speed: 1.0,
+                looping: true,
+                crossfade_s: 0.0,
+                started_tick: 0,
+                sequence: state.sequence,
+            });
+        }
         self.renderer.set(
             queue,
             &[VisualAvatar {
                 animation: Default::default(),
-                model: AvatarModel::Player,
+                model: panel.packaged.map_or(AvatarModel::Player, |p| {
+                    AvatarModel::PackagedPlayer(p.model)
+                }),
                 pose: [-0.25, 0.0, 0.0, 0.0],
                 motion: None,
-                model_pose: None,
+                model_pose: visual,
                 character_pose: [0.0; 4],
                 character_look: [0.0; 2],
                 character_crouch: 0.0,

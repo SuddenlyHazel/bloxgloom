@@ -165,6 +165,16 @@ pub(super) fn render_avatars(
     avatars: &[VisualAvatar],
     clip: Option<(&'static str, f32)>,
 ) -> Vec<u8> {
+    render_avatars_with_view(device, queue, catalog, avatars, clip, None)
+}
+pub(super) fn render_avatars_with_view(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    catalog: &Catalog,
+    avatars: &[VisualAvatar],
+    clip: Option<(&'static str, f32)>,
+    view: Option<super::FirstPersonView>,
+) -> Vec<u8> {
     let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
         * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
     let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -185,6 +195,7 @@ pub(super) fn render_avatars(
     if let Some((clip, time)) = clip {
         renderer.preview_character_clip(clip, time);
     }
+    renderer.set_first_person(view);
     renderer.set(queue, avatars);
     let size = wgpu::Extent3d {
         width: WIDTH,

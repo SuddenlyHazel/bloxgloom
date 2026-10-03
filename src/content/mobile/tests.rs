@@ -3,6 +3,7 @@ use bloxgloom_host_api::entity::{self as api, AuthoredModel, VisualState};
 
 fn model() -> bloxgloom_host_api::model::ModelAsset {
     bloxgloom_host_api::model::ModelAsset {
+        player: None,
         key: "demo:model".into(),
         glb: include_bytes!("../../../fixtures/authored-model/model.glb").to_vec(),
         controls: Vec::new(),

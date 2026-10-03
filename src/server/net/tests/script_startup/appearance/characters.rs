@@ -36,10 +36,12 @@ fn articulated_recipes_replicate_independently_and_survive_server_restart() {
         iris: None,
     };
     let first_saved = AppearanceState {
+        packaged: None,
         palettes: [6, 8, 6],
         character: Some(first_recipe),
     };
     let second_saved = AppearanceState {
+        packaged: None,
         palettes: [0; 3],
         character: Some(second_recipe),
     };
@@ -57,6 +59,7 @@ fn articulated_recipes_replicate_independently_and_survive_server_restart() {
                 first.character_state(
                     a,
                     AppearanceState {
+                        packaged: None,
                         character: Some(first_recipe),
                         ..Default::default()
                     },
@@ -94,6 +97,7 @@ fn articulated_recipes_replicate_independently_and_survive_server_restart() {
             if restarted {
                 first.send(ClientMessage::SelectCharacter { recipe: None });
                 let default_character = AppearanceState {
+                    packaged: None,
                     palettes: first_saved.palettes,
                     character: None,
                 };

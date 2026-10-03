@@ -852,6 +852,7 @@ fn player_projection_preserves_recipe_and_rejects_noncanonical_flags() {
         iris: Some([25, 130, 240]),
     };
     let appearance = crate::appearance::AppearanceState {
+        packaged: None,
         palettes: [1, 2, 3],
         character: Some(recipe),
     };

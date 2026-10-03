@@ -173,6 +173,7 @@ pub(super) fn avatars(chunks: &HashMap<ChunkKey, Arc<world::Chunk>>) -> Vec<rend
     .enumerate()
     .map(|(index, (skin, body, hair_color))| {
         let appearance = crate::appearance::AppearanceState {
+            packaged: None,
             palettes: [skin, 2, 1],
             character: Some(crate::appearance::CharacterRecipe {
                 body,

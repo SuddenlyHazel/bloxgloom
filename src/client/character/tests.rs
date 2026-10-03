@@ -61,6 +61,7 @@ fn unknown_snapshot_and_rejected_draft_cannot_apply_and_disconnect_clears_state(
 
 fn state(character: Option<CharacterRecipe>) -> Option<AppearanceState> {
     Some(AppearanceState {
+        packaged: None,
         palettes: [2, 4, 1],
         character,
     })
@@ -112,4 +113,63 @@ fn preview_run_selection_is_bounded_and_does_not_edit_recipe() {
     editor.clip(6);
     assert_eq!(editor.panel().clip, 5);
     assert_eq!(editor.draft, recipe);
+}
+
+#[test]
+fn packaged_model_draft_cancel_apply_and_playback_echo_preserve_distinct_states() {
+    let visual = bloxgloom_host_api::entity::VisualState::default();
+    let current = AppearanceState {
+        packaged: Some(PackagedAppearance { model: 12, visual }),
+        palettes: [1, 2, 3],
+        character: None,
+    };
+    let mut editor = CharacterEditor::default();
+    editor.open(Some(current));
+    assert_eq!(editor.panel().packaged.unwrap().model, 12);
+    let mut edited = visual;
+    edited.layers[0] = 1;
+    editor.edit_model_visual(edited);
+    assert!(editor.panel().can_apply);
+    assert_eq!(
+        editor.apply(),
+        None,
+        "builtin recipe requests never replace an active packaged model"
+    );
+    editor.open(Some(current));
+    assert!(
+        !editor.panel().can_apply,
+        "reopen discards unsaved model look"
+    );
+    editor.edit_model(Some(20));
+    let requested = editor.apply_model().unwrap().unwrap();
+    assert_eq!(requested.model, 20);
+    assert_eq!(editor.apply_model(), None);
+    assert!(editor.panel().pending);
+    editor.observe(Some(AppearanceState {
+        packaged: Some(requested),
+        ..current
+    }));
+    assert!(!editor.panel().pending);
+    assert!(!editor.panel().can_apply);
+    let mut playing = requested;
+    playing.visual.sequence = 1;
+    playing.visual.sample_tick = 100;
+    playing.visual.playback = Some(bloxgloom_host_api::entity::ClipPlayback {
+        clip: 0,
+        speed: 1.0,
+        looping: true,
+        crossfade_s: 0.2,
+        started_tick: 100,
+        sequence: 1,
+    });
+    editor.observe(Some(AppearanceState {
+        packaged: Some(playing),
+        ..current
+    }));
+    assert!(
+        !editor.panel().can_apply,
+        "transient clip clocks must not dirty a saved look"
+    );
+    editor.edit_model(None);
+    assert_eq!(editor.apply_model(), Some(None));
 }

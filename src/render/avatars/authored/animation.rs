@@ -56,7 +56,11 @@ impl Animator {
             self.time = target.start_s;
             self.fade = 0.0;
         } else {
-            self.time += dt * target.speed;
+            if target.serial.is_some() {
+                self.time = target.start_s;
+            } else {
+                self.time += dt * target.speed;
+            }
             self.fade += dt;
         }
         self.current = Some(target);

@@ -1,6 +1,7 @@
 use super::*;
 fn asset() -> ModelAsset {
     ModelAsset {
+        player: None,
         key: "demo:model".into(),
         glb: include_bytes!("../../../assets/models/player/master/model.glb").to_vec(),
         controls: include_bytes!("../../../assets/models/player/master/controls.json").to_vec(),
@@ -86,4 +87,37 @@ fn repeated_meshes_are_charged_before_decoding_geometry() {
     .to_vec()
     .unwrap();
     assert!(estimate(&bytes).unwrap_err().contains("vertex admission"));
+}
+
+#[test]
+fn player_metadata_validates_named_clips_and_nodes_and_fences_saved_model_contract() {
+    let mut asset = asset();
+    asset.player = Some(bloxgloom_host_api::model::PlayerModel {
+        idle: Some("idle".into()),
+        walk: Some("walk".into()),
+        run: Some("run".into()),
+        ..Default::default()
+    });
+    let mut catalog = Catalog::builtins();
+    catalog.register_model_asset(&asset).unwrap();
+    let id = catalog.player_model_id(&asset.key).unwrap();
+    assert_eq!(catalog.model_key(id), Some(asset.key.as_str()));
+    let manifest = super::super::manifest::ContentManifest::from_catalog(&catalog);
+    let mut changed = asset.clone();
+    changed.player.as_mut().unwrap().crossfade_s = 0.5;
+    let mut other = Catalog::builtins();
+    other.register_model_asset(&changed).unwrap();
+    assert!(manifest.resolve_catalog(&other).is_err());
+    for invalid in ["missing_clip", ""] {
+        let mut bad = asset.clone();
+        bad.player.as_mut().unwrap().idle = Some(invalid.into());
+        assert!(prepare(&bad).is_err());
+    }
+    let mut bad = asset;
+    bad.player
+        .as_mut()
+        .unwrap()
+        .first_person_hide
+        .push("missing_node".into());
+    assert!(prepare(&bad).is_err());
 }

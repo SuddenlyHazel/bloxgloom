@@ -17,10 +17,11 @@ fn recipe_ids_and_optional_iris_round_trip_canonically() {
                     assert!(recipe.valid());
                     assert_eq!(CharacterRecipe::decode(&recipe.encode()), Some(recipe));
                     let state = AppearanceState {
+                        packaged: None,
                         palettes: [1, 2, 3],
                         character: Some(recipe),
                     };
-                    assert_eq!(state.encode().len(), MAX_APPEARANCE_BYTES);
+                    assert_eq!(state.encode().len(), 4 + CHARACTER_RECIPE_BYTES);
                     assert_eq!(AppearanceState::decode(&state.encode()), Some(state));
                     assert_eq!(state.legacy(), [1, 2, 3, 0]);
                 }
@@ -85,9 +86,10 @@ fn builtin_identity_is_stable_and_covers_exact_assets() {
             .entity_type(crate::content::EntityTypeId(2))
             .unwrap()
             .schema_version,
-        4
+        5
     );
     assert!(!catalog.valid_appearance_state(AppearanceState {
+        packaged: None,
         palettes: [255, 0, 0],
         ..Default::default()
     }));
@@ -102,6 +104,7 @@ fn builtin_identity_is_stable_and_covers_exact_assets() {
         },
     ] {
         assert!(!catalog.valid_appearance_state(AppearanceState {
+            packaged: None,
             character: Some(recipe),
             ..Default::default()
         }));
@@ -137,4 +140,42 @@ fn bodies_and_rgb_boundaries_round_trip_without_palette_quantization() {
             assert_eq!(CharacterRecipe::decode(&recipe.encode()), Some(recipe));
         }
     }
+}
+
+#[test]
+fn packaged_player_payloads_are_bounded_canonical_and_validated_against_selected_rig() {
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_model_asset(&bloxgloom_host_api::model::ModelAsset {
+            key: "demo:player".into(),
+            player: Some(Default::default()),
+            glb: include_bytes!("../../fixtures/authored-model/model.glb").to_vec(),
+            controls: include_bytes!("../../fixtures/authored-model/controls.json").to_vec(),
+            scale: 1.0,
+        })
+        .unwrap();
+    let id = catalog.player_model_id("demo:player").unwrap();
+    let mut visual = bloxgloom_host_api::entity::VisualState::default();
+    visual.layers[0] = 0;
+    let state = AppearanceState {
+        packaged: Some(PackagedAppearance { model: id, visual }),
+        palettes: [1, 2, 3],
+        character: None,
+    };
+    assert!(catalog.valid_appearance_state(state));
+    let bytes = state.encode();
+    assert!(bytes.len() <= MAX_APPEARANCE_BYTES);
+    assert_eq!(AppearanceState::decode(&bytes), Some(state));
+    for n in 0..bytes.len() {
+        assert!(AppearanceState::decode(&bytes[..n]).is_none());
+    }
+    let mut unknown = state;
+    unknown.packaged.as_mut().unwrap().model = u32::MAX;
+    assert!(!catalog.valid_appearance_state(unknown));
+    let mut unknown = state;
+    unknown.packaged.as_mut().unwrap().visual.layers[31] = 1;
+    assert!(!catalog.valid_appearance_state(unknown));
+    let mut mixed = state;
+    mixed.character = Some(Default::default());
+    assert!(!catalog.valid_appearance_state(mixed));
 }

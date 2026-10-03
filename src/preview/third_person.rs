@@ -194,6 +194,7 @@ pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::Vis
     // Go through the canonical public appearance codec instead of supplying an
     // unvalidated recipe directly to the renderer.
     let appearance = crate::appearance::AppearanceState {
+        packaged: None,
         palettes: [1, 2, 3],
         character: Some(crate::appearance::CharacterRecipe {
             hair: 2,
