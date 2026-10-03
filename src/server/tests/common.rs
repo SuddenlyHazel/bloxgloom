@@ -99,6 +99,7 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
         state,
         tick,
         vec![SimulationInput::Join {
+            development_revision: 0,
             guard: crate::server::players::JoinGuard::default(),
             name: format!("player-{profile:x}"),
             profile,

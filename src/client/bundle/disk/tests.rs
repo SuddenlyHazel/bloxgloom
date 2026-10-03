@@ -37,6 +37,52 @@ fn bundle(name: &str) -> (BundleIdentity, ClientBundle) {
 }
 
 #[test]
+fn disk_cache_native_installer_skips_download_after_memory_cache_is_cleared() {
+    let _exclusive = super::super::TEST_CACHE_LOCK.lock().unwrap();
+    let (identity, bundle) = bundle("diskcold");
+    let disk = Cache::default().unwrap();
+    let _ = fs::remove_file(disk.path(identity));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let bytes = bundle.bytes().to_vec();
+    let peer = std::thread::spawn(move || {
+        for downloaded in [true, false] {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            if downloaded {
+                assert_eq!(
+                    protocol::read_client(&mut socket).unwrap(),
+                    ClientMessage::BundleRequest { identity }
+                );
+                protocol::write_server(
+                    &mut socket,
+                    &ServerMessage::BundlePart {
+                        offset: 0,
+                        bytes: bytes.clone(),
+                    },
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                protocol::read_client(&mut socket).unwrap(),
+                ClientMessage::BundleReady { identity }
+            );
+        }
+    });
+    for cached in [false, true] {
+        *super::super::CACHE.lock().unwrap() = None;
+        let mut socket = TcpStream::connect(address).unwrap();
+        let control = crate::client::join_worker::Control::default();
+        let loaded = super::super::install(&mut socket, identity, &control).unwrap();
+        assert_eq!(loaded.bytes(), bundle.bytes());
+        assert_eq!(control.snapshot().1.unwrap().cached, cached);
+    }
+    peer.join().unwrap();
+}
+
+#[test]
 fn disk_cache_survives_a_new_cache_instance_and_reverifies_corrupt_and_truncated_bytes() {
     let fixture = Fixture::new();
     let (identity, bundle) = bundle("demo");

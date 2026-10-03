@@ -1,5 +1,40 @@
 use super::*;
 
+#[test]
+fn package_reload_notice_retires_session_and_starts_same_address_join() {
+    let mut shell = JoinApp::new("127.0.0.1:0", true);
+    shell.config_path = std::env::temp_dir().join(format!(
+        "bloxgloom-reload-client-{}.cfg",
+        std::process::id()
+    ));
+    let mut live = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        shell.config_path.clone(),
+    );
+    live.accept(ServerMessage::PackageReload {
+        reconnect: false,
+        text: "reload rejected".into(),
+    });
+    shell.live = Some(live);
+    assert!(!shell.reload_if_requested());
+    assert!(shell.live.is_some());
+    shell
+        .live
+        .as_mut()
+        .unwrap()
+        .accept(ServerMessage::PackageReload {
+            reconnect: true,
+            text: "reload complete".into(),
+        });
+    assert!(shell.reload_if_requested());
+    assert!(shell.live.is_none());
+    assert!(shell.attempt.is_some());
+    assert_eq!(shell.address, "127.0.0.1:0");
+    shell.finish();
+    let _ = std::fs::remove_file(shell.config_path);
+}
+
 pub(in crate::client) fn failure_and_retry_dispatch(address: &str, path: PathBuf) {
     let mut app = JoinApp::new(address, false);
     app.config_path = path;

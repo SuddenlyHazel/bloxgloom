@@ -77,6 +77,7 @@ mod tokens;
 mod weather;
 
 enum Command {
+    ReloadPackages,
     Help,
     Appearance([u8; 3]),
     Time(u64),
@@ -118,6 +119,7 @@ fn parse_with_players(
     let mut values = tokens[1..].iter().map(String::as_str).collect::<Vec<_>>();
     let normalized;
     let key = match key {
+        "reload" if values == ["packages"] => return Ok(Command::ReloadPackages),
         "help" if values.is_empty() => return Ok(Command::Help),
         "time" => return time::parse(&values).map(Command::Time),
         "weather" => {
@@ -329,6 +331,11 @@ impl ClientApp {
     }
     pub(super) fn admin_run(&mut self) {
         match parse_with_players(&self.admin_input, &self.catalog, &self.player_roster) {
+            Ok(Command::ReloadPackages) => {
+                self.queue_command(ClientMessage::ReloadPackages);
+                self.admin_input.clear();
+                self.show_status("Package reload requested");
+            }
             Ok(Command::Help) => {
                 let commands = self
                     .catalog
@@ -351,7 +358,7 @@ impl ClientApp {
                         - 1
                 });
                 self.show_status(format!(
-                    "weather set <clear|rain|storm> [0..60 seconds] [mild|normal|severe storm] / time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
+                    "reload packages / weather set <clear|rain|storm> [0..60 seconds] [mild|normal|severe storm] / time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
                     maxima[0], maxima[1], maxima[2]
                 ));
             }

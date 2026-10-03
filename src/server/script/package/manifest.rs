@@ -4,6 +4,7 @@ use super::error;
 use crate::server::script::ScriptError;
 use crate::server::script::capacity::{MAX_ASSETS_PER_PACKAGE, MAX_MODULES_PER_PACKAGE};
 
+#[derive(PartialEq, Eq)]
 pub(super) struct Manifest {
     pub version: String,
     pub entry: String,

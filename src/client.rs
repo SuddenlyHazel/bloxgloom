@@ -284,6 +284,7 @@ mod mesh_queue;
 mod observations;
 pub(crate) mod presentation;
 pub(crate) mod startup;
+pub(crate) use startup::prepare as prepare_package_startup;
 mod weather;
 mod workers;
 mod world_time;
@@ -389,6 +390,7 @@ struct ClientApp {
     frame_ms: Vec<f32>,
     disconnected: bool,
     failure: Option<String>,
+    package_reload_requested: bool,
     admin_enabled: bool,
     admin_input: String,
     admin_page: usize,
@@ -493,6 +495,7 @@ impl ClientApp {
             frame_ms: Vec::with_capacity(512),
             disconnected: false,
             failure: None,
+            package_reload_requested: false,
             admin_enabled: false,
             admin_input: String::new(),
             admin_page: 0,
@@ -1076,6 +1079,10 @@ impl ClientApp {
             return;
         }
         match message {
+            ServerMessage::PackageReload { reconnect, text } => {
+                self.show_status(text);
+                self.package_reload_requested |= reconnect;
+            }
             ServerMessage::LodInvalidateAll { session, revision } => {
                 self.lod.invalidate_all(session, revision)
             }

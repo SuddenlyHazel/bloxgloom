@@ -73,6 +73,7 @@ pub(super) struct PackageTexture {
 }
 
 pub(in crate::server) struct Declarations {
+    pub(in crate::server) snapshot: Arc<PackageSnapshot>,
     pub(in crate::server) appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     pub(in crate::server) player_rules: Option<crate::content::player::Selection>,
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
@@ -99,8 +100,15 @@ pub(in crate::server) struct Declarations {
 
 impl Declarations {
     pub(in crate::server) fn discover(root: &Path) -> std::io::Result<Self> {
+        Self::from_snapshot(Arc::new(
+            PackageSnapshot::discover(root).map_err(std::io::Error::other)?,
+        ))
+    }
+
+    pub(in crate::server) fn from_snapshot(
+        snapshot: Arc<PackageSnapshot>,
+    ) -> std::io::Result<Self> {
         let deadline = std::time::Instant::now() + super::capacity::INSTALLATION_WALL_TIME;
-        let snapshot = Arc::new(PackageSnapshot::discover(root).map_err(std::io::Error::other)?);
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
         let worker = ScriptWorker::spawn(super::Limits::startup())?;
         let mut items = Vec::new();
@@ -216,6 +224,7 @@ impl Declarations {
             }
         }
         let mut result = Self {
+            snapshot: Arc::clone(&snapshot),
             appearance,
             player_rules,
             client_bundle: Arc::clone(snapshot.client_bundle()),

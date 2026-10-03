@@ -22,7 +22,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 28;
+const WIRE_VERSION: u8 = 29;
 pub(crate) mod lod;
 mod player_states;
 mod players;
@@ -44,6 +44,7 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    ReloadPackages,
     LodConfig {
         horizon: u16,
     },
@@ -170,6 +171,10 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PackageReload {
+        reconnect: bool,
+        text: String,
+    },
     LodStatus {
         session: u64,
         horizon: u16,
@@ -326,6 +331,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const HEADER: usize = 4 + 2; // length, wire version, message tag
     HEADER
         + match message {
+            ServerMessage::PackageReload { text, .. } => 3 + text.len(),
             ServerMessage::LodStatus { .. } => 11,
             ServerMessage::LodTile { tile, .. } => 16 + lod::tile_len(tile),
             ServerMessage::LodUnavailable { .. } => 25,
@@ -442,6 +448,7 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::ReloadPackages => out.push(26),
         ClientMessage::LodConfig { horizon } => {
             out.push(21);
             out.extend(horizon.to_le_bytes());
@@ -673,6 +680,15 @@ pub fn write_server_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ServerMessage::PackageReload { reconnect, text } => {
+            if text.len() > 4096 {
+                return Err(invalid("reload status too long"));
+            }
+            out.push(47);
+            out.push(u8::from(*reconnect));
+            out.extend((text.len() as u16).to_le_bytes());
+            out.extend(text.as_bytes());
+        }
         ServerMessage::LodInvalidateAll { session, revision } => {
             out.push(43);
             out.extend(session.to_le_bytes());
@@ -1174,6 +1190,7 @@ pub fn read_client_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        26 => ClientMessage::ReloadPackages,
         21 => ClientMessage::LodConfig { horizon: c.u16()? },
         22 => ClientMessage::LodRequest {
             request: c.u64()?,
@@ -1380,6 +1397,20 @@ pub fn read_server_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        47 => {
+            let reconnect = match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid reload flag")),
+            };
+            let length = usize::from(c.u16()?);
+            if length > 4096 {
+                return Err(invalid("reload status too long"));
+            }
+            let text = String::from_utf8(c.take(length)?.to_vec())
+                .map_err(|_| invalid("invalid reload status UTF-8"))?;
+            ServerMessage::PackageReload { reconnect, text }
+        }
         43 => ServerMessage::LodInvalidateAll {
             session: c.u64()?,
             revision: c.u64()?,

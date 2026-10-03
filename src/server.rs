@@ -192,7 +192,10 @@ impl Client {
     }
 }
 
+mod reload;
+
 struct State {
+    reload: Option<reload::Manager>,
     client_bundle: Option<Arc<script::package::client::ClientBundle>>,
     notifications: notifications::Lane,
     admission_limit: usize,
@@ -342,6 +345,7 @@ impl State {
 }
 
 struct PendingJoin {
+    development_revision: u64,
     guard: players::JoinGuard,
     name: String,
     profile: u128,
@@ -366,6 +370,7 @@ enum JoinResponse {
 
 enum SimulationInput {
     Join {
+        development_revision: u64,
         guard: players::JoinGuard,
         name: String,
         profile: u128,
@@ -637,11 +642,16 @@ fn server_state_with_startup(
     .map_err(|error| io::Error::other(format!("entity tick worker pool: {error:?}")))?;
     let mut system_runtime =
         SystemRuntime::with_durable_store(worker_count, owner_store, wake_store, cursors)?;
+    let reload = startup
+        .development
+        .as_ref()
+        .map(|development| reload::Manager::new(Arc::clone(development)));
     let client_bundle = startup.client_bundle.clone();
     startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
     let first_session_id = session_ids::reserve(&save_dir)?;
     Ok(State {
+        reload,
         client_bundle,
         notifications,
         admission_limit,
@@ -720,6 +730,10 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         }
         ClientMessage::SetFlying { flying } => {
             movement::set_flying(state, id, flying);
+            Ok(())
+        }
+        ClientMessage::ReloadPackages => {
+            reload::request(state, id);
             Ok(())
         }
         ClientMessage::Jump => {

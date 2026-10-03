@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn package_reload_protocol_roundtrips_and_rejects_invalid_flags_and_oversized_status() {
+    let mut bytes = Vec::new();
+    write_client(&mut bytes, &ClientMessage::ReloadPackages).unwrap();
+    assert_eq!(
+        read_client(bytes.as_slice()).unwrap(),
+        ClientMessage::ReloadPackages
+    );
+    for reconnect in [false, true] {
+        let message = ServerMessage::PackageReload {
+            reconnect,
+            text: "Reload rejected: café".into(),
+        };
+        let mut bytes = Vec::new();
+        write_server(&mut bytes, &message).unwrap();
+        assert_eq!(bytes.len(), server_wire_len(&message));
+        assert!(
+            matches!(read_server(bytes.as_slice()).unwrap(), ServerMessage::PackageReload { reconnect: actual, text } if actual == reconnect && text == "Reload rejected: café")
+        );
+        bytes[6] = 2;
+        assert!(read_server(bytes.as_slice()).is_err());
+    }
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::PackageReload {
+                reconnect: false,
+                text: "x".repeat(4097)
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn sprint_wire_checks_bool_identity_and_estimated_frame_size() {
     for sprinting in [false, true] {
         let request = ClientMessage::SetSprinting { sprinting };

@@ -88,6 +88,7 @@ pub(super) fn registration(
     snapshot: Arc<PackageSnapshot>,
     declaration: Declaration,
 ) -> Registration {
+    snapshot.mark_generation_module(&declaration.module);
     Registration {
         key: declaration.key,
         revision: declaration.revision,

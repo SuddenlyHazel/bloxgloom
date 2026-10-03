@@ -1,4 +1,89 @@
 use super::*;
+
+#[test]
+fn package_reload_resets_retained_imports_and_keeps_in_flight_callback_revision() {
+    use crate::server::script::package::PackageSnapshot;
+    let root = std::env::temp_dir().join(format!(
+        "bloxgloom-retained-reload-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("demo")).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    std::fs::write(root.join("demo/package.txt"), "format 1\npackage demo\nversion 1.0.0\nentry main\nmodule main main.luau\nmodule helper helper.luau\n").unwrap();
+    std::fs::write(
+        root.join("demo/main.luau"),
+        "local n=0; return function() n+=1; return import('demo:helper')+n end",
+    )
+    .unwrap();
+    std::fs::write(root.join("demo/helper.luau"), "return 10").unwrap();
+    let original = Arc::new(PackageSnapshot::discover(&root).unwrap());
+    let program = Program::Package {
+        snapshot: Arc::clone(&original),
+        entry: "demo:main".into(),
+        invocation: crate::server::script::Invocation::Integer,
+    };
+    let mut realm = Retained::default();
+    let call = |realm: &mut Retained| {
+        realm.run(
+            &program,
+            Limits::default(),
+            Execution::new("test", 1, "reload"),
+            |_, entry| entry.call::<i64>(()),
+        )
+    };
+    assert_eq!(call(&mut realm).unwrap(), 11);
+    assert_eq!(call(&mut realm).unwrap(), 12);
+    std::fs::write(root.join("demo/helper.luau"), "return 100").unwrap();
+    let replacement = original.replacement(&root).unwrap();
+    // Publish after execution selected its snapshot, before the script's first
+    // helper import. The in-flight callback must still import the old helper.
+    let value = realm
+        .run(
+            &program,
+            Limits::default(),
+            Execution::new("test", 1, "reload"),
+            |_, entry| {
+                original.publish(Arc::clone(&replacement));
+                entry.call::<i64>(())
+            },
+        )
+        .unwrap();
+    assert_eq!(value, 13);
+    assert_eq!(call(&mut realm).unwrap(), 101);
+    assert_eq!(call(&mut realm).unwrap(), 102);
+    let retired = Arc::downgrade(&replacement);
+    assert!(
+        realm
+            .run(
+                &program,
+                Limits::default(),
+                Execution::new("test", 1, "reload"),
+                |_, _| Err::<(), _>(mlua::Error::RuntimeError("callback failed".into()))
+            )
+            .is_err()
+    );
+    let latest = original.replacement(&root).unwrap();
+    original.publish(Arc::clone(&latest));
+    drop(replacement);
+    assert!(
+        retired.upgrade().is_none(),
+        "failed retained realms must not pin retired source bytes"
+    );
+    let weak = Arc::downgrade(&original);
+    drop(realm);
+    drop(program);
+    drop(original);
+    drop(latest);
+    assert!(
+        weak.upgrade().is_none(),
+        "revision bank must not form an Arc cycle"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
 #[test]
 fn retained_locals_and_coroutines_live_until_an_error_reset() {
     let mut realm = Retained::default();

@@ -86,6 +86,8 @@ pub(super) struct Connection {
     player_id: Option<u64>,
     peer_closed: bool,
     input_buffer: Vec<u8>,
+    pub(super) content: Option<Arc<ContentHandshake>>,
+    pub(super) development_revision: u64,
     manifest_index: usize,
     bundle_index: usize,
     pending_write: Option<PendingWrite>,
@@ -111,6 +113,8 @@ impl Connection {
         stats: Arc<TransportStats>,
     ) -> Self {
         Self {
+            content: None,
+            development_revision: 0,
             socket,
             poll_key,
             read_interest: true,
@@ -285,6 +289,7 @@ impl Connection {
                 let sender = self.outbound_sender.as_ref().unwrap().clone();
                 let (reply, receiver) = mpsc::sync_channel(1);
                 match input.try_send(SimulationInput::Join {
+                    development_revision: self.development_revision,
                     guard: self.join_guard.clone(),
                     name: self.name.clone(),
                     profile,

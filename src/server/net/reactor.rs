@@ -105,6 +105,10 @@ fn serve_listener_inner(
     let outbound = Arc::clone(&state.outbound);
     let content =
         ContentHandshake::with_bundle(state.world.catalog_arc(), state.client_bundle.as_deref())?;
+    let reload_content = state
+        .reload
+        .as_ref()
+        .map(|manager| Arc::clone(&manager.content));
     let workers = InventoryWorkers::new(inventory_store, MAX_CLIENTS, INVENTORY_WORKERS)?;
     let poller = Arc::new(Poller::new()?);
     outbound.install_poller(Arc::clone(&poller))?;
@@ -193,12 +197,19 @@ fn serve_listener_inner(
                             let _ = socket.shutdown(Shutdown::Both);
                             continue;
                         }
-                        connections.push(Connection::new(
-                            socket,
-                            Arc::clone(&outbound),
-                            key,
-                            Arc::clone(&stats),
-                        ));
+                        let mut connection =
+                            Connection::new(socket, Arc::clone(&outbound), key, Arc::clone(&stats));
+                        if let Some(shared) = &reload_content
+                            && let Some(revision) =
+                                &*shared.read().unwrap_or_else(|e| e.into_inner())
+                        {
+                            connection.content = Some(Arc::clone(&revision.content));
+                            connection.development_revision = revision.revision;
+                        }
+                        if connection.content.is_none() {
+                            connection.content = Some(Arc::clone(&content));
+                        }
+                        connections.push(connection);
                         tracing::debug!(%peer, connection_key = key, "connection accepted");
                         stats.accepted();
                     }
@@ -228,9 +239,10 @@ fn serve_listener_inner(
                 .get(&connections[index].poll_key)
                 .copied()
                 .unwrap_or_default();
+            let connection_content = connections[index].content.as_ref().unwrap().clone();
             let result = connections[index].poll(
                 now,
-                &content,
+                &connection_content,
                 &workers,
                 &codecs,
                 &input_sender,

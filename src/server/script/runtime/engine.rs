@@ -253,6 +253,8 @@ pub(in crate::server::script) fn isolated<T>(
     execution: Execution,
     invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
 ) -> Result<T, ScriptError> {
+    let current = program.current();
+    let program = &current;
     let fail = |error: mlua::Error| ScriptError {
         module: program.identity(),
         failure: ScriptFailure::Lua(error.to_string()),
@@ -277,6 +279,7 @@ pub(in crate::server::script) fn isolated<T>(
 pub(crate) struct Retained {
     engine: Option<Engine>,
     identity: Option<(String, String)>,
+    package: Option<std::sync::Weak<crate::server::script::package::PackageSnapshot>>,
     generation: u64,
     realm: String,
     execution: Option<Execution>,
@@ -311,6 +314,18 @@ impl Retained {
         execution: Execution,
         invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
     ) -> Result<T, ScriptError> {
+        let current = program.current();
+        let program = &current;
+        if let Program::Package { snapshot, .. } = program {
+            if self
+                .package
+                .as_ref()
+                .is_some_and(|old| !old.ptr_eq(&Arc::downgrade(snapshot)))
+            {
+                self.reset("package_reloaded");
+            }
+            self.package = Some(Arc::downgrade(snapshot));
+        }
         self.realm = program.identity();
         self.execution = Some(execution.clone());
         if self

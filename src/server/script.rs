@@ -122,6 +122,7 @@ enum Output {
     Generation(bloxgloom_host_api::generation::Output),
 }
 
+#[derive(Clone)]
 enum Program {
     Source(SourceModule),
     Package {
@@ -131,6 +132,7 @@ enum Program {
     },
 }
 
+#[derive(Clone)]
 enum Invocation {
     Integer,
     Startup,
@@ -138,6 +140,20 @@ enum Invocation {
 }
 
 impl Program {
+    fn current(&self) -> Self {
+        match self {
+            Self::Package {
+                snapshot,
+                entry,
+                invocation: Invocation::Integer,
+            } => Self::Package {
+                snapshot: snapshot.current(),
+                entry: entry.clone(),
+                invocation: Invocation::Integer,
+            },
+            _ => self.clone(),
+        }
+    }
     fn identity(&self) -> String {
         match self {
             Self::Source(module) => module.id.clone(),

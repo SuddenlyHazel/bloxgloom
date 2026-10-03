@@ -28,10 +28,12 @@ use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
 mod public_systems;
+pub(super) mod reload;
 
 /// One stable entity implementation, resolved by canonical content key each
 /// time the world's numeric assignment is loaded. Optional policies stay
 /// paired with the same codec and ownership declaration.
+#[derive(Clone)]
 pub(crate) struct StartupEntityType {
     pub(crate) key: String,
     pub(crate) ownership: EntityOwnership,
@@ -42,7 +44,9 @@ pub(crate) struct StartupEntityType {
     pub(crate) tick_planner: Option<Arc<dyn EntityTickPolicy>>,
 }
 
+#[derive(Clone)]
 pub(crate) struct ServerStartup {
+    pub(in crate::server) development: Option<Arc<super::reload::Development>>,
     pub(super) client_bundle: Option<Arc<super::script::package::client::ClientBundle>>,
     catalog: Arc<Catalog>,
     storage: Vec<bloxgloom_host_api::StorageBlockEntity>,
@@ -58,6 +62,7 @@ pub(crate) struct ServerStartup {
 /// durable store; the codec serializes them only for WAL change values, with
 /// a declared per-system byte bound enforced fail-closed at insert and patch
 /// time. Every registered system needs one before its first seed or wave.
+#[derive(Clone)]
 pub(in crate::server) struct StartupOwnerCodec {
     pub(in crate::server) codec: Arc<dyn OwnerValueCodec>,
     pub(in crate::server) codec_version: u16,
@@ -75,9 +80,24 @@ impl ServerStartup {
         if self.client_bundle.is_some() {
             return Err(io::Error::other("local package set already installed"));
         }
-        let deadline = std::time::Instant::now() + super::script_capacity::INSTALLATION_WALL_TIME;
         let declarations = super::script::startup::Declarations::discover(root)?;
-        let mut startup = self.with_extension(&declarations)?;
+        let base = self.clone();
+        let mut startup = self.with_declarations(&declarations)?;
+        startup.development = Some(Arc::new(super::reload::Development::new(
+            root.to_owned(),
+            base,
+            &declarations,
+            &startup,
+        )?));
+        Ok(startup)
+    }
+
+    pub(in crate::server) fn with_declarations(
+        self,
+        declarations: &super::script::startup::Declarations,
+    ) -> io::Result<Self> {
+        let deadline = std::time::Instant::now() + super::script_capacity::INSTALLATION_WALL_TIME;
+        let mut startup = self.with_extension(declarations)?;
         if let Some(appearance) = &declarations.appearance {
             Arc::make_mut(&mut startup.catalog)
                 .register_player_appearance(appearance.clone())
@@ -201,6 +221,7 @@ impl ServerStartup {
             .definitions
             .extend(catalog.storage_lifecycles.clone());
         let mut startup = Self {
+            development: None,
             client_bundle: None,
             catalog,
             storage: registration.definitions,

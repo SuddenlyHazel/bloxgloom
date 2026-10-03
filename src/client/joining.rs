@@ -99,6 +99,19 @@ impl JoinApp {
         self.error = Some(reason);
     }
 
+    fn reload_if_requested(&mut self) -> bool {
+        if !self
+            .live
+            .as_ref()
+            .is_some_and(|live| live.package_reload_requested)
+        {
+            return false;
+        }
+        self.retire_live("Reloading package resources".into());
+        self.start();
+        true
+    }
+
     fn poll(&mut self) {
         let result = self.attempt.as_mut().and_then(Attempt::poll);
         if let Some(result) = result {
@@ -193,7 +206,9 @@ impl JoinApp {
         self.poll_installation();
         if let Some(live) = &mut self.live {
             live.frame();
-            return;
+            if !self.reload_if_requested() {
+                return;
+            }
         }
         if let Err(error) = self.status_renderer() {
             self.failure = Some(error);

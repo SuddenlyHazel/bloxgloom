@@ -14,7 +14,26 @@ pub(super) struct Cache {
 
 impl Cache {
     pub(super) fn default() -> Option<Self> {
-        crate::config::Config::package_cache_path().map(|root| Self { root })
+        let root = crate::config::Config::package_cache_path();
+        #[cfg(not(test))]
+        let root = root?;
+        #[cfg(test)]
+        let root = {
+            let _ = root;
+            static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+            ROOT.get_or_init(|| {
+                std::env::temp_dir().join(format!(
+                    "bloxgloom-test-package-cache-{}-{}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                ))
+            })
+            .clone()
+        };
+        Some(Self { root })
     }
 
     fn path(&self, identity: BundleIdentity) -> PathBuf {

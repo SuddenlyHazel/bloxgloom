@@ -230,6 +230,7 @@ fn reject_simulation_input(state: &mut State, input: SimulationInput) {
 fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickId) {
     match input {
         SimulationInput::Join {
+            development_revision,
             guard,
             name,
             profile,
@@ -245,6 +246,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
                 )))));
             } else {
                 state.pending_joins.push_back(PendingJoin {
+                    development_revision,
                     guard,
                     name,
                     profile,
@@ -354,6 +356,13 @@ fn process_pending_joins(state: &mut State, tick: TickId) {
                     let claimed = state.durability.claim_epoch_grant(join.profile);
                     debug_assert_eq!(claimed, Some(action_epoch));
                     players::joined(state, id);
+                    if state
+                        .reload
+                        .as_ref()
+                        .is_some_and(|manager| manager.revision != join.development_revision)
+                    {
+                        super::reload::reconnect(state, id);
+                    }
                 }
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -383,6 +392,7 @@ pub(super) fn tick_with_inputs(
     let tick_started = Instant::now();
     let input_queue_depth = rejected.len() + ready.len();
     let mut phase_times = [Duration::ZERO; metrics::PHASE_COUNT];
+    super::reload::poll(state);
     streaming::poll_chunk_loads(state)?;
     let mut context = CoordinatorContext {
         state,

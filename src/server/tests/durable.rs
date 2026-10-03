@@ -425,6 +425,7 @@ fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
         &mut state,
         &mut tick,
         vec![SimulationInput::Join {
+            development_revision: 0,
             guard: crate::server::players::JoinGuard::default(),
             name: format!("player-{profile:x}"),
             profile,

@@ -52,7 +52,7 @@ impl ContentHandshake {
         Self::with_bundle(catalog, None)
     }
 
-    fn with_bundle(
+    pub(in crate::server) fn with_bundle(
         catalog: Arc<Catalog>,
         bundle: Option<&super::script::package::client::ClientBundle>,
     ) -> io::Result<Arc<Self>> {
@@ -181,6 +181,7 @@ pub(super) fn serve_client(
         let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
         input
             .try_send(SimulationInput::Join {
+                development_revision: 0,
                 guard: crate::server::players::JoinGuard::default(),
                 name: name.clone(),
                 profile,

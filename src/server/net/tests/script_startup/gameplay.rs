@@ -90,7 +90,7 @@ impl Fixture {
 }
 
 pub(super) struct Peer {
-    stream: TcpStream,
+    pub(super) stream: TcpStream,
     catalog: Arc<Catalog>,
     epoch: u64,
     sequence: u64,
@@ -100,7 +100,7 @@ impl Peer {
     pub(super) fn connect(address: std::net::SocketAddr, catalog: Arc<Catalog>) -> Self {
         Self::connect_profile(address, catalog, PROFILE)
     }
-    fn connect_profile(
+    pub(super) fn connect_profile(
         address: std::net::SocketAddr,
         catalog: Arc<Catalog>,
         profile: u128,

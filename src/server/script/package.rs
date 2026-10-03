@@ -94,7 +94,8 @@
 //! import nesting is limited to 32 modules. All imports share the invocation's
 //! interrupt/time/memory limits. Its source limit also applies per loaded module.
 //! Each invocation/retry gets a fresh VM, globals and export cache. Reusing the
-//! same snapshot is deterministic with respect to local file changes.
+//! same invocation snapshot is deterministic with respect to local file changes.
+//! Development adapters select one published revision before invocation.
 //!
 //! Discovery errors name the package directory and validated version/module
 //! where available. Initialization errors name `package@version:module`. Later
@@ -106,7 +107,8 @@
 //! actions and decision events bind the public gameplay Context and existing
 //! host transactions. The frozen client artifact is delivered by the
 //! join transport. Texture/material rendering uses the existing catalog and
-//! voxel paths; hot reload remains separate. This local manifest format does
+//! voxel paths. Explicit development reload publishes validated immutable callback
+//! revisions while registration stays frozen. This local manifest format does
 //! not alter world/save data.
 //! Generation modules can also be registered at startup; their frozen sources
 //! run in fresh VMs on loader threads through the public Contributor contract.
@@ -114,10 +116,12 @@
 pub mod client;
 mod files;
 pub(super) mod manifest;
+mod reload;
+mod residency;
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use super::{ScriptError, ScriptFailure};
 use manifest::Manifest;
@@ -129,6 +133,10 @@ pub use super::capacity::{
 
 /// Private fields prevent mutation or bypassing validation after discovery.
 pub struct PackageSnapshot {
+    _residency: residency::Reservation,
+    live: RwLock<Option<Arc<PackageSnapshot>>>,
+    compatibility: Option<std::sync::Weak<PackageSnapshot>>,
+    generation_packages: Mutex<std::collections::BTreeSet<String>>,
     packages: BTreeMap<String, Package>,
     client: Arc<client::ClientBundle>,
     /// Installed once after all startup entries finish, before the catalog is
@@ -361,6 +369,13 @@ impl PackageSnapshot {
     }
 
     fn execution_identity(&self, domain: &[u8], entry: &str, revision: &[u8]) -> u64 {
+        if let Some(original) = self
+            .compatibility
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+        {
+            return original.execution_identity(domain, entry, revision);
+        }
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut field = |bytes: &[u8]| {
             for byte in (bytes.len() as u64).to_le_bytes().iter().chain(bytes) {
@@ -497,6 +512,10 @@ impl PackageSnapshot {
         // serialize a local manifest (which contains server-only paths/entry).
         let client = Arc::new(client::ClientBundle::from_packages(&packages)?);
         Ok(Self {
+            _residency: residency::Reservation::acquire(total_bytes)?,
+            live: RwLock::new(None),
+            compatibility: None,
+            generation_packages: Mutex::default(),
             packages,
             client,
             creature_initials: OnceLock::new(),

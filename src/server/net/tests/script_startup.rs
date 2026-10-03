@@ -48,6 +48,8 @@ mod moving;
 mod player;
 #[path = "script_startup/recipe_browser.rs"]
 mod recipe_browser;
+#[path = "script_startup/reload.rs"]
+mod reload;
 #[path = "script_startup/showcase.rs"]
 mod showcase;
 #[path = "script_startup/sprint.rs"]
