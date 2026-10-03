@@ -88,10 +88,12 @@ impl MovingEntity {
                 .body
                 .half_extents
                 .iter()
-                .map(|v| v * v)
-                .sum::<f32>()
-                .sqrt();
-            [radius; 3]
+                .map(|v| f64::from(*v) * f64::from(*v))
+                .sum::<f64>()
+                .sqrt() as f32;
+            // Round outward so f32 storage cannot omit a cell touched by a
+            // cuboid corner after the engine computes its rotation in f64.
+            [radius.next_up(); 3]
         } else {
             self.body.half_extents
         }

@@ -157,6 +157,17 @@ fn rapier_rotated_contacts_friction_and_ccd_stop_terrain_penetration() {
 #[test]
 fn rapier_policy_and_commands_reject_unsafe_combinations_and_caps() {
     let mut d = declaration();
+    let radius = d
+        .body
+        .half_extents
+        .iter()
+        .map(|v| f64::from(*v).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    assert!(f64::from(d.capture_half_extents()[0]) >= radius);
+    let mut legacy = d.clone();
+    legacy.physics = None;
+    assert_eq!(legacy.capture_half_extents(), legacy.body.half_extents);
     d.handles_impact = true;
     assert!(d.validate().is_err());
     d.handles_impact = false;
