@@ -14,7 +14,7 @@ one eye design and no mouth variants, so no alternate face selectors appear.
 
 [Packaged GLB creatures](GLB-CREATURES.md) now expose startup registration through
 Luau, verified model delivery, named appearance controls and clip playback.
-The builtin player still uses its fixed checked-in GLB, recipe v3 and world-v24.
+The builtin player still uses its fixed checked-in GLB, recipe v3 and world-v27.
 
 ## Blockbench authoring
 

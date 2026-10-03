@@ -19,6 +19,8 @@ fn sloped_floor(device: &wgpu::Device, slope: [f32; 2]) -> wgpu::Buffer {
             0.0,
             0.0,
             0.0,
+            0.0,
+            0.0,
         ]);
     }
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -87,6 +89,8 @@ fn gpu_wall_shadows_keep_ground_contact_with_receiver_plane_correction() {
                     0.25,
                     2.0,
                     1.0,
+                    0.0,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,

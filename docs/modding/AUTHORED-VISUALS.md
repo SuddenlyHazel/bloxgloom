@@ -36,6 +36,53 @@ select up to eight target layers and sample up to four texture inputs. A bundle
 can contain sixteen materials. Shader source is limited to 8 KiB per asset and
 version-2 descriptors to 4 KiB.
 
+### Package-owned environment lighting
+
+One version-2 material in the bundle may include a global lighting selection:
+
+```json
+"environment_lighting": {
+  "sun_intensity": 0.8,
+  "ambient_intensity": 0.6,
+  "environment_intensity": 1.2,
+  "local_directionality": 1.0
+}
+```
+
+All four fields are optional, default to 1, and must be finite numbers in 0–4.
+Unknown fields, invalid values, and multiple selections fail verified bundle
+preparation; conflicts identify both package-owned material resources. The
+selection affects the whole scene, not only that material's texture targets.
+Sun controls direct daylight; ambient controls indirect daylight; environment
+controls reflected environment lighting. These do not change camera exposure or
+voxel emission. Package scales multiply local client lighting scales, with the
+result clamped to 0–4. An omitted selection preserves local settings.
+
+A cozy or industrial theme can soften direct and ambient light, while a neon
+theme can lower ambient light and retain stronger environment response. Author
+emissive surfaces separately. This startup declaration is immutable for the
+session and is not a dynamic `host.set_parameter` resource. Version 1 cannot
+select environment lighting. The existing material asset codec carries the
+selection, so older unmodified assets retain their exact bundle bytes.
+
+### Bounded local-light shadows
+
+One version-2 material per bundle may select `local_shadows` independently of
+`environment_lighting`. This is a global, immutable session setting:
+
+```json
+"local_shadows": { "count": 2, "resolution": 256, "range": 16, "updates": 2 }
+```
+
+All fields are optional; the example gives their defaults. `count` is 0–4
+(0 disables maps), `resolution` is 64–1024 texels per cube face, `range` is a
+finite 2–32 blocks, and `updates` is 1–4 whole lights per frame. A whole light
+refreshes all six faces together. Unknown fields, arrays, out-of-range values,
+legacy material selections, and multiple owners fail verified preparation.
+These are renderer-owned bounded resources; mods cannot supply GPU bindings or
+allocate additional maps. Local client limits remain authoritative, including
+an off setting. Omission preserves local settings.
+
 Supported geometry is the production voxel mesh: opaque cube faces, cutout block
 faces, crossed foliage, cube drops, and item sprite/cross drops. Instanced actor
 cuboids keep their existing pose/tint presentation API; these material hooks do
@@ -190,3 +237,11 @@ single `texture` field. Version-1 effects retain their fixed scene fragment,
 a legacy final effect cannot compose with another final effect. Bundle hashes
 include descriptors/shaders; changing either changes the downloaded artifact
 identity. Catalog/save identities still come from registered content keys.
+
+The environment profile also accepts `local_directionality` (finite0–4, default1).
+It scales the shared 65% directional local-light mixture; zero is isotropic,
+values at/above1.539 are fully directional. The remaining component approximates
+unresolved voxel scattering equally on terrain and all actors. The local config
+counterpart is `lighting_local_directionality`. Emission tint currently derives
+from normalized block reflectance, with neutral-white fallback for black emitters;
+this is not an independently authored emission-color spectrum.

@@ -24,6 +24,8 @@ fn avatar(model: AvatarModel) -> VisualAvatar {
         cosmetics: [0; 4],
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
+        glow_color: [0; 3],
+        glow_direction: [0; 3],
         glow_bounce: [0; 4],
         tint: [1.0; 3],
     }
@@ -67,9 +69,11 @@ impl Scene {
         shadow_data[..16].copy_from_slice(&matrix.to_cols_array());
         shadow_data[16..20].copy_from_slice(&[1.0 / WIDTH as f32, 40.0, 1.0, 0.0]);
         shadow_data[23] = 9.9;
+        let mut padded_shadow = shadow_data.to_vec();
+        padded_shadow.resize(crate::render::sun_shadow::UNIFORM_BYTES as usize / 4, 0.0);
         let shadow_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&shadow_data),
+            contents: bytemuck::cast_slice(&padded_shadow),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let texture = |format, usage| {
@@ -178,28 +182,7 @@ impl Scene {
             ..Default::default()
         });
         let group = |view: &wgpu::TextureView| {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &sun_shadow::camera_layout(&device),
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: camera.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: shadow_uniform.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            })
+            sun_shadow::group(&device, &camera, &shadow_uniform, view, &sampler)
         };
         let caster = group(&dummy.create_view(&Default::default()));
         let mut renderer = AvatarRenderer::new(
@@ -409,6 +392,7 @@ fn gpu_avatar_receivers_remove_only_direct_sun_and_off_matches_unoccluded() {
         let mut actor = avatar(model);
         for levels in [[15, 0, 0, 0], [0; 4], [0, 15, 0, 0]] {
             actor.light_levels = levels;
+            actor.glow_color = [255, 219, 153];
             actor.bounce = [25, 40, 10, 0];
             actor.glow_bounce = [18, 12, 6, 0];
             let lit = scene.render(&[actor], false, false, true);
@@ -520,6 +504,7 @@ fn gpu_packaged_glb_casters_and_receivers_preserve_layers_clips_and_indirect_lig
     });
     for levels in [[15, 0, 0, 0], [0; 4], [0, 15, 0, 0]] {
         actor.light_levels = levels;
+        actor.glow_color = [255, 219, 153];
         actor.bounce = [30, 40, 20, 0];
         actor.glow_bounce = [20, 15, 10, 0];
         let lit = scene.render(&[actor], false, false, true);
@@ -532,5 +517,88 @@ fn gpu_packaged_glb_casters_and_receivers_preserve_layers_clips_and_indirect_lig
             assert_ne!(lit, shaded);
             assert!(lit.iter().zip(shaded).all(|(a, b)| *a >= b));
         }
+    }
+}
+
+#[test]
+fn packed_local_light_retains_color_and_signed_direction_without_extra_attributes() {
+    let mut actor = avatar(AvatarModel::Player);
+    actor.light_levels = [11, 13, 0, 0];
+    actor.glow_color = [255, 83, 9];
+    actor.glow_direction = [-127, 0, 64];
+    let instance = AvatarInstance::from(&actor);
+    assert_eq!(instance.light_levels[0].to_le_bytes(), [11, 13, 255, 83]);
+    assert_eq!(instance.light_levels[1].to_le_bytes(), [9, 129, 0, 64]);
+    assert_eq!(std::mem::size_of_val(&instance.light_levels), 8);
+}
+
+#[test]
+fn gpu_all_actor_materials_receive_colored_directional_local_light() {
+    let (catalog, kind) = authored::tests::catalog();
+    let mut scene = Scene::new(&catalog);
+    let mut authored = authored::tests::avatar(91, kind, 0.0, [240, 240, 240]);
+    authored.model_pose.as_mut().unwrap().playback =
+        Some(bloxgloom_host_api::entity::ClipPlayback {
+            clip: 0,
+            speed: 0.0,
+            looping: true,
+            crossfade_s: 0.0,
+            started_tick: 0,
+            sequence: 0,
+        });
+    for mut actor in [
+        avatar(AvatarModel::Player),
+        avatar(AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE)),
+        authored,
+    ] {
+        actor.light_levels = [0, 15, 0, 0];
+        actor.glow_color = [255, 0, 0];
+        actor.glow_direction = [0, 0, 127];
+        let red = scene.render(&[actor], false, false, false);
+        actor.glow_color = [0, 0, 255];
+        let blue = scene.render(&[actor], false, false, false);
+        assert!(
+            red != blue,
+            "local source color must reach {:?}",
+            actor.model
+        );
+        actor.glow_direction = [0, 0, -127];
+        let behind = scene.render(&[actor], false, false, false);
+        assert!(
+            blue != behind,
+            "local direction must reach {:?}",
+            actor.model
+        );
+        actor.light_levels[1] = 0;
+        let dark = scene.render(&[actor], false, false, false);
+        actor.glow_color = [255; 3];
+        actor.glow_direction = [0; 3];
+        assert_eq!(
+            dark,
+            scene.render(&[actor], false, false, false),
+            "zero local level must stay dark"
+        );
+    }
+}
+
+#[test]
+fn gpu_procedural_and_authored_actors_project_moving_point_shadows() {
+    let (catalog, id) = authored::tests::catalog();
+    let mut authored = authored::tests::avatar(91, id, 0.0, [240; 3]);
+    authored.model_pose.as_mut().unwrap().playback =
+        Some(bloxgloom_host_api::entity::ClipPlayback {
+            clip: 0,
+            speed: 0.0,
+            looping: true,
+            crossfade_s: 0.0,
+            started_tick: 0,
+            sequence: 0,
+        });
+    for actor in [
+        avatar(AvatarModel::Player),
+        avatar(AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE)),
+        authored,
+    ] {
+        crate::render::local_shadow::gpu_tests::verify_actor_projection(&catalog, actor);
     }
 }

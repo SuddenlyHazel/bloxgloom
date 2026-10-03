@@ -24,7 +24,7 @@ ordinary placement selects the unlit state.
   art is always decoded and validated before installation.
 * Blocks: display name/swatch, top/side/bottom texture references, opaque/cutout/
   invisible material, solid/empty voxel collision, replacement, plant support,
-  flammability, emission 0–15 and RGB reflectance. Invisible is **not** alpha
+  flammability, emission 0–15, sky attenuation 0–15 and RGB reflectance. Invisible is **not** alpha
   blending: it emits no terrain geometry, matching the existing air material.
 * Shapes: cubes and double-sided crossed foliage quads. Cube selection is the
   voxel. Normal/narrow plant selection is the existing centered .56/.30-wide,
@@ -53,6 +53,7 @@ ordinary placement selects the unlit state.
 Local Luau `register_block(key, name, texture, options?)` currently registers
 one-state cubes or crossed plants. Its optional table supports `flammable`,
 `supports_plant`, `solid`, `replaceable`, `emission` (0–15),
+`sky_attenuation` (0–15 sky levels absorbed per voxel; default 0, opaque blocks always stop sky),
 `reflectance` (exactly three 0–255 channels), and `side`/`bottom` face texture
 keys. `geometry` selects `cube`, `crossed_plant` or `narrow_crossed_plant`;
 `material` selects `opaque` or `cutout`. A crossed plant requires cutout
@@ -238,3 +239,21 @@ startup declarations reject the complete candidate before world/save mutation.
 See [package composition](PACKAGE-COMPOSITION.md) for execution, delivery and
 resource admission, and [farming scale](../../fixtures/farming-scale/README.md)
 for a 128-block/192-item package with independent simulation features.
+
+### Thin foliage daylight
+
+Texture declarations may opt in to thin-surface shading without changing generic
+cutouts: `host.register_texture("example:leaves", "leaves", {alpha_cutout=true,
+foliage_wrap=0.35, foliage_transmission=0.28})`. Both foliage values are finite
+numbers in 0–1, defaulting to zero. Wrap softens the diffuse silhouette; transmission
+adds a bounded back-side sun response. Both remain gated by voxel sky visibility
+and sun shadows. Emission and cave lighting are unchanged. Native extensions use
+`Texture.foliage: FoliageShading` with the same bounds.
+
+Block option `sky_attenuation=2` reduces vertical sky level by two units (range
+0–15). Zero retains transparent behavior; opaque geometry always blocks sky.
+This is separate from material shading: glass, fabric, or other cutouts are not
+automatically treated as foliage. Crossed plants sample the voxel light field at
+each vertex while retaining upward artistic normals, without additional AO.
+Nondefault lighting metadata is transmitted as bounded, fingerprinted V52 client
+bundle data; ordinary packages retain their existing bytes.

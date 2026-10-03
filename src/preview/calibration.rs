@@ -216,6 +216,8 @@ pub(super) fn avatars(chunks: &HashMap<ChunkKey, Arc<world::Chunk>>) -> Vec<rend
             position,
             cosmetics: appearance.legacy(),
             light_levels: [sample.sky, sample.glow, 0, 0],
+            glow_color: sample.glow_color,
+            glow_direction: sample.glow_direction,
             bounce: [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0],
             glow_bounce: [
                 sample.glow_bounce[0],

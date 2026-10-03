@@ -32,7 +32,7 @@ impl VisualDrop {
         self.scale * catalog.drop_size(self.item).multiplier()
     }
 
-    fn light_attributes(&self) -> [f32; 4] {
+    fn light_attributes(&self) -> [f32; 6] {
         let bounce = u32::from(self.light.bounce[0])
             | (u32::from(self.light.bounce[1]) << 8)
             | (u32::from(self.light.bounce[2]) << 16);
@@ -43,7 +43,19 @@ impl VisualDrop {
             f32::from(self.light.sky) / 15.0,
             f32::from(self.light.glow) / 15.0,
             bounce as f32,
-            glow_bounce as f32,
+            // A negative encoded light marks CPU-animated geometry reactive for
+            // temporal AA. -(value+1) preserves the full 24-bit payload and zero.
+            -(glow_bounce as f32 + 1.0),
+            {
+                let rgb = self
+                    .light
+                    .glow_color
+                    .map(|v| (f32::from(v) * f32::from(self.light.glow) / 15.0).round() as u8);
+                (u32::from(rgb[0]) | (u32::from(rgb[1]) << 8) | (u32::from(rgb[2]) << 16)) as f32
+            },
+            super::mesh::pack_light_direction(
+                self.light.glow_direction.map(|v| f32::from(v) / 127.0),
+            ) as f32,
         ]
     }
 }
@@ -191,6 +203,8 @@ mod tests {
                     glow: 12,
                     bounce: [17, 29, 43],
                     glow_bounce: [7, 9, 11],
+                    glow_color: [255, 110, 40],
+                    glow_direction: [-90, 0, 90],
                 },
             ] {
                 let mesh = mesh(&[VisualDrop {
@@ -214,7 +228,27 @@ mod tests {
                         [bounce as u8, (bounce >> 8) as u8, (bounce >> 16) as u8],
                         light.bounce
                     );
-                    let glow_bounce = vertex[12] as u32;
+                    assert!(
+                        vertex[12] < 0.0,
+                        "animated drops must reject untracked history"
+                    );
+                    let rgb = vertex[13] as u32;
+                    assert_eq!(
+                        [rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8],
+                        light
+                            .glow_color
+                            .map(|v| (f32::from(v) * f32::from(light.glow) / 15.0).round() as u8)
+                    );
+                    let direction = vertex[14] as u32;
+                    assert_eq!(
+                        [
+                            direction as u8 as i8,
+                            (direction >> 8) as u8 as i8,
+                            (direction >> 16) as u8 as i8
+                        ],
+                        light.glow_direction
+                    );
+                    let glow_bounce = (-vertex[12] - 1.0) as u32;
                     assert_eq!(
                         [
                             glow_bounce as u8,

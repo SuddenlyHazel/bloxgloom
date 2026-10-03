@@ -81,6 +81,7 @@ impl Catalog {
             supports_plant: b.supports_plant,
             flammable: b.flammable,
             emission: b.emission,
+            sky_attenuation: b.sky_attenuation,
             reflectance: b.reflectance,
             properties,
         })
@@ -267,5 +268,6 @@ fn texture_definition(definition: &api::Texture) -> TextureDef {
         stitch_vertical: definition.stitch_vertical,
         alpha_cutout: definition.alpha_cutout,
         emission_strength: definition.emission_strength,
+        foliage: definition.foliage,
     }
 }

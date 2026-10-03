@@ -31,6 +31,18 @@ fn foliage_transmits_sky_but_solid_roofs_and_unknown_gaps_do_not() {
     column.spans = vec![
         ground,
         Span {
+            state: crate::world::TALL_GRASS,
+            ..canopy
+        },
+    ];
+    skylight::assign(&mut column, &catalog);
+    assert_eq!(
+        column.spans[0].sky, 15,
+        "nonabsorbing cutouts must not inherit leaf absorption"
+    );
+    column.spans = vec![
+        ground,
+        Span {
             state: STONE,
             ..canopy
         },

@@ -48,6 +48,7 @@ mod block;
 mod composition;
 #[cfg(test)]
 mod tests;
+mod texture;
 pub(in crate::server::script) use block::cube;
 pub(in crate::server::script) use block::extended as extended_block;
 pub(in crate::server::script) use block::visual as visual_block;
@@ -648,27 +649,7 @@ pub(super) fn invoke(
                 }
                 let key = text(key)?;
                 let asset = text(asset)?;
-                let alpha_cutout = match options {
-                    Value::Nil => false,
-                    Value::Table(table) => {
-                        let mut cutout = false;
-                        for (index, pair) in table.pairs::<Value, Value>().enumerate() {
-                            if index >= 1 {
-                                return Err("unknown texture option");
-                            }
-                            match pair.map_err(|_| "invalid texture option")? {
-                                (Value::String(key), Value::Boolean(value))
-                                    if key.as_bytes().as_ref() == b"alpha_cutout" =>
-                                {
-                                    cutout = value
-                                }
-                                _ => return Err("texture option must be alpha_cutout boolean"),
-                            }
-                        }
-                        cutout
-                    }
-                    _ => return Err("texture options must be a table"),
-                };
+                let (alpha_cutout, foliage) = texture::options(options)?;
                 let Some((owner, local)) = key.split_once(':') else {
                     return Err("texture key must be namespaced");
                 };
@@ -701,6 +682,7 @@ pub(super) fn invoke(
                         stitch_vertical: true,
                         alpha_cutout,
                         emission_strength: 0.0,
+                        foliage,
                     },
                     asset,
                 });

@@ -50,8 +50,19 @@ fn public_fixture_assets_reach_material_upload_lighting_and_mesh_compilation() {
     assert!(
         mesh.cutout_vertices
             .chunks_exact(VERTEX_FLOATS)
-            .all(|v| v[8] == layer as f32)
+            .all(|v| v[8].floor() == layer as f32)
     );
+    for vertices in [&mesh.vertices, &mesh.cutout_vertices] {
+        assert_eq!(vertices.len() % VERTEX_FLOATS, 0);
+        assert!(
+            vertices.chunks_exact(VERTEX_FLOATS).any(|v| v[13] > 0.0),
+            "catalog source color must reach cube and plant vertices"
+        );
+        assert!(
+            vertices.chunks_exact(VERTEX_FLOATS).any(|v| v[14] > 0.0),
+            "occluded propagation direction must reach cube and plant vertices"
+        );
+    }
     let tiles = material::material_tiles_for(&catalog);
     let stride = (material::TEXTURE_SIZE.pow(2) * 4) as usize;
     let pixels = &tiles[layer * stride..(layer + 1) * stride];
@@ -205,7 +216,7 @@ fn grass_side_is_upright_on_both_wall_axes() {
         let vertices = mesh
             .vertices
             .chunks_exact(VERTEX_FLOATS)
-            .filter(|vertex| vertex[3 + wall_axis].abs() == 1.0 && vertex[8] == 1.0);
+            .filter(|vertex| vertex[3 + wall_axis].abs() == 1.0 && vertex[8].floor() == 1.0);
         let mut count = 0;
         for vertex in vertices {
             let expected_v = if vertex[1] == 2.0 { 0.0 } else { 1.0 };
@@ -229,7 +240,7 @@ fn greedy_quads_repeat_material_once_per_voxel() {
         .chunks_exact(VERTEX_FLOATS)
         .collect::<Vec<_>>();
     assert_eq!(vertices.len(), 24);
-    assert!(vertices.iter().all(|vertex| vertex[8] == 3.0));
+    assert!(vertices.iter().all(|vertex| vertex[8].floor() == 3.0));
     assert!(vertices.iter().any(|vertex| vertex[6] == 16.0));
     assert!(vertices.iter().any(|vertex| vertex[7] == 16.0));
 }
@@ -295,6 +306,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             stitch_vertical: true,
             alpha_cutout: false,
             emission_strength: 0.0,
+            foliage: Default::default(),
         })
         .unwrap();
     catalog
@@ -316,6 +328,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             supports_plant: false,
             flammable: false,
             emission: 0,
+            sky_attenuation: 0,
             reflectance: [180, 180, 180],
             properties: Vec::new(),
         })
@@ -391,7 +404,7 @@ fn remapped_connection_catalog_drives_foliage_meshes_and_drop_art() {
     assert!(
         mesh.cutout_vertices
             .chunks_exact(VERTEX_FLOATS)
-            .all(|vertex| vertex[8] == 12.0)
+            .all(|vertex| vertex[8].floor() == 12.0)
     );
 
     let drop = super::drops::mesh_with_catalog(
@@ -453,7 +466,7 @@ fn plants_have_two_crossed_cutout_quads_and_do_not_hide_ground() {
     assert!(
         mesh.cutout_vertices
             .chunks_exact(VERTEX_FLOATS)
-            .all(|vertex| vertex[8] == 12.0)
+            .all(|vertex| vertex[8].floor() == 12.0)
     );
 }
 
