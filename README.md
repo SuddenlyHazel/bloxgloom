@@ -26,6 +26,8 @@ The current default save directory is `world-v23/`. The native GLB player change
 
 Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. Local Luau packages and server-delivered client content are implemented; see the [current scripting reference](SCRIPTING.md).
 
+Local package development supports F4 **`reload packages`** for compatible code and client resource edits, plus a verified persistent download cache. See [package development](docs/modding/PACKAGE-DEVELOPMENT.md) for usage and restart boundaries.
+
 ### HDR presentation
 
 The world renders into a linear `RGBA16Float` scene buffer, followed by quarter-resolution soft-threshold bloom and neutral, fixed-exposure tone mapping to the display. Glowstone and the sun retain HDR highlights; the HUD and selection outline are drawn afterward. Exposure does not adapt when entering caves. This is an internal HDR pipeline with SDR output, so no HDR monitor is required.

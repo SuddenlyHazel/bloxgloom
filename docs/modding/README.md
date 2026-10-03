@@ -4,8 +4,9 @@
 implementation are done. The
 [Phase 8 acceptance record](PHASE-8-ACCEPTANCE.md) contains the production parity
 audit and integrated verification evidence. [SCRIPTING.md](../../SCRIPTING.md)
-is the implemented Luau API inventory. Native fire migration, custom player
-model registration and live hot reload remain deferred; the native Rust extension API has
+is the implemented Luau API inventory. Native fire migration and package-defined
+player model registration remain deferred. Imported GLB creature models and
+manual development reload are available. The native Rust extension API has
 additional interfaces that are not Luau bindings.
 [Current Luau gaps](../../LUAU-SCRIPTING-GAPS.md) records the limitations and their
 impact on larger mods.
@@ -80,3 +81,5 @@ The [archive](../archive/README.md) contains the completed implementation plan,
 superseded proposals, foundation plans and original baseline parity audit.
 They preserve design decisions and historical results; they are not active
 implementation instructions or a current list of missing capabilities.
+
+[Package development and persistent caching](PACKAGE-DEVELOPMENT.md) describes the native manual reload command, validation and restart boundaries.

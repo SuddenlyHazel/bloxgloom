@@ -1,6 +1,6 @@
 # Luau scripting gaps
 
-Current assessment: October 2, 2026, after Phase 8, runtime tools, player services,
+Current assessment: October 3, 2026, after Phase 8, runtime tools, player services,
 dynamic UI, anchored entities, typed client replicas and the VM lifetime work
 recorded in section 6, plus package composition in section 7 and the smaller
 composable API goal below.
@@ -51,8 +51,8 @@ runtime on unchanged wire version 13.
 The [runtime tools reference](docs/modding/RUNTIME-TOOLS.md) documents exact
 library support, seed inputs, diagnostic budgets and attempt-versus-commit
 semantics. The subsequent VM lifetime work in section 6 adds interpreter reuse
-and retained manually resumed coroutines. Live debugging and hot reload remain
-separate work.
+and retained manually resumed coroutines. Live debugging remains separate work. Manual development reload is
+implemented in the package development section below.
 
 Evidence: [shared runtime](src/server/script/runtime.rs),
 [diagnostics bridge](src/server/script/runtime/diagnostics.rs),
@@ -876,8 +876,9 @@ implementation rather than treating a microbenchmark speed ratio as completion.
 
 #### Save continuity remains a separate follow-up
 
-Package installations freeze at startup; there is no hot reload or script schema
-migration. Several schema/handler identities fingerprint the entire frozen
+Content registrations freeze at startup. Compatible manual development reload
+now swaps behavior sources and client resources while the server remains live;
+script schema migration remains excluded. Several schema/handler identities fingerprint the entire frozen
 installation, so even a dependency source edit can make a save incompatible.
 
 **Impact:** developing a larger mod can require restarts and fresh test worlds
@@ -885,7 +886,8 @@ for changes that authors would like to test against existing progress.
 
 **Save-compatibility direction:** improve compatibility diagnostics and distinguish
 behavior changes from actual persistent-schema incompatibilities where sound.
-Hot reload remains deferred. Save converters are expressly excluded during
+Live reload pins those identities for the current process; it does not close
+restart compatibility. Save converters are expressly excluded during
 this prerelease; this gap does not authorize implementing them now.
 
 Evidence: [shared invocation runner](src/server/script.rs),
@@ -1006,8 +1008,8 @@ and load probes, typed editor checks and inspected release GPU previews passed.
 Cold/cached join, movement/action, memory and paired renderer measurements are
 recorded in the composition reference.
 
-Motion/audio, imported models, persistent disk bundle caching, marketplaces/CDNs
-and hot reload remain separate projects. Runtime tags and command-schema
+Motion/audio and marketplaces/CDNs remain separate projects. Imported GLB
+models, persistent disk caching and manual development reload have since landed. Runtime tags and command-schema
 expansion are now implemented in the smaller API goal below. Save conversion remains excluded during this prerelease.
 
 ## Smaller composability gaps
@@ -1049,10 +1051,41 @@ the anchored callback fixture; an egui preview of the callback-selected item
 icon was generated and inspected. Source commits: `5cdc7dd` (commands),
 `80f23b1` (machines), `ef895d0` (item visuals), `3baaa47` (read services).
 
-Remaining smaller gaps:
+Package delivery now has verified memory and bounded persistent disk caches;
+manual development reload is implemented below. Native fire propagation/delivery
+still has its explicitly deferred migration.
 
-- Package delivery has an in-memory cache, but no persistent disk bundle cache.
-- Native fire propagation/delivery still has its explicitly deferred migration.
+## Package development iteration — implemented
+
+Package delivery now caches canonical bundle bytes under native user cache
+storage, capped at 512 MiB / 64 entries. Entries include runtime and SHA-256
+identity, and are decoded and verified again before reuse. Corruption falls
+back to downloading; atomic writes, shared writer locking and oldest-entry
+pruning keep cache failures separate from world saves and join correctness.
+
+In `local-packages`, F4 **`reload packages`** is the explicit development command.
+A bounded worker discovers and compiles the replacement, reruns registration,
+compares frozen catalog/system/codec/seed contracts, validates client startup
+and prepares transport frames. Failed replacement leaves current code running.
+Successful replacement publishes at a coordinator barrier after accepted WAL
+work drains. Each callback/import graph sees one immutable revision; retained
+advisory realms reset on their next callback. Clients rejoin the same server
+with fresh resources while world, inventories and durable owners stay live.
+An older in-progress handshake is fenced into another refresh on admission.
+
+Manifest/dependency changes, registered content/model/texture changes, state
+schemas, owner seeds and generation packages/dependencies require restart.
+Changed client UI/audio assets and behavior sources can reload when these
+contracts remain equal. Client/session locals reset; persistent script data is
+not migrated. Existing whole-installation save fingerprints still mean source
+edits may prevent reopening that save after a process restart. Save continuity
+and compatibility diagnostics therefore remain open in section 6.
+
+See [package development](docs/modding/PACKAGE-DEVELOPMENT.md),
+[reload coordinator](src/server/reload.rs),
+[real listener regression](src/server/net/tests/script_startup/reload.rs),
+[revision/runtime tests](src/server/script/runtime/engine/tests.rs) and
+[disk cache tests](src/client/bundle/disk/tests.rs).
 
 ## Suggested priority
 
@@ -1063,7 +1096,7 @@ VM lifetime and retained runtime state are implemented in section 6; larger-pack
 composition is implemented in section 7.
 
 Compatibility diagnostics should improve alongside those changes. Imported
-models, hot reload and native fire migration remain deferred; save conversion
-remains excluded during this prerelease. Filesystem/HTTP access, raw GPU access
+models and manual development reload are implemented. Native fire migration
+remains deferred; save conversion remains excluded during this prerelease. Filesystem/HTTP access, raw GPU access
 and marketplace/CDN infrastructure are separate product decisions, not assumed
 requirements for closing the gaps above.

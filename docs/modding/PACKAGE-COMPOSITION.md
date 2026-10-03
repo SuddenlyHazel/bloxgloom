@@ -8,8 +8,9 @@ installation, preserving numeric catalog identity when only declaration order
 changes. Canonical catalog identity does not remove existing source-sensitive
 persistent fingerprints: changing startup/source bytes may still reject an
 existing save even when declarations describe the same catalog. Fresh saves
-remain the prerelease path for incompatible installations; no converters or
-hot reload are added.
+remain the prerelease path for incompatible installations; save conversion
+remains excluded. Compatible manual development reload is now available;
+see [package development](PACKAGE-DEVELOPMENT.md).
 
 ## Independent systems
 

@@ -1,6 +1,6 @@
 # Scripting capabilities for mod developers
 
-This guide describes the implemented Luau package surface as of September 30,
+This guide describes the implemented Luau package surface as of October 3,
 2026. It covers server scripting, client presentation and assets. The
 [Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md) audits builtin
 parity and records integrated verification. Native fire migration remains
@@ -55,6 +55,14 @@ The optional final server argument is `max-clients`, from 1 through 256.
 The server runs every package's entry, including dependency entries, before
 opening the world. Library packages can use a no-op entry and export helpers
 from other modules. Content registration is frozen before play.
+
+For development, start with `local-packages`, edit existing modules, then enter
+**`reload packages`** in F4. Reload validates server registration and client
+startup before switching immutable callback revisions. Connected clients rejoin
+with fresh package resources; server world, inventories and persistent owner
+state stay live. Failed validation leaves the current revision running. See
+[package development](docs/modding/PACKAGE-DEVELOPMENT.md) for exact reload and
+restart boundaries.
 
 ## What packages can build
 
@@ -986,17 +994,21 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 8 (wire version 19).
+publisher. The negotiated client host contract is version 11 (wire version 29).
 Clients also have to match catalog identities; matching bundle bytes alone is
-insufficient. A verified in-memory cache supports reconnect reuse. There is no
-persistent disk bundle cache or script networking/filesystem service.
+insufficient. A verified in-memory cache supports reconnect reuse, and a bounded
+native disk cache survives process restart. Disk entries are verified again
+against the exact offered bundle identity. There is no script networking or
+filesystem service.
 
 World state, edits, movement, finite inventories, drops and durable scheduling
 remain server-owned. `content.map` preserves save/wire identities; generators
 also participate in `world.meta`. Several script schemas/handler identities
 fingerprint the entire frozen installation, so editing even dependency sources
 can make a save incompatible. Use a fresh save for incompatible changes; no
-world/entity migration or live reload is bound. Do not treat client procedural
+world/entity migration is provided. Manual development reload keeps startup
+save identities fixed only for the running process; it does not make changed
+sources reopen an existing save after restart. Do not treat client procedural
 fallback terrain or local presentation state as authoritative.
 
 ## Features requiring engine work or native extensions
@@ -1010,7 +1022,9 @@ There is no bound API for arbitrary block meshes, partial collision shapes,
 translucent/liquid physics, custom player model registration, per-stack
 render callbacks, arbitrary renderer/GPU access, direct network messages,
 filesystem/HTTP access, unrestricted world/player administration, runtime catalog
-mutation, script state migration, or hot reload. Client replicas offer bounded
+mutation or script state migration. Manual compatible development reload is
+available through the native admin command; it is not a Luau filesystem API.
+Client replicas offer bounded
 public windows and summaries, not general access to server private state.
 Package delivery is directly from the server; marketplace/CDN infrastructure
 is outside this surface.
