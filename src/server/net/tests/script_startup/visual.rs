@@ -40,6 +40,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
                 assert_eq!(visual.visual_tint(id), Some([0.2, 0.8, 0.3]));
                 let avatar = crate::render::VisualAvatar {
                     motion: None,
+                    model_pose: None,
                     character_pose: [0.0; 4],
                     character_look: [0.0; 2],
                     character_crouch: 0.0,

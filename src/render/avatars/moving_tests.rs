@@ -71,6 +71,7 @@ fn gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformati
         animation: Default::default(),
         model: AvatarModel::Moving(id),
         pose: [0.0; 4],
+        model_pose: None,
         character_pose: [0.0; 4],
         character_look: [0.0; 2],
         character_crouch: 0.0,

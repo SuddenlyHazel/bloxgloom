@@ -31,6 +31,7 @@ fn project_avatar(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
     let cosmetics = appearance.legacy();
     Ok(Some(VisualAvatar {
         motion: None,
+        model_pose: None,
         character_pose: [0.0; 4],
         character_look: [0.0; 2],
         character_crouch: 0.0,

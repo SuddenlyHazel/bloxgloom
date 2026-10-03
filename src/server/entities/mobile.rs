@@ -164,22 +164,28 @@ impl EntityInteractionPolicy for Adapter {
         request: &[u8],
         inventory: &crate::inventory::Inventory,
         _catalog: &Catalog,
-        _view: &VoxelView,
+        view: &VoxelView,
         _neighbours: &EntityView,
     ) -> Result<EntityInteractionPlan, EntityError> {
         if request != self.0.interaction || request.is_empty() {
             return Err(EntityError::InvalidPayload);
         }
-        let payload = self
-            .0
-            .behavior
-            .interact_at(
+        let payload = match view.planning_tick() {
+            Some(tick) => self.0.behavior.interact_at_tick(
                 &snapshot.private_payload,
                 request,
                 snapshot.id.get(),
                 snapshot.revision,
-            )
-            .map_err(error)?;
+                tick,
+            ),
+            None => self.0.behavior.interact_at(
+                &snapshot.private_payload,
+                request,
+                snapshot.id.get(),
+                snapshot.revision,
+            ),
+        }
+        .map_err(error)?;
         self.encode(&payload)
             .map_err(|_| EntityError::InvalidPayload)?;
         let mut inventory = inventory.clone();

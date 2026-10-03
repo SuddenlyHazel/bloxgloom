@@ -205,6 +205,7 @@ pub(super) fn avatars(chunks: &HashMap<ChunkKey, Arc<world::Chunk>>) -> Vec<rend
             animation: Default::default(),
             pose: [if index % 2 == 0 { -0.25 } else { 0.25 }, 0.0, 0.0, 0.0],
             motion: None,
+            model_pose: None,
             character_pose: [0.0; 4],
             character_look: [0.0; 2],
             character_crouch: 0.0,

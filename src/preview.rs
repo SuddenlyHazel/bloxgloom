@@ -1271,6 +1271,7 @@ async fn render_previews_weather(
         let mut visuals = [
             render::VisualAvatar {
                 motion: None,
+                model_pose: None,
                 character_pose: [0.0; 4],
                 character_look: [0.0; 2],
                 character_crouch: 0.0,
@@ -1305,6 +1306,7 @@ async fn render_previews_weather(
             },
             render::VisualAvatar {
                 motion: None,
+                model_pose: None,
                 character_pose: [0.0; 4],
                 character_look: [0.0; 2],
                 character_crouch: 0.0,
@@ -1350,6 +1352,7 @@ async fn render_previews_weather(
             },
             render::VisualAvatar {
                 motion: None,
+                model_pose: None,
                 character_pose: [0.0; 4],
                 character_look: [0.0; 2],
                 character_crouch: 0.0,

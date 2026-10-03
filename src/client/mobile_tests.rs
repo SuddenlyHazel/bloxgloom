@@ -10,6 +10,15 @@ pub(crate) struct NetworkedVisualProbe {
 }
 
 impl NetworkedVisualProbe {
+    pub(crate) fn catalog(&self) -> &crate::content::Catalog {
+        &self.app.catalog
+    }
+
+    pub(crate) fn model_pose(&self, id: u64) -> Option<bloxgloom_host_api::entity::VisualState> {
+        self.app.replicas.visual_avatars(glam::Vec3::ZERO, None)
+            .into_iter().find(|avatar| avatar.id == id).and_then(|avatar| avatar.model_pose)
+    }
+
     pub(crate) fn connect(address: &str, profile: u128, path: PathBuf) -> std::io::Result<Self> {
         let network = Network::connect(address, 1, profile)?;
         let app = ClientApp::new(network, Config::default(), path);
@@ -130,6 +139,7 @@ impl NetworkedVisualProbe {
     pub(crate) fn has_spark(&self, id: u64) -> bool {
         let avatar = crate::render::VisualAvatar {
             motion: None,
+            model_pose: None,
             character_pose: [0.0; 4],
             character_look: [0.0; 2],
             character_crouch: 0.0,

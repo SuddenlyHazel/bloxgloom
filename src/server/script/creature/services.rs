@@ -18,6 +18,7 @@ pub(super) struct SpawnRequest {
 
 pub(super) struct TickResult {
     pub private: Vec<u8>,
+    pub visual: Option<api::VisualState>,
     pub delay: u32,
     pub target: Option<[f32; 3]>,
     pub lifecycle: LifecycleRequest,
@@ -29,6 +30,8 @@ pub(super) fn invoke(
     context: &api::Context<'_>,
     private: &[u8],
     max_private: usize,
+    visual: Option<api::VisualState>,
+    schema: Option<&api::VisualSchema>,
 ) -> mlua::Result<TickResult> {
     let host = lua.create_table()?;
     host.set("event", "tick")?;
@@ -148,10 +151,12 @@ pub(super) fn invoke(
                 },
             )?,
         )?;
-        host.set_readonly(true);
-        let (data, delay, x, z, lifecycle): (Value, Value, Value, Value, Value) =
-            super::super::reads::with(lua, &host, context.environment, context.tags, || {
-                entry.call(host.clone())
+        let ((data, delay, x, z, lifecycle), visual): ((Value, Value, Value, Value, Value), _) =
+            super::visuals::with(lua, &host, schema, visual, context.tick, || {
+                host.set_readonly(true);
+                super::super::reads::with(lua, &host, context.environment, context.tags, || {
+                    entry.call(host.clone())
+                })
             })?;
         if let Some(error) = *rejected.borrow() {
             return Err(invalid(error));
@@ -172,6 +177,7 @@ pub(super) fn invoke(
         };
         Ok(TickResult {
             private: data.as_bytes().to_vec(),
+            visual,
             delay,
             target,
             lifecycle: parse_lifecycle(lifecycle, context.position)?,

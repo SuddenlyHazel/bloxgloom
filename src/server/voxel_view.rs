@@ -46,9 +46,17 @@ pub struct VoxelView {
     revisions: Vec<(ChunkKey, u64)>,
     catalog: Arc<Catalog>,
     environment: Option<super::environment::Capture>,
+    planning_tick: Option<u64>,
 }
 
 impl VoxelView {
+    pub(super) fn with_planning_tick(mut self, tick: u64) -> Self {
+        self.planning_tick = Some(tick);
+        self
+    }
+    pub(super) fn planning_tick(&self) -> Option<u64> {
+        self.planning_tick
+    }
     pub(super) fn with_environment(mut self, environment: super::environment::Capture) -> Self {
         self.environment = Some(environment);
         self
@@ -155,6 +163,7 @@ impl VoxelView {
             revisions,
             catalog,
             environment: None,
+            planning_tick: None,
         })
     }
 

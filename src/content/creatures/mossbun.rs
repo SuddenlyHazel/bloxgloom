@@ -228,6 +228,7 @@ pub(crate) fn definition() -> MobileEntity {
     })
     .collect();
     MobileEntity {
+        authored_model: None,
         key: "bloxgloom:mossbun".into(),
         schema_version: 2,
         schema_fingerprint: 0x4d4f_5353_4255_0002,

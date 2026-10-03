@@ -126,6 +126,7 @@ impl EntityClientRegistry {
                         animation: Default::default(),
                         model: crate::render::AvatarModel::Moving(entity.entity_type),
                         pose: [0.0; 4],
+                        model_pose: None,
                         character_pose: [0.0; 4],
                         character_look: [0.0; 2],
                         character_crouch: 0.0,
@@ -164,6 +165,10 @@ impl EntityClientRegistry {
                 }
                 avatars.push(VisualAvatar {
                     motion: None,
+                    model_pose: definition
+                        .behavior
+                        .visual(&entity.payload)
+                        .map_err(|_| ())?,
                     character_pose: [0.0; 4],
                     character_look: [0.0; 2],
                     character_crouch: 0.0,

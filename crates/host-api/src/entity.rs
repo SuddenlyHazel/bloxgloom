@@ -3,7 +3,11 @@
 //! the in-process Rust implementation is not a stable native plugin ABI.
 use std::{any::Any, fmt, sync::Arc};
 
+mod authored;
 mod falling;
+pub use authored::{
+    AuthoredModel, ClipPlayback, MAX_VISUAL_BYTES, Tint, TintMode, VisualSchema, VisualState,
+};
 pub use falling::{FallingContext, FallingPlan, FallingWorld};
 mod drop_merge;
 pub use drop_merge::{DropMergeCandidate, DropMergeContext, DropStackFill};
@@ -110,6 +114,9 @@ pub struct Pose {
     pub grounded: bool,
 }
 pub trait Behavior: Send + Sync + 'static {
+    fn visual(&self, _public: &[u8]) -> Result<Option<VisualState>, Error> {
+        Ok(None)
+    }
     fn initial(&self) -> Payload;
     fn decode(&self, bytes: &[u8]) -> Result<Payload, Error>;
     fn encode(&self, state: &Payload) -> Result<Vec<u8>, Error>;
@@ -126,6 +133,17 @@ pub trait Behavior: Send + Sync + 'static {
         _revision: u64,
     ) -> Result<Payload, Error> {
         self.interact(state, request)
+    }
+    /// Captured simulation tick remains stable throughout a retryable plan.
+    fn interact_at_tick(
+        &self,
+        state: &Payload,
+        request: &[u8],
+        id: u64,
+        revision: u64,
+        _tick: u64,
+    ) -> Result<Payload, Error> {
+        self.interact_at(state, request, id, revision)
     }
     fn interact(&self, _state: &Payload, _request: &[u8]) -> Result<Payload, Error> {
         Err(Error::InvalidState)
@@ -194,6 +212,7 @@ pub struct MobileEntity {
     pub reads_neighbours: bool,
     pub wakes_on_terrain_change: bool,
     pub model: Vec<Cuboid>,
+    pub authored_model: Option<AuthoredModel>,
     pub animation: Animation,
     /// Opaque default right-click request; empty means not interactable.
     pub interaction: Vec<u8>,
@@ -235,7 +254,17 @@ impl MobileEntity {
             || !(0.1..=3.0).contains(&b.height)
             || !b.speed.is_finite()
             || !(0.0..=4.0).contains(&b.speed)
-            || self.model.is_empty()
+            || (self.model.is_empty() && self.authored_model.is_none())
+            || self.authored_model.as_ref().is_some_and(|a| {
+                !self.model.is_empty()
+                    || !a.scale.is_finite()
+                    || !(0.01..=16.0).contains(&a.scale)
+                    || a.key.len() > 129
+                    || !a.key.contains(':')
+                    || [&a.idle, &a.walk, &a.run]
+                        .iter()
+                        .any(|clip| clip.as_ref().is_some_and(|c| c.is_empty() || c.len() > 96))
+            })
             || self.model.len() > 64
             || self.model.iter().any(|p| {
                 (0..3).any(|i| {
@@ -308,6 +337,17 @@ impl MobileEntity {
                 PartMotion::LeftFoot => 1,
                 PartMotion::RightFoot => 2,
             });
+        }
+        if let Some(a) = &self.authored_model {
+            out.push(1);
+            out.extend((a.key.len() as u16).to_le_bytes());
+            out.extend(a.key.as_bytes());
+            out.extend(a.scale.to_le_bytes());
+            for clip in [&a.idle, &a.walk, &a.run] {
+                let name = clip.as_deref().unwrap_or("");
+                out.extend((name.len() as u16).to_le_bytes());
+                out.extend(name.as_bytes());
+            }
         }
         out
     }

@@ -73,9 +73,18 @@ pub(super) fn declarer(
                 height: number(field(&body, "height")?, 0.1, 3.0)?,
                 speed: number(field(&body, "speed")?, 0.0, 4.0)?,
             };
-            let Value::Table(parts) = field(&declaration, "model")? else {
-                return Err("creature model must be a sequence");
-            };
+            let model_value = field(&declaration, "model")?;
+            let (authored_model, visual_schema, model) = if matches!(&model_value, Value::String(_)) || matches!(&model_value, Value::Table(t) if !t.raw_get::<Value>("key").unwrap_or(Value::Nil).is_nil()) {
+                let (key, table) = match model_value { Value::String(s) => (text(Value::String(s))?, None), Value::Table(t) if t.metatable().is_none() => (text(field(&t,"key")?)?,Some(t)), _ => return Err("invalid authored creature model") };
+                let asset = pending.models.iter().find(|m|m.definition.key == key).ok_or("creature model must be registered before its creature")?;
+                if key.split_once(':').map(|p|p.0) != Some(namespace.as_str()) { return Err("creature model must belong to its package"); }
+                let schema = asset.prepared.schema();
+                let clip = |name| -> Result<Option<String>, &'static str> { match table.as_ref().map(|t|field(t,name)).transpose()?.unwrap_or(Value::Nil) { Value::Nil => Ok(None), value => { let value = text(value)?; if !schema.clips.contains(&value) {return Err("unknown creature locomotion clip")} Ok(Some(value)) } } };
+                let scale = match table.as_ref().map(|t|field(t,"scale")).transpose()?.unwrap_or(Value::Nil) { Value::Nil => 1.0, v=>number(v,0.01,16.0)? };
+                let authored = bloxgloom_host_api::entity::AuthoredModel { key, scale, idle:clip("idle")?,walk:clip("walk")?,run:clip("run")? };
+                (Some(authored), Some(schema), Vec::new())
+            } else {
+            let Value::Table(parts) = model_value else { return Err("creature model must be a sequence or registered GLB key"); };
             let count = parts.raw_len();
             if count == 0 || count > 16 {
                 return Err("creature model must have 1..=16 parts");
@@ -113,6 +122,8 @@ pub(super) fn declarer(
                     motion,
                 });
             }
+            (None,None,model)
+            };
             let animation = match field(&declaration, "animation")? {
                 Value::Nil => Animation::default(),
                 Value::Table(table) if table.metatable().is_none() => {
@@ -148,14 +159,15 @@ pub(super) fn declarer(
                 key: key.clone(),
                 schema_version: schema,
                 schema_fingerprint: snapshot.creature_schema(&module, schema, revision),
-                max_state_bytes: 12 + max_private,
-                max_public_bytes: 5,
+                max_state_bytes: 12 + max_private + if authored_model.is_some() { bloxgloom_host_api::entity::MAX_VISUAL_BYTES } else {0},
+                max_public_bytes: 5 + if authored_model.is_some() { bloxgloom_host_api::entity::MAX_VISUAL_BYTES } else {0},
                 body,
                 interval,
                 read_radius,
                 reads_neighbours,
                 wakes_on_terrain_change,
                 model,
+                authored_model,
                 animation,
                 interaction,
                 behavior: Arc::new(crate::server::script::creature::ScriptCreature::server(
@@ -164,6 +176,7 @@ pub(super) fn declarer(
                     module,
                     initial,
                     max_private,
+                    visual_schema,
                 )),
             };
             creature

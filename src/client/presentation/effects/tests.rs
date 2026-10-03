@@ -4,6 +4,7 @@ use crate::render::AvatarModel;
 fn avatar(id: u64) -> VisualAvatar {
     VisualAvatar {
         motion: None,
+        model_pose: None,
         character_pose: [0.0; 4],
         character_look: [0.0; 2],
         character_crouch: 0.0,

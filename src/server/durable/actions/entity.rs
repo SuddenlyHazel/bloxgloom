@@ -255,7 +255,8 @@ pub(in crate::server) fn plan_interact(
         actor_rules.eye_height(),
     )?;
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?
-        .with_environment(crate::server::environment::Capture::new(state));
+        .with_environment(crate::server::environment::Capture::new(state))
+        .with_planning_tick(tick.get());
     let neighbours = if reads_neighbours {
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
     } else {

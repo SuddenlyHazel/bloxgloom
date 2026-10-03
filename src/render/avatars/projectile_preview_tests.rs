@@ -45,6 +45,7 @@ fn gpu_moving_projectile_flight_bounce_guidance_and_impact_filmstrip() {
             animation: Default::default(),
             model: AvatarModel::Moving(kind),
             pose: [0.0; 4],
+            model_pose: None,
             character_pose: [0.0; 4],
             character_look: [0.0; 2],
             character_crouch: 0.0,

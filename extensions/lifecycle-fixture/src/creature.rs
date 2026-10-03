@@ -192,6 +192,7 @@ pub fn definition() -> MobileEntity {
     })
     .collect();
     MobileEntity {
+        authored_model: None,
         key: KEY.into(),
         schema_version: 1,
         schema_fingerprint: 0x434f_5050_4552_0001,

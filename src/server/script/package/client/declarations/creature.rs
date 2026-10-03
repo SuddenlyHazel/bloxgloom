@@ -170,6 +170,7 @@ pub(super) fn decode(
             (false, true)
         };
         let creature = MobileEntity {
+            authored_model: None,
             key,
             schema_version,
             schema_fingerprint,
