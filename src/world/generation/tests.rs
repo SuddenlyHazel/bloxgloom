@@ -30,6 +30,55 @@ fn registrations() -> Vec<Registration> {
     }]
 }
 
+struct SourcePattern([u8; 32]);
+impl Contributor for SourcePattern {
+    fn source_identity(&self) -> Option<[u8; 32]> {
+        Some(self.0)
+    }
+    fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
+        Pattern.generate(context, output)
+    }
+}
+
+#[test]
+fn generation_source_change_rejects_same_revision_before_mutating_world() {
+    let path = crate::world::tests::test_dir();
+    let source = |digest| {
+        vec![Registration {
+            key: "sample:pattern".into(),
+            revision: 1,
+            contributor: Arc::new(SourcePattern([digest; 32])),
+        }]
+    };
+    let mut world = open(&path, source(1)).unwrap();
+    world.edit(0, 140, 0, STONE).unwrap();
+    drop(world);
+    drop(open(&path, source(1)).unwrap());
+    fs::remove_file(path.join(crate::storage::WORLD_LOCK)).unwrap();
+    let before = files(&path);
+    for changed in [source(2), registrations()] {
+        let error = open(&path, changed).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("sample:pattern"), "{error}");
+        assert_eq!(files(&path), before);
+    }
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn generation_source_identity_fits_full_contributor_and_key_limits() {
+    let registrations = (0..256)
+        .map(|i| Registration {
+            key: format!("sample:{i:03}{}", "x".repeat(245)),
+            revision: 1,
+            contributor: Arc::new(SourcePattern([i as u8; 32])),
+        })
+        .collect();
+    let generator = Generator::new(registrations).unwrap();
+    assert_eq!(generator.identity().len(), MAX_GENERATION_IDENTITY_BYTES);
+    assert_eq!(Generator::default().identity(), [0, 0]);
+}
+
 #[test]
 fn builtin_samples_match_base_terrain_on_negative_and_vertical_seams() {
     let seed = 73;

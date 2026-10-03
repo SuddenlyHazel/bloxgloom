@@ -191,6 +191,15 @@ impl Output {
 }
 
 pub trait Contributor: Send + Sync {
+    /// Frozen identity of executable source and its dependencies, when the
+    /// contributor is loaded from authored code. The host persists this beside
+    /// the declared revision so source edits cannot alter unexplored terrain in
+    /// an existing world. Return a precomputed value; do not read files here.
+    /// Native contributors retain the explicit revision contract by default.
+    fn source_identity(&self) -> Option<[u8; 32]> {
+        None
+    }
+
     fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError>;
 
     /// Host execution accounting, separate from deterministic gameplay inputs.

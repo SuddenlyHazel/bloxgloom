@@ -8,7 +8,7 @@ pub(in crate::server) struct Contract {
     systems: Vec<SystemDescriptor>,
     codecs: Vec<(SystemId, u16, usize)>,
     seeds: Vec<(SystemId, OwnerKey, Vec<u8>)>,
-    generators: Vec<(String, u32)>,
+    generators: Vec<(String, u32, Option<[u8; 32]>)>,
 }
 
 impl ServerStartup {
@@ -50,7 +50,7 @@ impl ServerStartup {
             generators: self
                 .generation
                 .iter()
-                .map(|g| (g.key.clone(), g.revision))
+                .map(|g| (g.key.clone(), g.revision, g.contributor.source_identity()))
                 .collect(),
         })
     }

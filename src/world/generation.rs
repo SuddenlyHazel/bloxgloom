@@ -7,11 +7,20 @@ use bloxgloom_host_api::generation::{
 use std::collections::BTreeSet;
 use std::io;
 
-pub(crate) const MAX_GENERATION_IDENTITY_BYTES: usize = 2 + 256 * (1 + 255 + 4);
+pub(crate) const MAX_GENERATION_IDENTITY_BYTES: usize = 2 + 256 * (1 + 255 + 4 + 1 + 32);
 
-#[derive(Default)]
 pub(crate) struct Generator {
     contributors: Vec<Registration>,
+    identity: Vec<u8>,
+}
+
+impl Default for Generator {
+    fn default() -> Self {
+        Self {
+            contributors: Vec::new(),
+            identity: vec![0, 0],
+        }
+    }
 }
 
 impl Generator {
@@ -21,19 +30,16 @@ impl Generator {
     pub(crate) fn new(mut contributors: Vec<Registration>) -> io::Result<Self> {
         validate(&contributors).map_err(generation_error)?;
         contributors.sort_by(|a, b| a.key.cmp(&b.key));
-        Ok(Self { contributors })
+        let identity = encode_identity(&contributors);
+        Ok(Self {
+            contributors,
+            identity,
+        })
     }
 
     /// Canonical identity embedded in world.meta, not a separate save store.
     pub(crate) fn identity(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&(self.contributors.len() as u16).to_le_bytes());
-        for entry in &self.contributors {
-            bytes.push(entry.key.len() as u8);
-            bytes.extend_from_slice(entry.key.as_bytes());
-            bytes.extend_from_slice(&entry.revision.to_le_bytes());
-        }
-        bytes
+        self.identity.clone()
     }
 
     pub(super) fn generate(
@@ -44,6 +50,23 @@ impl Generator {
     ) -> io::Result<Chunk> {
         compose(key, seed, catalog, &self.contributors).map_err(generation_error)
     }
+}
+
+fn encode_identity(contributors: &[Registration]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(contributors.len() as u16).to_le_bytes());
+    for entry in contributors {
+        bytes.push(entry.key.len() as u8);
+        bytes.extend_from_slice(entry.key.as_bytes());
+        bytes.extend_from_slice(&entry.revision.to_le_bytes());
+        if let Some(source) = entry.contributor.source_identity() {
+            bytes.push(1);
+            bytes.extend_from_slice(&source);
+        } else {
+            bytes.push(0);
+        }
+    }
+    bytes
 }
 
 fn generation_error(error: GenerationError) -> io::Error {
