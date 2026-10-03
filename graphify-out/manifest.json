@@ -2214,10 +2214,10 @@
     "semantic_hash": ""
   },
   "src/server/entities/mobile/tests.rs": {
-    "mtime": 1790885981.4601846,
-    "seen": 1790906849.509402,
-    "ast_hash": "57004388cef0c54b9acc85e4a6fd4e8d",
-    "semantic_hash": "57004388cef0c54b9acc85e4a6fd4e8d"
+    "mtime": 1791036637.2404425,
+    "seen": 1791036685.529663,
+    "ast_hash": "aac30b9bfbbe848df372d0da68250682",
+    "semantic_hash": ""
   },
   "src/server/entities/mobile/world.rs": {
     "mtime": 1790885981.4599304,
@@ -2778,9 +2778,9 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay.rs": {
-    "mtime": 1790946005.1789408,
-    "seen": 1790946255.9312289,
-    "ast_hash": "6a17dc9cd1dc66e482182f4c7526f079",
+    "mtime": 1791036500.3690662,
+    "seen": 1791036596.321256,
+    "ast_hash": "dd4fae3cea3c99d3589b9071d8fee899",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay/authorization.rs": {
@@ -3246,9 +3246,9 @@
     "semantic_hash": ""
   },
   "src/server/script/creature.rs": {
-    "mtime": 1791034814.9370794,
-    "seen": 1791035421.790428,
-    "ast_hash": "2bf12b6c81711596f37552c13be2ef86",
+    "mtime": 1791036637.239777,
+    "seen": 1791036685.529919,
+    "ast_hash": "e423c7d3286440b79b5dbfec9204c61e",
     "semantic_hash": ""
   },
   "src/server/script/creature/services.rs": {
@@ -4032,9 +4032,9 @@
     "semantic_hash": ""
   },
   "SCRIPTING.md": {
-    "mtime": 1791034774.3208826,
-    "seen": 1791035421.790869,
-    "ast_hash": "bd9b6dad5fb97a46aab45b26661b9169",
+    "mtime": 1791036637.2411397,
+    "seen": 1791036685.5301409,
+    "ast_hash": "5a73939f295070d4c7319895120b16e5",
     "semantic_hash": ""
   },
   "assets/textures/blocks/SOURCES.md": {
@@ -9126,9 +9126,9 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/glb_creature.rs": {
-    "mtime": 1791034936.7571986,
-    "seen": 1791035421.790241,
-    "ast_hash": "e222171e0b9b7f0384c469c39237f0cb",
+    "mtime": 1791036506.3262236,
+    "seen": 1791036596.321286,
+    "ast_hash": "7bb5cd1f2a1ddcb4d844986487826197",
     "semantic_hash": ""
   },
   "src/server/script/creature/tests.rs": {
@@ -9168,9 +9168,9 @@
     "semantic_hash": ""
   },
   "docs/modding/GLB-CREATURES.md": {
-    "mtime": 1791035219.6672814,
-    "seen": 1791035421.7909608,
-    "ast_hash": "edddd93555d15b1a8db3da46acff5a0c",
+    "mtime": 1791035998.9694507,
+    "seen": 1791036596.321661,
+    "ast_hash": "9e02737eadc3666548b09091faa0eaea",
     "semantic_hash": ""
   },
   "fixtures/glb-creatures/README.md": {
@@ -9183,6 +9183,12 @@
     "mtime": 1791034516.1173813,
     "seen": 1791035421.791049,
     "ast_hash": "9c4ac0bbcaf9031f40b68dcada44fbbc",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/script_startup/glb_creature/falling.rs": {
+    "mtime": 1791036639.3937242,
+    "seen": 1791036685.529829,
+    "ast_hash": "b063a4818f9198acaa0fea0d3cdc4b40",
     "semantic_hash": ""
   }
 }
