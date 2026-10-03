@@ -32,7 +32,7 @@ fn natural_cavern_skylight_crosses_the_zero_height_chunk_boundary() {
             let wz = key.z * CHUNK_SIZE as i32 + z as i32;
             let open = (-1..=world::MAX_GENERATED_HEIGHT).all(|y| {
                 let (chunk, local) = world::world_to_chunk(wx, y, wz);
-                content::catalog().sky_attenuation(known[&chunk].block(local).unwrap()) == 0
+                !is_opaque(content::catalog(), known[&chunk].block(local).unwrap())
             });
             if open {
                 open_columns += 1;
@@ -224,7 +224,7 @@ fn emitted_light_crosses_chunk_seams_and_removal_darkens_both_sides() {
 }
 
 #[test]
-fn plants_transmit_and_leaves_partially_attenuate_daylight() {
+fn plants_and_leaves_transmit_daylight() {
     let key = ChunkKey { x: 0, y: 2, z: 0 };
     let mut known = sealed_neighborhood(key);
     for y in 0..CHUNK_SIZE {
@@ -242,7 +242,7 @@ fn plants_transmit_and_leaves_partially_attenuate_daylight() {
         .blocks
         .set(Chunk::index([8, 6, 8]).unwrap(), RED_FLOWER);
     let open = LightField::build(key, &known, 7);
-    assert_eq!(open.face([8, 4, 8], 1, 1).sky, 13);
+    assert_eq!(open.face([8, 4, 8], 1, 1).sky, 15);
     Arc::make_mut(known.get_mut(&key).unwrap())
         .blocks
         .set(Chunk::index([8, 11, 8]).unwrap(), WOOD);
@@ -286,163 +286,4 @@ fn mapped_glowstone_definition_supplies_emission_to_light_builder() {
     assert_eq!(catalog.emission(mapped_glowstone), 15);
     assert_eq!(light.face([7, 6, 6], 2, 1).glow, 15);
     assert_eq!(light.face([7, 6, 5], 2, 1).glow, 14);
-}
-
-#[test]
-fn layered_canopy_absorbs_sky_above_the_local_halo_and_relights_after_edit() {
-    let key = ChunkKey { x: 0, y: 2, z: 0 };
-    let mut known = sealed_neighborhood(key);
-    // A sealed shaft isolates direct transmission from light entering its sides.
-    for cy in 1..=4 {
-        let chunk_key = ChunkKey { y: cy, ..key };
-        let mut chunk = Chunk {
-            key: chunk_key,
-            version: 0,
-            blocks: vec![STONE; world::CHUNK_VOLUME].into(),
-        };
-        for y in 0..CHUNK_SIZE {
-            chunk.blocks.set(Chunk::index([8, y, 8]).unwrap(), AIR);
-        }
-        known.insert(chunk_key, Arc::new(chunk));
-    }
-    let roof = ChunkKey { y: 4, ..key };
-    for y in [4, 5, 6] {
-        Arc::make_mut(known.get_mut(&roof).unwrap())
-            .blocks
-            .set(Chunk::index([8, y, 8]).unwrap(), LEAVES);
-    }
-    let shaded = LightField::build(key, &known, 7);
-    assert_eq!(shaded.face([8, 4, 8], 1, 0).sky, 9);
-    for y in [4, 5, 6] {
-        Arc::make_mut(known.get_mut(&roof).unwrap())
-            .blocks
-            .set(Chunk::index([8, y, 8]).unwrap(), AIR);
-    }
-    let reopened = LightField::build(key, &known, 7);
-    assert_eq!(reopened.face([8, 4, 8], 1, 0).sky, 15);
-}
-
-fn colored_lamp_catalog() -> (Catalog, BlockId, BlockId) {
-    let mut catalog = Catalog::builtins();
-    let mut ids = Vec::new();
-    for (id, color) in [(10000, [255, 0, 0]), (10001, [0, 0, 255])] {
-        let mut block = catalog.block(GLOWSTONE).unwrap().clone();
-        block.id = content::BlockTypeId(id);
-        block.key = format!("test:lamp_{id}").into();
-        block.reflectance = color;
-        catalog.register_block(block).unwrap();
-        let state = content::BlockStateId(id);
-        catalog
-            .register_state(state, content::BlockTypeId(id), vec![], None)
-            .unwrap();
-        ids.push(state);
-    }
-    (catalog, ids[0], ids[1])
-}
-
-#[test]
-fn colored_transport_follows_bent_passage_and_edit_closes_it() {
-    let (catalog, red, _) = colored_lamp_catalog();
-    let key = ChunkKey { x: 0, y: 1, z: 0 };
-    let mut known = sealed_neighborhood(key);
-    let room = Arc::make_mut(known.get_mut(&key).unwrap());
-    for p in [
-        [4, 6, 4],
-        [5, 6, 4],
-        [6, 6, 4],
-        [6, 6, 5],
-        [6, 6, 6],
-        [6, 6, 7],
-    ] {
-        room.blocks.set(Chunk::index(p).unwrap(), AIR);
-    }
-    room.blocks.set(Chunk::index([4, 6, 4]).unwrap(), red);
-    let field = LightField::build_with_bounce_and_catalog(key, &known, 1, true, &catalog);
-    let sample = field.face([6, 6, 7], 0, 0);
-    assert_eq!(sample.glow_color, [255, 0, 0]);
-    assert_eq!(
-        sample.glow_direction,
-        [0, 0, -127],
-        "light arrives down passage, not diagonally through wall"
-    );
-    assert_eq!(sample.sky, 0);
-    assert!(sample.glow_bounce[0] > 0);
-    assert_eq!(&sample.glow_bounce[1..], &[0, 0]);
-    let (rgb, direction) = field.spatial_local([6.5, 6.5, 7.5]);
-    assert_eq!(rgb, [f32::from(sample.glow) / 15.0, 0.0, 0.0]);
-    assert_eq!(direction, [0.0, 0.0, -1.0]);
-    Arc::make_mut(known.get_mut(&key).unwrap())
-        .blocks
-        .set(Chunk::index([6, 6, 5]).unwrap(), STONE);
-    let closed = LightField::build_with_bounce_and_catalog(key, &known, 1, true, &catalog);
-    assert_eq!(closed.face([6, 6, 7], 0, 0), LightSample::default());
-}
-
-#[test]
-fn colored_transport_ties_are_stable_across_chunk_views_and_insertion_order() {
-    let (catalog, red, blue) = colored_lamp_catalog();
-    let key = ChunkKey { x: 0, y: 1, z: 0 };
-    let east = key_offset(key, 1, 0, 0).unwrap();
-    let mut known = sealed_neighborhood(key);
-    for x in 12..=20 {
-        let (k, local) = world::world_to_chunk(x, key.y * CHUNK_SIZE as i32 + 6, 8);
-        Arc::make_mut(known.get_mut(&k).unwrap())
-            .blocks
-            .set(Chunk::index(local).unwrap(), AIR);
-    }
-    Arc::make_mut(known.get_mut(&key).unwrap())
-        .blocks
-        .set(Chunk::index([12, 6, 8]).unwrap(), red);
-    Arc::make_mut(known.get_mut(&east).unwrap())
-        .blocks
-        .set(Chunk::index([4, 6, 8]).unwrap(), blue);
-    let left = LightField::build_with_catalog(key, &known, 1, &catalog);
-    let mut entries: Vec<_> = known.iter().collect();
-    entries.reverse();
-    let reordered = entries
-        .into_iter()
-        .map(|(k, v)| (*k, Arc::clone(v)))
-        .collect();
-    let right = LightField::build_with_catalog(east, &reordered, 1, &catalog);
-    let a = left.face([16, 6, 8], 0, 0);
-    let b = right.face([0, 6, 8], 0, 0);
-    assert_eq!(a, b);
-    assert_eq!(
-        a.glow_color,
-        [255, 0, 0],
-        "equal levels choose stable RGB priority"
-    );
-    assert_eq!(a.glow_direction, [-127, 0, 0]);
-    assert_eq!(
-        left.spatial_local([16.0, 6.5, 8.5]),
-        right.spatial_local([0.0, 6.5, 8.5])
-    );
-    assert_eq!(
-        left.corner_local([1, 0, 2], 1, 5, [16, 8]),
-        right.corner_local([1, 0, 2], 1, 5, [0, 8])
-    );
-}
-
-#[test]
-fn opaque_emitter_keeps_own_tint_beside_brighter_emitter() {
-    let (mut catalog, red, blue) = colored_lamp_catalog();
-    let mut dim = catalog.block(blue).unwrap().clone();
-    dim.id = content::BlockTypeId(10002);
-    dim.key = "test:dim_blue".into();
-    dim.emission = 14;
-    catalog.register_block(dim).unwrap();
-    let dim_blue = content::BlockStateId(10002);
-    catalog
-        .register_state(dim_blue, content::BlockTypeId(10002), vec![], None)
-        .unwrap();
-    let key = ChunkKey { x: 0, y: 1, z: 0 };
-    let mut known = sealed_neighborhood(key);
-    let room = Arc::make_mut(known.get_mut(&key).unwrap());
-    room.blocks.set(Chunk::index([5, 6, 8]).unwrap(), red);
-    room.blocks.set(Chunk::index([6, 6, 8]).unwrap(), dim_blue);
-    room.blocks.set(Chunk::index([7, 6, 8]).unwrap(), AIR);
-    let field = LightField::build_with_catalog(key, &known, 1, &catalog);
-    assert_eq!(field.face([6, 6, 8], 0, 0).glow_color, [0, 0, 255]);
-    assert_eq!(field.face([7, 6, 8], 0, 0).glow_color, [0, 0, 255]);
-    assert_eq!(field.face([7, 6, 8], 0, 0).glow, 13);
 }

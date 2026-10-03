@@ -1176,7 +1176,7 @@ equivalent-workload comparison; it is not required to close the scripting gaps.
 Implemented contracts and runnable fixtures are in [regions/chat](docs/modding/PLAYER-WORLD.md),
 [player modifiers](docs/modding/PLAYER-MODIFIERS.md), [player models](docs/modding/PLAYER-MODELS.md),
 and [moving entities](docs/modding/MOVING-ENTITIES.md). The default fresh save folder
-is `world-v27`; health recovery adds a versioned position checkpoint without converters.
+is `world-v26`; health recovery adds a versioned position checkpoint without converters.
 
 VM lifetime and retained runtime state are implemented in section 6; larger-package
 composition is implemented in section 7.

@@ -16,11 +16,7 @@ struct Output {
     out.color = input.color;
     return out;
 }
-struct FireOutput { @location(0) color: vec4f, @location(1) indirect: vec4f };
-@fragment fn fs(input: Output) -> FireOutput {
+@fragment fn fs(input: Output) -> @location(0) vec4<f32> {
     let tip = 1.0 - smoothstep(0.45, 1.0, input.uv.y);
-    let alpha = input.color.a * tip;
-    // Invisible tips must not overwrite the background's temporal reactivity.
-    if alpha == 0.0 { discard; }
-    return FireOutput(vec4f(input.color.rgb,alpha),vec4f(0.0,0.0,0.0,-1.0));
+    return vec4<f32>(input.color.rgb, input.color.a * tip);
 }

@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 pub(super) struct Instance {
     pub origin: [f32; 3],
     pub yaw_scale: [f32; 2],
-    pub light_levels: [u32; 2],
+    pub light_levels: [u8; 4],
     pub bounce: [u8; 4],
     pub glow_bounce: [u8; 4],
     pub tint: [f32; 3],
@@ -35,9 +35,6 @@ pub(super) struct Gpu {
     shadow: wgpu::RenderPipeline,
     double_sided: wgpu::RenderPipeline,
     shadow_double_sided: wgpu::RenderPipeline,
-    motion_pipeline: wgpu::RenderPipeline,
-    motion_double_sided: wgpu::RenderPipeline,
-    pub(super) motion: super::super::motion::Palette,
     group: wgpu::BindGroup,
     joints: wgpu::Buffer,
     parts: wgpu::Buffer,
@@ -165,15 +162,10 @@ impl Gpu {
                 }
             })
             .collect();
-        let motion = super::super::motion::Palette::new(device, joints.size() as usize / 64);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("instanced authored creature shader"),
             source: wgpu::ShaderSource::Wgsl(
-                super::super::motion::shader(
-                    crate::render::daylight::shader(include_str!("../authored.wgsl")),
-                    3,
-                )
-                .into(),
+                crate::render::daylight::shader(include_str!("../authored.wgsl")).into(),
             ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -182,7 +174,7 @@ impl Gpu {
             immediate_size: 0,
         });
         let vertex_attributes = wgpu::vertex_attr_array![0=>Float32x3,1=>Float32x3,2=>Float32x2,3=>Uint32x4,4=>Float32x4,5=>Uint32];
-        let instance_attributes = wgpu::vertex_attr_array![6=>Float32x3,7=>Float32x2,8=>Uint32x2,9=>Uint8x4,10=>Uint8x4,11=>Float32x3,12=>Uint32x2,13=>Float32x3];
+        let instance_attributes = wgpu::vertex_attr_array![6=>Float32x3,7=>Float32x2,8=>Uint8x4,9=>Uint8x4,10=>Uint8x4,11=>Float32x3,12=>Uint32x2,13=>Float32x3];
         let buffers = [
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
@@ -211,33 +203,11 @@ impl Gpu {
             &buffers,
             (true, None),
         );
-        let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("creature motion layout"),
-            bind_group_layouts: &[
-                Some(camera),
-                Some(&layout),
-                Some(&materials),
-                Some(&motion.layout),
-            ],
-            immediate_size: 0,
-        });
-        let motion_pipeline = super::super::motion::pipeline(
-            device,
-            &shader,
-            &motion_layout,
-            &buffers,
-            Some(wgpu::Face::Back),
-        );
-        let motion_double_sided =
-            super::super::motion::pipeline(device, &shader, &motion_layout, &buffers, None);
         Self {
             pipeline,
             shadow,
             double_sided,
             shadow_double_sided,
-            motion_pipeline,
-            motion_double_sided,
-            motion,
             group,
             joints,
             parts,
@@ -258,31 +228,12 @@ impl Gpu {
             queue.write_buffer(&self.parts, 0, bytemuck::cast_slice(parts));
         }
     }
-    pub fn draw_motion(
-        &self,
-        pass: &mut wgpu::RenderPass<'_>,
-        camera: &wgpu::BindGroup,
-        ranges: &[std::ops::Range<u32>],
-    ) {
-        pass.set_bind_group(3, &self.motion.group, &[]);
-        self.draw_mode(pass, camera, ranges, false, true);
-    }
     pub fn draw(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         camera: &wgpu::BindGroup,
         ranges: &[std::ops::Range<u32>],
         shadow: bool,
-    ) -> usize {
-        self.draw_mode(pass, camera, ranges, shadow, false)
-    }
-    fn draw_mode(
-        &self,
-        pass: &mut wgpu::RenderPass<'_>,
-        camera: &wgpu::BindGroup,
-        ranges: &[std::ops::Range<u32>],
-        shadow: bool,
-        motion: bool,
     ) -> usize {
         let mut triangles = 0;
         for (model, range) in self
@@ -297,19 +248,11 @@ impl Gpu {
             pass.set_vertex_buffer(1, self.instances.slice(..));
             for mesh in &model.meshes {
                 let material = &model.materials[mesh.material];
-                pass.set_pipeline(if motion {
-                    if material.double_sided {
-                        &self.motion_double_sided
-                    } else {
-                        &self.motion_pipeline
-                    }
-                } else {
-                    match (shadow, material.double_sided) {
-                        (false, false) => &self.pipeline,
-                        (false, true) => &self.double_sided,
-                        (true, false) => &self.shadow,
-                        (true, true) => &self.shadow_double_sided,
-                    }
+                pass.set_pipeline(match (shadow, material.double_sided) {
+                    (false, false) => &self.pipeline,
+                    (false, true) => &self.double_sided,
+                    (true, false) => &self.shadow,
+                    (true, true) => &self.shadow_double_sided,
                 });
                 pass.set_bind_group(2, &material.group, &[]);
                 pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);

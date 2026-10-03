@@ -31,13 +31,12 @@ pub(crate) struct Gpu {
     pending: VecDeque<Mesh>,
     selected: Vec<TileKey>,
     horizon: u16,
-    jitter: glam::Vec2,
 }
 impl Gpu {
     pub(crate) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let camera = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("LOD camera"),
-            size: 208,
+            size: 128,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -113,7 +112,11 @@ impl Gpu {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &super::super::scene_ao::color_targets(format, None),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             multiview_mask: None,
             cache: None,
@@ -128,7 +131,6 @@ impl Gpu {
             pending: VecDeque::new(),
             selected: vec![],
             horizon: 512,
-            jitter: glam::Vec2::ZERO,
         }
     }
     pub(crate) fn enqueue(&mut self, mesh: Mesh) -> Result<(), Mesh> {
@@ -256,9 +258,6 @@ impl Gpu {
     pub(crate) fn ready_keys(&self) -> impl Iterator<Item = TileKey> + '_ {
         self.tiles.keys().copied()
     }
-    pub(crate) fn set_jitter(&mut self, jitter: glam::Vec2) {
-        self.jitter = jitter;
-    }
     pub(crate) fn prepare(
         &mut self,
         queue: &wgpu::Queue,
@@ -277,7 +276,6 @@ impl Gpu {
             ..camera
         };
         let vp = super::super::visibility::view_projection(relative, width, height);
-        let vp = super::super::post::temporal::jitter_matrix(vp, self.jitter, width, height);
         let mut data = atmosphere.camera_data(vp, Vec3::ZERO);
         if self.horizon > 0 {
             data[28] = f32::from(self.horizon) * 0.65;

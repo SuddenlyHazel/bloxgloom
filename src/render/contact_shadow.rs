@@ -1,11 +1,13 @@
-//! Floor-validated mobile actor contact footprints for indirect-only scene grounding.
-//! Only resident exposed opaque cube tops at the support height receive contact.
-//! Footprints are clipped to connected tops, never projected down a ledge. Missing
-//! cells and emissive receivers fail closed. The legacy decal GPU fixture remains
-//! test-only; production consumes these patches in the sky-diffuse material term.
-#[cfg(test)]
+//! Small, floor-validated player contact shadows. These are presentation-only
+//! darkening decals, not a light source or a substitute for voxel occlusion.
+//!
+//! Only resident, exposed, opaque cube tops at the center support height can
+//! receive a patch. Missing cells and other geometry fail closed. The footprint
+//! is clipped to a connected set of those tops, never projected down a ledge.
+//! Emissive receivers are excluded. Callers disable this optional pass when
+//! custom material shaders are installed: arbitrary deformation/emission cannot
+//! be represented safely by the floor validation and alpha-darkening blend.
 mod gpu;
-#[cfg(test)]
 pub(crate) use gpu::Renderer;
 
 use super::{AvatarModel, MAX_AVATARS, VisualAvatar};
@@ -17,19 +19,18 @@ use glam::Vec3;
 const MAX_CHARACTERS: usize = 128;
 const MAX_HEIGHT: f32 = 1.25;
 const MAX_DISTANCE: f32 = 28.0;
-const MAX_CELLS: usize = 25;
-#[cfg(test)]
+const MAX_CELLS: usize = 9;
 const MAX_PATCHES: usize = MAX_CHARACTERS * MAX_CELLS;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub(crate) struct Patch {
     /// Clipped world-space x/z rectangle.
-    pub(super) bounds: [f32; 4],
+    bounds: [f32; 4],
     /// Footprint x/z center, receiving top height and soft radius.
-    pub(super) center: [f32; 4],
+    center: [f32; 4],
     /// Opacity, normalized sky/glow samples, reserved.
-    pub(super) light: [f32; 4],
+    light: [f32; 4],
 }
 
 /// Bounded constant-size block queries, with no generation or relighting. Call
@@ -44,7 +45,10 @@ pub(crate) fn patches(
     let mut out = Vec::new();
     let mut characters = 0;
     for avatar in avatars.iter().take(MAX_AVATARS) {
-        if !avatar.position.is_finite()
+        if !matches!(
+            avatar.model,
+            AvatarModel::Player | AvatarModel::PackagedPlayer(_)
+        ) || !avatar.position.is_finite()
             || avatar.position.abs().max_element() > 1_000_000.0
             || avatar.position.distance_squared(eye) > MAX_DISTANCE * MAX_DISTANCE
             || avatar.light_levels[..2] == [0, 0]
@@ -54,33 +58,15 @@ pub(crate) fn patches(
         if characters == MAX_CHARACTERS {
             break;
         }
-        let Some(radius) = footprint_radius(avatar.model, catalog) else {
-            continue;
-        };
         characters += 1;
-        append(&mut out, avatar, radius, catalog, &mut block);
+        append(&mut out, avatar, catalog, &mut block);
     }
     out
-}
-
-// Registered mobile bodies define their support footprint independently of art
-// style or GLB topology. A slightly wider soft skirt covers contact under feet;
-// rigid projectiles are deliberately excluded because their origins need not be
-// support points. Physics body bounds are already validated by the catalog.
-fn footprint_radius(model: AvatarModel, catalog: &Catalog) -> Option<f32> {
-    match model {
-        AvatarModel::Player | AvatarModel::PackagedPlayer(_) => Some(0.58),
-        AvatarModel::Registered(id) => catalog
-            .mobile_entity(id)
-            .map(|entity| (entity.body.half_width * 1.25 + 0.12).clamp(0.2, 1.35)),
-        AvatarModel::Moving(_) => None,
-    }
 }
 
 fn append(
     out: &mut Vec<Patch>,
     avatar: &VisualAvatar,
-    base_radius: f32,
     catalog: &Catalog,
     block: &mut impl FnMut(i32, i32, i32) -> Option<BlockId>,
 ) {
@@ -98,7 +84,7 @@ fn append(
     }
     let fade = 1.0 - height.max(0.0) / MAX_HEIGHT;
     let opacity = 0.26 * fade * fade * if avatar.airborne { 0.6 } else { 1.0 };
-    let radius = base_radius + 0.06 * (1.0 - fade);
+    let radius = 0.58 + 0.06 * (1.0 - fade);
     let min_x = (feet.x - radius).floor() as i32;
     let max_x = (feet.x + radius).floor() as i32;
     let min_z = (feet.z - radius).floor() as i32;

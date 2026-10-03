@@ -23,11 +23,8 @@ pub(crate) mod parameters;
 mod preparation;
 pub(crate) use preparation::{Preparation, Ready as ReadyVisuals};
 pub(crate) mod daylight;
-pub(crate) mod local_shadow;
 mod pipeline;
 pub(crate) mod post;
-pub(crate) mod scene_ao;
-mod scene_contact;
 mod sky;
 pub(crate) mod sun_shadow;
 mod target;
@@ -72,7 +69,7 @@ pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth3
 pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 1024 * 1024;
 pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 2;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
-pub(crate) const VERTEX_FLOATS: usize = 15;
+pub(crate) const VERTEX_FLOATS: usize = 13;
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);
 pub(crate) const SKY_COLOR: wgpu::Color = wgpu::Color {
     r: 0.43,
@@ -134,11 +131,6 @@ pub struct RenderStats {
 pub struct Renderer {
     catalog: Arc<Catalog>,
     atmosphere: daylight::Atmosphere,
-    package_lighting: crate::config::lighting::Lighting,
-    user_lighting: crate::config::lighting::Lighting,
-    user_local_shadows: local_shadow::Settings,
-    package_local_shadows: Option<local_shadow::Settings>,
-    applied_package_local_shadows: Option<local_shadow::Settings>,
     weather: weather::Presentation,
     rain: fire::FireRenderer,
     instance: wgpu::Instance,
@@ -169,9 +161,8 @@ pub struct Renderer {
     drop_cutout_indices: wgpu::Buffer,
     drop_cutout_index_count: u32,
     avatars: avatars::AvatarRenderer,
+    contact_shadows: contact_shadow::Renderer,
     sun_shadows: sun_shadow::SunShadows,
-    local_shadows: local_shadow::LocalShadows,
-    local_shadow_frame: std::time::Instant,
     sun_pipelines: (wgpu::RenderPipeline, wgpu::RenderPipeline),
     fire: fire::FireRenderer,
     game_ui: game_ui::GameUi,
@@ -295,17 +286,14 @@ impl Renderer {
         };
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
-        let mut post = post::PostProcess::new(&device, config.width, config.height, format);
-        post.enable_temporal(
-            &device,
-            std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1"),
-        );
+        let post = post::PostProcess::new(&device, config.width, config.height, format);
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
         let lod = lod::Gpu::new(&device, post::HDR_FORMAT);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
+        let contact_shadows = contact_shadow::Renderer::new(&device, &camera_buffer);
         let rain =
             fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
         let mut avatars = avatars::AvatarRenderer::new(
@@ -315,15 +303,12 @@ impl Renderer {
             &camera_buffer,
             &catalog,
         );
-        let mut sun_shadows = sun_shadow::SunShadows::new(
+        let sun_shadows = sun_shadow::SunShadows::new(
             &device,
             &camera_buffer,
             crate::config::SunShadowQuality::default(),
         );
-        let local_shadows = local_shadow::LocalShadows::new(&device, &camera_buffer);
-        sun_shadows.bind_local(&device, &camera_buffer, &local_shadows);
         avatars.set_camera_group(sun_shadows.camera_group.clone());
-        avatars.enable_motion(post.temporal_enabled());
         let camera_group = sun_shadows.camera_group.clone();
         let sun_pipelines = create_sun_shadow_pipelines(&device, &pipeline, None);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
@@ -355,11 +340,6 @@ impl Renderer {
         });
         Ok(Self {
             atmosphere: daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
-            package_lighting: Default::default(),
-            user_lighting: Default::default(),
-            user_local_shadows: Default::default(),
-            package_local_shadows: None,
-            applied_package_local_shadows: None,
             weather: weather::Presentation::default(),
             rain,
             catalog,
@@ -391,9 +371,8 @@ impl Renderer {
             drop_cutout_indices,
             drop_cutout_index_count: 0,
             avatars,
+            contact_shadows,
             sun_shadows,
-            local_shadows,
-            local_shadow_frame: std::time::Instant::now(),
             sun_pipelines,
             fire,
             game_ui,
@@ -431,30 +410,13 @@ impl Renderer {
             .sun_shadows
             .configure(&self.device, &self.camera_buffer, quality)
         {
-            self.sun_shadows
-                .bind_local(&self.device, &self.camera_buffer, &self.local_shadows);
             self.camera_group = self.sun_shadows.camera_group.clone();
             self.avatars.set_camera_group(self.camera_group.clone());
         }
     }
 
-    pub(crate) fn configure_lighting(&mut self, settings: crate::config::lighting::Lighting) {
-        self.user_lighting = settings.sanitized();
-        let user = self.user_lighting;
-        let package = self.package_lighting;
-        self.atmosphere.lighting = crate::config::lighting::Lighting {
-            sun_intensity: user.sun_intensity * package.sun_intensity,
-            ambient_intensity: user.ambient_intensity * package.ambient_intensity,
-            environment_intensity: user.environment_intensity * package.environment_intensity,
-            local_directionality: user.local_directionality * package.local_directionality,
-        }
-        .sanitized();
-    }
-
     pub(crate) fn set_world_time(&mut self, time: u64) {
-        let lighting = self.atmosphere.lighting;
         self.atmosphere = daylight::Atmosphere::at(time);
-        self.atmosphere.lighting = lighting;
     }
 
     pub(crate) fn set_weather(
@@ -516,12 +478,7 @@ impl Renderer {
     }
 
     pub(crate) fn set_contact_shadows(&mut self, patches: &[contact_shadow::Patch]) {
-        let patches = if self.material_gpu.is_none() {
-            patches
-        } else {
-            &[]
-        };
-        self.sun_shadows.set_contacts(&self.queue, patches);
+        self.contact_shadows.set(&self.queue, patches);
     }
 
     pub(crate) fn set_avatars(&mut self, avatars: &[VisualAvatar]) {
@@ -624,10 +581,7 @@ impl Renderer {
                 0
             };
             self.ready_near.insert(key);
-            if mesh.indices.is_empty()
-                && mesh.cutout_indices.is_empty()
-                && mesh.local_sources.is_empty()
-            {
+            if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 self.meshes.remove(&key);
                 continue;
             }
@@ -657,7 +611,6 @@ impl Renderer {
                 key,
                 GpuMesh {
                     lighting_revision: mesh.lighting_revision,
-                    local_sources: mesh.local_sources,
                     opaque: upload(&mesh.vertices, &mesh.indices, "opaque chunk"),
                     cutout: upload(&mesh.cutout_vertices, &mesh.cutout_indices, "cutout chunk"),
                 },
@@ -678,8 +631,6 @@ impl Renderer {
         if uploaded_chunks < UPLOAD_MESHES_PER_FRAME {
             self.lod.upload(&self.device);
         }
-        let (view_projection, jitter) = self.post.prepare_temporal(&self.queue, camera);
-        self.lod.set_jitter(jitter);
         self.lod.prepare(
             &self.queue,
             camera,
@@ -701,6 +652,7 @@ impl Renderer {
         if self.size.width == 0 || self.size.height == 0 {
             return Ok(stats);
         }
+        let view_projection = view_projection(camera, self.config.width, self.config.height);
         self.queue.write_buffer(
             &self.sky_buffer,
             0,
@@ -730,10 +682,7 @@ impl Renderer {
             self.queue.write_buffer(
                 &self.target_camera_buffer,
                 0,
-                bytemuck::cast_slice(
-                    &visibility::view_projection(camera, self.config.width, self.config.height)
-                        .to_cols_array(),
-                ),
+                bytemuck::cast_slice(&view_projection.to_cols_array()),
             );
             self.queue.write_buffer(
                 &self.target_vertices,
@@ -765,25 +714,24 @@ impl Renderer {
             | wgpu::CurrentSurfaceTexture::Validation => return Ok(stats),
         };
         let view = frame.texture.create_view(&Default::default());
-        // Admission/refresh state advances only for a frame that will encode
-        // every scheduled face. Surface loss/occlusion must not publish an
-        // initialized slot whose depth was never rendered.
-        self.prepare_local_shadows(camera);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
         self.draw_sun_shadows(&mut encoder);
-        self.draw_local_shadows(&mut encoder);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
-                color_attachments: &scene_ao::attachments(
-                    &self.post.scene,
-                    &self.post.ambient.indirect,
-                    SKY_COLOR,
-                ),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.post.scene,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(SKY_COLOR),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth,
                     depth_ops: Some(wgpu::Operations {
@@ -827,6 +775,11 @@ impl Renderer {
                 stats.drawn_triangles += self.drop_index_count as usize / 3;
             }
             stats.drawn_triangles += self.avatars.draw(&mut pass);
+            // Authored materials may move cube tops or synthesize emission.
+            // A darkening decal cannot preserve those arbitrary surface terms.
+            if self.material_gpu.is_none() {
+                stats.drawn_triangles += self.contact_shadows.draw(&mut pass);
+            }
             pass.set_pipeline(&self.cutout_pipeline);
             pass.set_bind_group(0, &self.camera_group, &[]);
             pass.set_bind_group(1, &self.texture_group, &[]);
@@ -857,44 +810,9 @@ impl Renderer {
                 pass.draw_indexed(0..self.drop_cutout_index_count, 0, 0..1);
                 stats.drawn_triangles += self.drop_cutout_index_count as usize / 3;
             }
-        }
-        self.post.resolve_ambient(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            &self.depth,
-            view_projection,
-        );
-        {
-            let mut attachments = scene_ao::attachments(
-                &self.post.scene,
-                &self.post.ambient.indirect,
-                wgpu::Color::TRANSPARENT,
-            );
-            for attachment in attachments.iter_mut().flatten() {
-                attachment.ops.load = wgpu::LoadOp::Load;
-            }
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("translucent particles after ambient occlusion"),
-                color_attachments: &attachments,
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                ..Default::default()
-            });
             stats.drawn_triangles += self.fire.draw(&mut pass);
             stats.drawn_triangles += self.rain.draw(&mut pass);
         }
-
-        self.post
-            .draw_motion(&self.queue, &mut encoder, &self.depth, Some(&self.avatars));
-        self.post
-            .resolve_temporal(&self.device, &mut encoder, &self.depth);
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &view);
         if ui_frame.target.is_some() {
@@ -937,8 +855,6 @@ impl Renderer {
             &self.catalog,
         );
         self.queue.submit(Some(encoder.finish()));
-        self.post.submitted();
-        self.avatars.submitted();
         self.queue.present(frame);
         if uploaded_chunks != 0 {
             crate::client::trace::event(format_args!("present uploaded_chunks={uploaded_chunks}"));

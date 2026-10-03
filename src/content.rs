@@ -122,7 +122,6 @@ pub struct TextureDef {
     pub stitch_vertical: bool,
     pub alpha_cutout: bool,
     pub emission_strength: f32,
-    pub foliage: bloxgloom_host_api::content::FoliageShading,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -147,8 +146,6 @@ pub struct BlockDef {
     pub supports_plant: bool,
     pub flammable: bool,
     pub emission: u8,
-    /// Sky-light levels absorbed per voxel (0–15); opaque blocks always stop sky.
-    pub sky_attenuation: u8,
     pub reflectance: [u8; 3],
     /// A bounded set of named choices from which legal state keys are compiled.
     pub properties: Vec<PropertyDef>,
@@ -171,8 +168,6 @@ pub struct StateDef {
     pub face_textures: [TextureId; 6],
     pub flags: u8,
     pub emission: u8,
-    /// Sky-light levels absorbed per voxel (0–15); opaque blocks always stop sky.
-    pub sky_attenuation: u8,
     pub reflectance: [u8; 3],
 }
 
@@ -375,8 +370,7 @@ impl Catalog {
         if self.texture_keys.contains(definition.key.as_ref()) {
             return Err(RegistrationError::DuplicateKey);
         }
-        if !definition.foliage.valid()
-            || !definition.emission_strength.is_finite()
+        if !definition.emission_strength.is_finite()
             || !(0.0..=16.0).contains(&definition.emission_strength)
         {
             return Err(RegistrationError::InvalidTexture);
@@ -397,8 +391,7 @@ impl Catalog {
         if !valid_key(&definition.key) {
             return Err(RegistrationError::InvalidKey);
         }
-        if definition.sky_attenuation > 15
-            || definition.emission > 15
+        if definition.emission > 15
             || (definition.opaque && definition.cutout)
             || (definition.plant && (!definition.cutout || definition.solid))
             || (definition.replaceable && definition.solid)
@@ -536,7 +529,6 @@ impl Catalog {
             face_textures,
             flags: flags(block),
             emission: emission.unwrap_or(block.emission),
-            sky_attenuation: block.sky_attenuation,
             reflectance: block.reflectance,
         };
         if self.states.len() <= index {
@@ -704,17 +696,6 @@ impl Catalog {
     #[inline]
     pub fn emission(&self, id: BlockStateId) -> u8 {
         self.state(id).map_or(0, |state| state.emission)
-    }
-
-    #[inline]
-    pub fn sky_attenuation(&self, id: BlockStateId) -> u8 {
-        self.state(id).map_or(15, |state| {
-            if state.flags & OPAQUE != 0 {
-                15
-            } else {
-                state.sky_attenuation
-            }
-        })
     }
 
     #[inline]
@@ -933,7 +914,7 @@ impl Catalog {
                 for value in block.swatch {
                     add(&value.to_le_bytes());
                 }
-                add(&[flags(block), block.emission, block.sky_attenuation]);
+                add(&[flags(block), block.emission]);
                 add(&block.reflectance);
                 for texture in [
                     block.textures.top,
@@ -1085,8 +1066,6 @@ fn fingerprint_texture(texture: &TextureDef) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     hash_bytes(&mut hash, texture.key.as_bytes());
     hash_bytes(&mut hash, &texture.emission_strength.to_le_bytes());
-    hash_bytes(&mut hash, &texture.foliage.wrap.to_le_bytes());
-    hash_bytes(&mut hash, &texture.foliage.transmission.to_le_bytes());
     hash_bytes(
         &mut hash,
         &[

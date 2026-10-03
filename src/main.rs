@@ -66,28 +66,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         catalog
     };
     let mut catalog = catalog;
-    if arguments.first().is_some_and(|command| {
-        matches!(
-            command.as_str(),
-            "sandbox-preview" | "workshop-preview" | "local-shadow-preview"
-        )
-    }) {
+    if arguments
+        .first()
+        .is_some_and(|command| command == "sandbox-preview")
+    {
         preview::install_sandbox_materials(&mut catalog)?;
-    }
-    if arguments.first().is_some_and(|command| {
-        command == "local-shadow-preview"
-            || command == "outdoor-creature-preview"
-            || command == "outdoor-creature-motion-preview"
-            || command == "outdoor-depth-preview"
-    }) {
-        preview::install_outdoor_creatures(&mut catalog)?;
     }
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v27-fixture"
+        "world-v26-fixture"
     } else {
-        "world-v27"
+        "world-v26"
     };
     match args.next().as_deref() {
         Some("model-preview") => {
@@ -452,48 +442,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &pose,
             )?;
             println!("wrote sandbox rendering fixtures to {directory}");
-        }
-        Some("local-shadow-preview") => {
-            let directory = args
-                .next()
-                .unwrap_or_else(|| "local-shadow-previews".into());
-            if args.next().is_some() {
-                return Err("usage: local-shadow-preview [output-dir]".into());
-            }
-            preview::render_local_shadow_previews(std::path::Path::new(&directory))?;
-        }
-        Some("workshop-preview") => {
-            let directory = args.next().unwrap_or_else(|| "workshop-previews".into());
-            if args.next().is_some() {
-                return Err("usage: workshop-preview [output-dir]".into());
-            }
-            preview::render_workshop_previews(std::path::Path::new(&directory))?;
-        }
-        Some("outdoor-motion-preview" | "outdoor-creature-motion-preview") => {
-            let directory = args.next().unwrap_or_else(|| "outdoor-motion".to_string());
-            if args.next().is_some() {
-                return Err("usage: outdoor-motion-preview [output-dir]".into());
-            }
-            preview::render_outdoor_motion(std::path::Path::new(&directory))?;
-            println!("wrote temporal motion sequence to {directory}");
-        }
-        Some("outdoor-depth-preview") => {
-            let directory = args.next().unwrap_or_else(|| "outdoor-depth".to_string());
-            if args.next().is_some() {
-                return Err("usage: outdoor-depth-preview [output-dir]".into());
-            }
-            preview::render_outdoor_depth(std::path::Path::new(&directory))?;
-            println!("wrote scene depth acceptance preview to {directory}");
-        }
-        Some("outdoor-preview" | "outdoor-creature-preview") => {
-            let directory = args
-                .next()
-                .unwrap_or_else(|| "outdoor-previews".to_string());
-            if args.next().is_some() {
-                return Err("usage: outdoor-preview [output-dir]".into());
-            }
-            preview::render_outdoor_previews(std::path::Path::new(&directory))?;
-            println!("wrote outdoor acceptance previews to {directory}");
         }
         Some("calibration-preview") => {
             let directory = args

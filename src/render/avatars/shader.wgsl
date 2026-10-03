@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct VertexInput {
@@ -7,7 +7,7 @@ struct VertexInput {
     @location(2) part: u32,
     @location(3) origin: vec3<f32>,
     @location(4) cosmetics: vec4<u32>,
-    @location(5) light_levels: vec2<u32>,
+    @location(5) light_levels: vec4<u32>,
     @location(6) bounce: vec4<u32>,
     @location(7) pose: vec4<f32>,
     @location(8) color: vec3<f32>,
@@ -22,11 +22,6 @@ struct VertexOutput {
     @location(1) direct: vec3f,
     @location(2) sky: f32,
     @location(3) world_position: vec3f,
-    @location(4) indirect: vec3f,
-    @location(5) normal: vec3f,
-    @location(6) local_radiance: vec3f,
-    @location(7) local_direction: vec3f,
-    @location(8) surface_color: vec3f,
 };
 
 // REGISTERED_PALETTES
@@ -63,18 +58,12 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     if input.part == 3u { albedo = mix(PANTS[min(input.cosmetics.z, 31u)], vec3<f32>(0.10, 0.08, 0.07), 0.65); }
     if input.part == 4u { albedo = vec3<f32>(0.025, 0.035, 0.045); }
     if input.part >= 5u { albedo = input.color; }
-    let sky = f32(input.light_levels.x & 255u) / 15.0;
-    let glow = f32((input.light_levels.x >> 8u) & 255u) / 15.0;
-    let packed_color = vec3f(unpack4x8unorm(input.light_levels.x).zw, unpack4x8unorm(input.light_levels.y).x);
-    output.normal = normal;
-    output.local_radiance = packed_color * glow * glow;
-    output.surface_color = albedo * input.tint;
-    output.local_direction = unpack4x8snorm(input.light_levels.y).yzw;
+    let sky = f32(input.light_levels.x) / 15.0;
+    let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3<f32>(f32(input.bounce.x), f32(input.bounce.y), f32(input.bounce.z)) / 255.0;
     let glow_bounce = vec3<f32>(f32(input.glow_bounce.x), f32(input.glow_bounce.y), f32(input.glow_bounce.z)) / 255.0;
-    let light = bg_surface_light(normal, camera.sun, sky, vec3f(0.0), bounce, glow_bounce, 1.0);
+    let light = bg_surface_light(normal, camera.sun, sky, glow, bounce, glow_bounce, 1.0);
     output.color = albedo * input.tint * light;
-    output.indirect = albedo * input.tint * bg_indirect_light(normal,camera.sun,sky,bounce,glow_bounce);
     output.direct = albedo * input.tint * bg_direct_light(normal, camera.sun, sky);
     output.world_position = world;
     output.sky = sky;
@@ -89,29 +78,8 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     return avatar_vertex(input, true).clip;
 }
 
-@fragment fn fs_main(input: VertexOutput) -> BgSceneOutput {
+@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let receiver = bg_shadow_receiver(input.world_position);
-    // Local visibility is evaluated per fragment, retaining voxel scattering.
-    let local_light = bg_shadowed_local_light(input.world_position, normalize(input.normal), input.local_radiance, input.local_direction);
-    let color = input.color + input.surface_color * local_light - input.direct * (1.0 - bg_sun_visibility(receiver));
-    // Mark local-source influence reactive before a moving shadow reaches it.
-    let history_sign = bg_local_history_sign(input.world_position, normalize(input.normal), input.local_radiance, input.local_direction);
-    return bg_scene_output(color,input.indirect,input.world_position,input.sky,history_sign);
-}
-
-struct MotionOutput { @builtin(position) clip: vec4f, @location(0) previous: vec4f, @location(1) current: vec4f };
-@vertex fn vs_motion(input: VertexInput, @builtin(instance_index) instance: u32) -> MotionOutput {
-    let current = avatar_vertex(input, false);
-    let old = previous_world[instance];
-    var previous_input = input;
-    previous_input.origin = old[0].xyz; previous_input.pose = old[1]; previous_input.orientation = old[2];
-    var out: MotionOutput; out.clip = current.clip; out.current = current.clip;
-    // The previous pose is evaluated with the same procedural deformation as
-    // this frame (feet, squash, ear sway and rigid projectile quaternion).
-    if old[0].w == 0.0 { out.previous = vec4f(0.0); }
-    else { out.previous = motion_frame.previous * vec4f(avatar_vertex(previous_input, false).world_position, 1.0); }
-    return out;
-}
-@fragment fn fs_motion(input: MotionOutput) -> @location(0) vec4f {
-    return bg_encode_motion(input.previous, input.current);
+    let color = input.color - input.direct * (1.0 - bg_sun_visibility(receiver));
+    return vec4f(bg_apply_fog(color, input.world_position, input.sky), 1.0);
 }

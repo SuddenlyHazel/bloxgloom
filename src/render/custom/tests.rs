@@ -72,7 +72,6 @@ fn gpu_preview(extended: bool) {
             stitch_vertical: true,
             alpha_cutout: false,
             emission_strength: 0.0,
-            foliage: Default::default(),
         })
         .unwrap()
         .get() as f32;
@@ -154,9 +153,6 @@ fn material_fragment(input: BgSurface) -> BgSurface {
 
     // Package-owned tile through the item/cutout pipeline in both sky and dark
     // light, and unselected opaque dirt. The production vertex layout is unchanged.
-    // These XY quads face the eye along -Z; use their actual geometric normal.
-    // An unrelated +Y normal makes this a grazing-Fresnel test instead of a
-    // layer-isolation test once materials receive environment reflections.
     let mut vertices = Vec::<f32>::new();
     let mut indices = Vec::<u32>::new();
     for (x0, x1, y0, y1, layer, sky) in [
@@ -167,7 +163,7 @@ fn material_fragment(input: BgSurface) -> BgSurface {
         let base = (vertices.len() / VERTEX_FLOATS) as u32;
         for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
             vertices.extend_from_slice(&[
-                x, y, 0.5, 0.0, 0.0, -1.0, 0.25, 0.25, layer, sky, 0.0, 0.0, 0.0, 0.0, 0.0,
+                x, y, 0.5, 0.0, 1.0, 0.0, 0.25, 0.25, layer, sky, 0.0, 0.0, 0.0,
             ]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -193,7 +189,7 @@ fn material_fragment(input: BgSurface) -> BgSurface {
         let base = (vertices.len() / VERTEX_FLOATS) as u32;
         for (x, y) in [(x0, 0.0), (x1, 0.0), (x1, 1.0), (x0, 1.0)] {
             vertices.extend_from_slice(&[
-                x, y, 0.25, 0.0, 0.0, -1.0, uv[0], uv[1], 12.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                x, y, 0.25, 0.0, 1.0, 0.0, uv[0], uv[1], 12.0, 1.0, 0.0, 0.0, 0.0,
             ]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -347,7 +343,7 @@ fn material_fragment(input: BgSurface) -> BgSurface {
 
 #[test]
 fn gpu_custom_cutout_alpha_receives_matching_light_in_color_and_caster_passes() {
-    let prepared = Prepared { environment_lighting: None, local_shadows: None, materials: vec![Material {
+    let prepared = Prepared { materials: vec![Material {
         owner: "test:lit_cutout".into(), layers: vec![2], textures: vec![2], parameters: vec![],
         version: 2, vertex_offset: 0.0,
         shader: "fn material_fragment(input: BgSurface) -> BgSurface { var result = input; result.albedo = vec4f(0.8,0.8,0.8,select(0.0,1.0,input.light.x > 0.7)); return result; }".into(),

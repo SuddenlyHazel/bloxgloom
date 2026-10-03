@@ -1,6 +1,6 @@
 # Movement effects
 
-Run `cargo run --release -- local-packages fixtures/player-modifiers/packages /tmp/bloxgloom-movement-test-v26`.
+Run `cargo run --release -- local-packages fixtures/player-modifiers/packages /tmp/bloxgloom-movement-test-v25b`.
 
 Open F4, type `pace:self 1` into the Command field and click Run for a saved
 25% speed boost. `pace:self 2` applies a temporary 50% speed multiplier lasting

@@ -23,7 +23,6 @@ fn register(catalog: &mut Catalog, key: &str, pixels: &[u8]) {
             stitch_vertical: false,
             alpha_cutout: false,
             emission_strength: 0.0,
-            foliage: Default::default(),
         })
         .unwrap();
 }
@@ -81,56 +80,10 @@ fn builtin_companions_are_registered_without_changing_original_layers() {
     let catalog = Catalog::builtins();
     let maps = prepare(&catalog);
     assert_eq!(&maps.flags[..11], &[3; 11]);
-    assert!(maps.flags[11..19].iter().all(|&f| f & 3 == 0));
+    assert!(maps.flags[11..19].iter().all(|&f| f == 0));
     assert_eq!(maps.flags[19], 3);
     assert!(maps.flags[20..].iter().all(|&f| f == 0));
     assert_eq!(catalog.textures()[3].key, "bloxgloom:stone");
     assert_eq!(catalog.textures()[27].key, "bloxgloom:grass_top_n");
     assert_eq!(catalog.textures()[45].key, "bloxgloom:wood_side_n");
-}
-
-#[test]
-fn foliage_metadata_is_opt_in_bounded_and_fingerprinted() {
-    use bloxgloom_host_api::content::FoliageShading;
-    let mut plain = Catalog::new();
-    register(&mut plain, "test:leaf", &[100, 150, 50, 255].repeat(4));
-    let original = plain.textures()[0].clone();
-    let mut changed = original.clone();
-    changed.foliage = FoliageShading {
-        wrap: 0.35,
-        transmission: 0.28,
-    };
-    let mut foliage = Catalog::new();
-    foliage.register_texture(changed).unwrap();
-    assert_ne!(plain.fingerprint(), foliage.fingerprint());
-    assert_eq!(prepare(&plain).flags, [0]);
-    assert_eq!(prepare(&foliage).flags, [89 << 8 | 71 << 16]);
-    for value in [f32::NAN, f32::INFINITY, -0.1, 1.01] {
-        for transmission in [false, true] {
-            let mut bad = original.clone();
-            if transmission {
-                bad.foliage.transmission = value;
-            } else {
-                bad.foliage.wrap = value;
-            }
-            assert!(Catalog::new().register_texture(bad).is_err());
-        }
-    }
-    let builtins = Catalog::builtins();
-    for texture in builtins.textures() {
-        if matches!(
-            texture.key.as_ref(),
-            "bloxgloom:leaves"
-                | "bloxgloom:flower_red"
-                | "bloxgloom:flower_yellow"
-                | "bloxgloom:flower_blue"
-                | "bloxgloom:fern"
-                | "bloxgloom:tall_grass"
-        ) {
-            assert!(texture.foliage.wrap > 0.0);
-            assert!(texture.foliage.transmission > 0.0);
-        } else {
-            assert_eq!(texture.foliage, FoliageShading::default());
-        }
-    }
 }

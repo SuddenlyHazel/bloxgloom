@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
 pub(crate) mod bindings;
-pub(crate) mod lighting;
 pub(crate) mod parallax;
 use bindings::{Bindings, NamedBindings};
 
@@ -85,8 +84,6 @@ pub struct Config {
     pub bounced_gi: bool,
     pub sun_shadow_quality: SunShadowQuality,
     pub parallax: parallax::Parallax,
-    pub lighting: lighting::Lighting,
-    pub local_shadows: crate::render::local_shadow::Settings,
     pub exposure: f32,
     pub post_processing: bool,
     pub bloom_enabled: bool,
@@ -116,8 +113,6 @@ impl Default for Config {
             bounced_gi: false,
             sun_shadow_quality: SunShadowQuality::default(),
             parallax: parallax::Parallax::default(),
-            lighting: lighting::Lighting::default(),
-            local_shadows: Default::default(),
             exposure: 1.0,
             post_processing: true,
             bloom_enabled: true,
@@ -255,8 +250,6 @@ impl Config {
             bounced_gi: self.bounced_gi,
             sun_shadow_quality: self.sun_shadow_quality,
             parallax: self.parallax.sanitized(),
-            lighting: self.lighting.sanitized(),
-            local_shadows: sanitize_local_shadows(self.local_shadows),
             exposure: clamp_finite(self.exposure, 0.25, 4.0, 1.0),
             post_processing: self.post_processing,
             bloom_enabled: self.bloom_enabled,
@@ -308,11 +301,6 @@ impl Config {
             self.sun_shadow_quality.as_str()
         ));
         text.push_str(&self.parallax.serialize());
-        text.push_str(&self.lighting.serialize());
-        text.push_str(&format!(
-            "local_shadows={}\n",
-            serde_json::to_string(&self.local_shadows).expect("sanitized local shadows")
-        ));
         text.push_str(&format!(
             "audio_master={}\naudio_ambient={}\naudio_effects={}\n",
             self.audio_master, self.audio_ambient, self.audio_effects
@@ -353,7 +341,7 @@ fn parse_config(contents: &str) -> Config {
         };
         let key = key.trim();
         let value = value.trim();
-        if config.parallax.parse(key, value) || config.lighting.parse(key, value) {
+        if config.parallax.parse(key, value) {
             continue;
         }
         if let Some(action) = key.strip_prefix("bind_action.") {
@@ -403,13 +391,6 @@ fn parse_config(contents: &str) -> Config {
             "audio_master" => config.audio_master = parse_clamped_float(value, 0.0, 1.0, 1.0),
             "audio_ambient" => config.audio_ambient = parse_clamped_float(value, 0.0, 1.0, 1.0),
             "audio_effects" => config.audio_effects = parse_clamped_float(value, 0.0, 1.0, 1.0),
-            "local_shadows" => {
-                if let Ok(settings) =
-                    serde_json::from_str::<crate::render::local_shadow::Settings>(value)
-                {
-                    config.local_shadows = sanitize_local_shadows(settings);
-                }
-            }
             "audio_mix" => {
                 if let Ok(profile) =
                     serde_json::from_str::<crate::audio::mix_tuning::MixConfig>(value)
@@ -565,13 +546,4 @@ fn sanitize_lod_horizon(horizon: u16) -> u16 {
         1..=512 => 512,
         _ => 1024,
     }
-}
-
-// Keep persistent settings in their authored bounds, even when runtime maps are disabled.
-fn sanitize_local_shadows(
-    settings: crate::render::local_shadow::Settings,
-) -> crate::render::local_shadow::Settings {
-    let mut sanitized = settings.sanitized(1024);
-    sanitized.resolution = settings.resolution.clamp(64, 1024);
-    sanitized
 }

@@ -24,9 +24,8 @@ pub(crate) fn assign(column: &mut Column, catalog: &Catalog) {
         {
             break;
         }
-        // Use the same authored absorption as full-resolution voxel lighting.
-        // Transparent non-foliage materials must not inherit leaf absorption.
+        // Cutout foliage transmits attenuated daylight; it is not a sealed roof.
         let thickness = (span.top - span.bottom).min(15) as u8;
-        sky = sky.saturating_sub(thickness.saturating_mul(catalog.sky_attenuation(span.state)));
+        sky = sky.saturating_sub(thickness.saturating_mul(2));
     }
 }

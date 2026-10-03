@@ -183,7 +183,6 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             stitch_vertical: true,
             alpha_cutout: false,
             emission_strength: 0.0,
-            foliage: Default::default(),
         })
         .unwrap();
     assert_eq!(layer, TextureId(51));
@@ -205,7 +204,6 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
         supports_plant: false,
         flammable: false,
         emission: 0,
-        sky_attenuation: 0,
         reflectance: [180, 180, 180],
         properties: Vec::new(),
     };
@@ -252,31 +250,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             stitch_vertical: true,
             alpha_cutout: false,
             emission_strength: 0.0,
-            foliage: Default::default(),
         }),
         Err(RegistrationError::DuplicateKey)
     );
-}
-
-#[test]
-fn sky_attenuation_is_validated_and_part_of_catalog_identity() {
-    let mut baseline = Catalog::builtins();
-    let mut leaves = baseline.block(world::LEAVES).unwrap().clone();
-    leaves.id = BlockTypeId(65_530);
-    leaves.key = "fixture:absorbing_canopy".into();
-    leaves.sky_attenuation = 16;
-    assert_eq!(
-        baseline.register_block(leaves.clone()),
-        Err(RegistrationError::InvalidDefinition)
-    );
-    leaves.sky_attenuation = 4;
-    baseline.register_block(leaves.clone()).unwrap();
-    let fingerprint = baseline.definition_fingerprint(b'B', leaves.id.0);
-    let mut other = Catalog::builtins();
-    leaves.sky_attenuation = 3;
-    other.register_block(leaves.clone()).unwrap();
-    assert_ne!(fingerprint, other.definition_fingerprint(b'B', leaves.id.0));
-    assert_eq!(other.sky_attenuation(world::STONE), 15);
-    assert_eq!(other.sky_attenuation(world::AIR), 0);
-    assert_eq!(other.sky_attenuation(world::LEAVES), 2);
 }

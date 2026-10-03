@@ -69,7 +69,6 @@ fn target_package_texture_count_builds_a_valid_gpu_material_array() {
                 stitch_vertical: true,
                 alpha_cutout: false,
                 emission_strength: 0.0,
-                foliage: Default::default(),
             })
             .unwrap();
     }

@@ -18,26 +18,6 @@ pub struct Texture {
     /// Surface radiance multiplier, 0–16. Independent of voxel light emission;
     /// the builtin glowstone material uses 3.5. Applies to cube/cutout surfaces.
     pub emission_strength: f32,
-    /// Opt-in thin-surface daylight response. Default preserves ordinary materials.
-    pub foliage: FoliageShading,
-}
-
-/// Bounded thin-surface shading, independent of voxel skylight transmission.
-/// Zero values preserve standard diffuse materials, including non-foliage cutouts.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct FoliageShading {
-    /// Diffuse wrap around silhouettes, 0–1.
-    pub wrap: f32,
-    /// Back-side sunlight transmission, 0–1. Never affects emission or cave light.
-    pub transmission: f32,
-}
-
-impl FoliageShading {
-    pub fn valid(self) -> bool {
-        [self.wrap, self.transmission].into_iter().all(|v| {
-            v.is_finite() && (0.0..=1.0).contains(&v) && !(v == 0.0 && v.is_sign_negative())
-        })
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,8 +74,6 @@ pub struct Block {
     pub supports_plant: bool,
     pub flammable: bool,
     pub emission: u8,
-    /// Sky-light levels absorbed per voxel (0–15); opaque blocks always stop sky.
-    pub sky_attenuation: u8,
     pub reflectance: [u8; 3],
     /// At most eight properties, with at most 4096 combinations. Only explicitly
     /// declared states are legal; no implicit Cartesian-product allocation.

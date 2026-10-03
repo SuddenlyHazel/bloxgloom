@@ -49,7 +49,6 @@ impl bloxgloom_host_api::Extension for BurnExtension {
             supports_plant: true,
             flammable: true,
             emission: 0,
-            sky_attenuation: 0,
             reflectance: [75, 170, 65],
             properties: Vec::new(),
             states: vec![BlockState::default()],

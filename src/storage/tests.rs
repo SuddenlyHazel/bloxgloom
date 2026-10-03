@@ -30,7 +30,6 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
             stitch_vertical: true,
             alpha_cutout: false,
             emission_strength: 0.0,
-            foliage: Default::default(),
         })
         .unwrap();
     catalog
@@ -52,7 +51,6 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
             supports_plant: false,
             flammable: false,
             emission: 0,
-            sky_attenuation: 0,
             reflectance: [180, 180, 180],
             properties: Vec::new(),
         })

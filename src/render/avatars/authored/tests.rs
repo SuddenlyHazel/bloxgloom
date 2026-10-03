@@ -185,8 +185,6 @@ pub(in crate::render::avatars) fn avatar(
         cosmetics: [0; 4],
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
-        glow_color: [0; 3],
-        glow_direction: [0; 3],
         glow_bounce: [0; 4],
         tint: [1.0; 3],
     }
@@ -597,79 +595,4 @@ fn gpu_packaged_master_humanoid_keeps_embedded_art_variants_and_baked_running() 
             .write_image_data(&pixels)
             .unwrap();
     }
-}
-
-#[test]
-fn authored_motion_world_matches_scaled_yawed_first_person_vertices() {
-    let mut avatar = avatar(7, crate::content::MOSSBUN_ENTITY_TYPE, 1.25, [255; 3]);
-    avatar.position.y = 0.4;
-    avatar.position.z = -0.7;
-    let point = Vec3::new(0.3, 0.8, -0.2);
-    let skin = glam::Mat4::from_scale_rotation_translation(
-        Vec3::new(0.8, 1.2, 1.0),
-        glam::Quat::from_rotation_x(0.3),
-        Vec3::new(0.2, -0.1, 0.1),
-    );
-    for yaw in [0.0, 0.7, std::f32::consts::FRAC_PI_2] {
-        avatar.pose[0] = yaw;
-        for scale in [0.5, 1.0, 2.5] {
-            for offset in [[0.0; 3], [0.25, -0.1, 0.15]] {
-                // Independently mirror authored.wgsl's scale/offset/yaw order.
-                let local = skin.transform_point3(point) * scale + Vec3::from_array(offset);
-                let (si, co) = model_yaw(yaw).sin_cos();
-                let expected = Vec3::new(
-                    local.x * co + local.z * si,
-                    local.y,
-                    local.z * co - local.x * si,
-                ) + avatar.position;
-                let previous =
-                    (motion_world(&avatar, scale, offset) * skin).transform_point3(point);
-                assert!(previous.abs_diff_eq(expected, 1e-5));
-            }
-        }
-    }
-}
-
-#[test]
-fn authored_motion_identity_rejects_packaged_model_and_first_person_visibility_changes() {
-    let part = gpu::Part {
-        color: [0.3, 0.4, 0.5, 0.0],
-        flags: [1, 0, 0, 0],
-    };
-    let kind = crate::content::MOSSBUN_ENTITY_TYPE;
-    let model = AvatarModel::Registered(kind);
-    let original = motion_identity(0, model, 1.0, false, &[part]);
-    assert_eq!(original, motion_identity(0, model, 1.0, false, &[part]));
-    assert_ne!(
-        original,
-        motion_identity(0, AvatarModel::PackagedPlayer(kind.0), 1.0, false, &[part]),
-        "the same numeric ID in different model domains must invalidate history"
-    );
-    assert_ne!(original, motion_identity(1, model, 1.0, false, &[part]));
-    assert_ne!(original, motion_identity(0, model, 2.0, false, &[part]));
-    assert_ne!(
-        original,
-        motion_identity(0, model, 1.0, true, &[part]),
-        "view switches must be reactive even without hidden nodes"
-    );
-    for flags in [[0, 0, 0, 0], [1, 1, 0, 0]] {
-        assert_ne!(
-            original,
-            motion_identity(0, model, 1.0, false, &[gpu::Part { flags, ..part }]),
-            "ordinary and owner-only visibility must both invalidate history"
-        );
-    }
-    assert_ne!(
-        original,
-        motion_identity(
-            0,
-            model,
-            1.0,
-            false,
-            &[gpu::Part {
-                color: [0.8, 0.4, 0.5, 0.0],
-                ..part
-            }]
-        )
-    );
 }

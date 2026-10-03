@@ -34,7 +34,11 @@ pub(super) fn pair_with_cull(
     options: (bool, Option<wgpu::Face>),
 ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
     let (alpha_cutout, cull_mode) = options;
-    let targets = super::super::scene_ao::color_targets(format, None);
+    let targets = [Some(wgpu::ColorTargetState {
+        format,
+        blend: None,
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
     let create = |shadow| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(if shadow {

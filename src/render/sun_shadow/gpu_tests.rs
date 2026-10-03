@@ -4,7 +4,6 @@ use crate::render::{VERTEX_FLOATS, pipeline};
 
 const SIZE: u32 = 128;
 mod banding;
-mod softness;
 
 struct Fixture {
     device: wgpu::Device,
@@ -27,7 +26,6 @@ impl Fixture {
     fn new() -> Self {
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
-        eprintln!("sun shadow GPU: {:?}", adapter.get_info());
         let (device, queue) =
             pollster::block_on(adapter.request_device(&Default::default())).unwrap();
         let (pipeline, _, camera, _, textures) =
@@ -110,11 +108,6 @@ impl Fixture {
                 sky,
                 glow,
                 0.0,
-                0.0,
-                {
-                    let rgb = [1.0, 0.57, 0.23].map(|v| (v * glow * 255.0).round() as u32);
-                    (rgb[0] | (rgb[1] << 8) | (rgb[2] << 16)) as f32
-                },
                 0.0,
             ]);
         }

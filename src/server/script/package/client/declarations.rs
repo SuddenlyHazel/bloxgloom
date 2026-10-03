@@ -12,7 +12,6 @@ mod components;
 mod creature;
 pub(super) mod creature_authored;
 pub(super) mod icons;
-pub(super) mod lighting;
 mod machine;
 pub(super) mod models;
 pub(super) mod moving;
@@ -574,8 +573,7 @@ impl ClientBundle {
         let result = icons::wrap(result, declarations)?;
         let result = models::wrap(result, declarations)?;
         let result = moving::wrap(result, declarations)?;
-        let result = creature_authored::wrap(result, declarations)?;
-        lighting::wrap(result, declarations)
+        creature_authored::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.
@@ -950,7 +948,6 @@ impl Startup {
                     stitch_vertical: true,
                     alpha_cutout,
                     emission_strength: 0.0,
-                    foliage: Default::default(),
                 });
             }
             for item in startup

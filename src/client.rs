@@ -2175,8 +2175,6 @@ impl ClientApp {
             };
             let sample = self.light_at(avatar.position + Vec3::Y * height);
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
-            avatar.glow_color = sample.glow_color;
-            avatar.glow_direction = sample.glow_direction;
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
             avatar.glow_bounce = [
                 sample.glow_bounce[0],
@@ -2228,10 +2226,8 @@ impl ClientApp {
                     }),
             );
             renderer.set_avatars(&visual_avatars);
-            renderer.configure_sun_shadows(self.config.sun_shadow_quality);
-            renderer.configure_local_shadows(self.config.local_shadows);
-            renderer.configure_lighting(self.config.lighting);
             renderer.set_contact_shadows(&contact_shadows);
+            renderer.configure_sun_shadows(self.config.sun_shadow_quality);
             renderer.configure_post(
                 self.config.post_processing,
                 self.config.exposure,

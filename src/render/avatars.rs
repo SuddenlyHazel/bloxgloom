@@ -8,7 +8,6 @@ pub(crate) use character::first_person::View as FirstPersonView;
 mod character_asset;
 pub(crate) use character_asset::tool_duration as character_tool_duration;
 mod mesh;
-pub(crate) mod motion;
 #[cfg(test)]
 mod moving_tests;
 mod pipeline;
@@ -59,32 +58,8 @@ pub(crate) struct VisualAvatar {
     /// Bounced RGB in 0..=255, plus one reserved byte.
     pub bounce: [u8; 4],
     pub glow_bounce: [u8; 4],
-    /// Normalized source RGB and world-space upstream direction/confidence.
-    pub glow_color: [u8; 3],
-    pub glow_direction: [i8; 3],
     /// Presentation-only per-instance RGB multiplier.
     pub tint: [f32; 3],
-}
-
-impl VisualAvatar {
-    /// Eight bytes retain both scalar levels, RGB and signed direction without
-    /// adding attributes to the character pipeline's portable 16-slot budget.
-    fn packed_light(&self) -> [u32; 2] {
-        [
-            u32::from_le_bytes([
-                self.light_levels[0],
-                self.light_levels[1],
-                self.glow_color[0],
-                self.glow_color[1],
-            ]),
-            u32::from_le_bytes([
-                self.glow_color[2],
-                self.glow_direction[0] as u8,
-                self.glow_direction[1] as u8,
-                self.glow_direction[2] as u8,
-            ]),
-        ]
-    }
 }
 
 /// Authoritative motion metadata retained only for presentation interpolation.
@@ -102,7 +77,7 @@ pub(crate) struct MovingVisual {
 struct AvatarInstance {
     origin: [f32; 3],
     cosmetics: [u8; 4],
-    light_levels: [u32; 2],
+    light_levels: [u8; 4],
     bounce: [u8; 4],
     pose: [f32; 4],
     tint: [f32; 3],
@@ -115,7 +90,7 @@ impl From<&VisualAvatar> for AvatarInstance {
         Self {
             origin: avatar.position.to_array(),
             cosmetics: avatar.cosmetics,
-            light_levels: avatar.packed_light(),
+            light_levels: avatar.light_levels,
             bounce: avatar.bounce,
             pose: avatar.pose,
             tint: avatar.tint,
@@ -132,8 +107,6 @@ pub(crate) struct AvatarRenderer {
     authored: authored::Renderer,
     pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
-    motion_pipeline: wgpu::RenderPipeline,
-    motion: motion::Palette,
     camera_group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -150,7 +123,6 @@ impl AvatarRenderer {
         camera_buffer: &wgpu::Buffer,
         catalog: &crate::content::Catalog,
     ) -> Self {
-        let motion = motion::Palette::new(device, MAX_AVATARS);
         let source = appearance::shader(catalog);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("public avatar shader"),
@@ -172,38 +144,31 @@ impl AvatarRenderer {
         let instance_attrs = wgpu::vertex_attr_array![
             3 => Float32x3,
             4 => Uint8x4,
-            5 => Uint32x2,
+            5 => Uint8x4,
             6 => Uint8x4,
             7 => Float32x4,
             9 => Float32x3,
             10 => Uint8x4,
             11 => Float32x4,
         ];
-        let buffers = [
-            Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<mesh::AvatarVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &vertex_attrs,
-            }),
-            Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<AvatarInstance>() as u64,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &instance_attrs,
-            }),
-        ];
-        let (pipeline, shadow_pipeline) =
-            pipeline::pair(device, &shader, &pipeline_layout, format, &buffers, false);
-        let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("primitive actor motion layout"),
-            bind_group_layouts: &[Some(&camera_layout), Some(&motion.layout)],
-            immediate_size: 0,
-        });
-        let motion_pipeline = motion::pipeline(
+        let (pipeline, shadow_pipeline) = pipeline::pair(
             device,
             &shader,
-            &motion_layout,
-            &buffers,
-            Some(wgpu::Face::Back),
+            &pipeline_layout,
+            format,
+            &[
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<mesh::AvatarVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &vertex_attrs,
+                }),
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<AvatarInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &instance_attrs,
+                }),
+            ],
+            false,
         );
         let mut mesh = mesh::AvatarMesh {
             vertices: Vec::new(),
@@ -269,8 +234,6 @@ impl AvatarRenderer {
             authored,
             pipeline,
             shadow_pipeline,
-            motion_pipeline,
-            motion,
             camera_group,
             vertices,
             indices,
@@ -298,7 +261,6 @@ impl AvatarRenderer {
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
         self.characters.set(queue, avatars);
         self.authored.set(queue, avatars);
-        self.motion.history.clear_pending();
         let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
         for (index, (model, _)) in self.models.iter().enumerate() {
             let start = instances.len();
@@ -315,58 +277,13 @@ impl AvatarRenderer {
                                 .is_none_or(|view| a.id != view.id)
                             && *model != AvatarModel::Player
                     })
-                    .map(|avatar| {
-                        let instance = AvatarInstance::from(avatar);
-                        if self.motion.enabled {
-                        let data = glam::Mat4::from_cols(
-                            avatar.position.extend(1.0), glam::Vec4::from_array(instance.pose),
-                            glam::Vec4::from_array(instance.orientation), glam::Vec4::ZERO);
-                        let identity = match avatar.model {
-                            AvatarModel::Registered(id) => u64::from(id.0),
-                            AvatarModel::Moving(id) => u64::from(id.0) | (1 << 32),
-                            AvatarModel::Player => u64::MAX,
-                            AvatarModel::PackagedPlayer(index) => u64::from(index) | (2 << 32),
-                        };
-                        self.motion.history.stage(avatar.id, identity, avatar.position, vec![data]);
-                        }
-                        instance
-                    }),
+                    .map(AvatarInstance::from),
             );
             self.counts[index] = (instances.len() - start) as u32;
         }
         if !instances.is_empty() {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&instances));
         }
-    }
-
-    pub(crate) fn enable_motion(&mut self, enabled: bool) {
-        self.motion.enable(enabled);
-        self.characters.motion.enable(enabled);
-        self.authored.enable_motion(enabled);
-    }
-
-    pub(crate) fn preview_animation_dt(&mut self, dt: f32) {
-        self.authored.preview_dt = Some(dt);
-    }
-
-    pub(crate) fn prepare_motion(&self, queue: &wgpu::Queue, frame: &motion::Frame) {
-        self.motion.prepare(queue, frame);
-        self.characters.motion.prepare(queue, frame);
-        self.authored.prepare_motion(queue, frame);
-    }
-
-    /// Call only after submitting the scene, never from set()/shadow preparation.
-    pub(crate) fn submitted(&mut self) {
-        self.motion.submitted();
-        self.characters.motion.submitted();
-        self.authored.submitted();
-    }
-
-    pub(crate) fn draw_motion<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        self.characters.draw_motion(pass, &self.camera_group);
-        self.authored.draw_motion(pass, &self.camera_group);
-        pass.set_bind_group(1, &self.motion.group, &[]);
-        self.draw_instances(pass, &self.motion_pipeline, &self.camera_group);
     }
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
@@ -419,18 +336,15 @@ pub(crate) fn prepare_character_asset() {
 }
 
 pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {
-    motion::shader(
-        super::daylight::shader(
-            &include_str!("avatars/character.wgsl")
-                .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog))
-                .replace(
-                    "// FIRST_PERSON_JOINT_OFFSET",
-                    &format!(
-                        "const FIRST_PERSON_JOINT_OFFSET: u32 = {}u;",
-                        MAX_AVATARS * character_asset::JOINT_COUNT
-                    ),
+    super::daylight::shader(
+        &include_str!("avatars/character.wgsl")
+            .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog))
+            .replace(
+                "// FIRST_PERSON_JOINT_OFFSET",
+                &format!(
+                    "const FIRST_PERSON_JOINT_OFFSET: u32 = {}u;",
+                    MAX_AVATARS * character_asset::JOINT_COUNT
                 ),
-        ),
-        2,
+            ),
     )
 }

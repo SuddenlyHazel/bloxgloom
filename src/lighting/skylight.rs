@@ -10,17 +10,9 @@ pub(super) fn incoming(
     seed: u64,
     catalog: &Catalog,
     blocks: &[BlockId],
-) -> Vec<u8> {
-    // Fully closed local columns need no generated context above the halo.
-    // Partial absorption belongs to the downward pass, exactly once.
+) -> Vec<bool> {
     let mut open: Vec<_> = (0..SIDE * SIDE)
-        .map(|at| {
-            if catalog.sky_attenuation(blocks[index(at % SIDE, SIDE - 1, at / SIDE)]) == MAX_LIGHT {
-                0
-            } else {
-                MAX_LIGHT
-            }
-        })
+        .map(|at| !is_opaque(catalog, blocks[index(at % SIDE, SIDE - 1, at / SIDE)]))
         .collect();
     for cz in 0..3 {
         for cx in 0..3 {
@@ -37,7 +29,7 @@ pub(super) fn incoming(
             for y in first.y..=last {
                 if !(0..CHUNK_SIZE).any(|z| {
                     (0..CHUNK_SIZE)
-                        .any(|x| open[(cz * CHUNK_SIZE + z) * SIDE + cx * CHUNK_SIZE + x] != 0)
+                        .any(|x| open[(cz * CHUNK_SIZE + z) * SIDE + cx * CHUNK_SIZE + x])
                 }) {
                     break;
                 }
@@ -52,17 +44,12 @@ pub(super) fn incoming(
                 for z in 0..CHUNK_SIZE {
                     for x in 0..CHUNK_SIZE {
                         let at = (cz * CHUNK_SIZE + z) * SIDE + cx * CHUNK_SIZE + x;
-                        if open[at] == 0 {
-                            continue;
-                        }
-                        for y in 0..CHUNK_SIZE {
-                            open[at] =
-                                open[at].saturating_sub(catalog.sky_attenuation(
-                                    chunk.block([x, y, z]).expect("complete chunk"),
-                                ));
-                            if open[at] == 0 {
-                                break;
-                            }
+                        if open[at]
+                            && (0..CHUNK_SIZE).any(|y| {
+                                is_opaque(catalog, chunk.block([x, y, z]).expect("complete chunk"))
+                            })
+                        {
+                            open[at] = false;
                         }
                     }
                 }

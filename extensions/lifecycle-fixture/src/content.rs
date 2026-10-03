@@ -73,7 +73,6 @@ impl Extension for Content {
             supports_plant: true,
             flammable: false,
             emission: 0,
-            sky_attenuation: 0,
             reflectance: [190, 110, 55],
             properties: vec![
                 Property {
@@ -125,7 +124,6 @@ impl Extension for Content {
             supports_plant: false,
             flammable: true,
             emission: 2,
-            sky_attenuation: 0,
             reflectance: [80, 170, 90],
             properties: vec![],
             states: vec![BlockState::default()],
@@ -170,7 +168,6 @@ impl Extension for Content {
             stitch_vertical: false,
             alpha_cutout: true,
             emission_strength: 1.25,
-            foliage: Default::default(),
         })
     }
 }

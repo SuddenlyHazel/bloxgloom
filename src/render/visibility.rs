@@ -4,16 +4,13 @@ use crate::world::{CHUNK_SIZE, ChunkKey};
 
 use super::{Camera, DEPTH_FORMAT};
 
-pub(crate) const CAMERA_NEAR: f32 = 0.05;
-pub(crate) const CAMERA_FAR: f32 = 4096.0;
-
 pub(crate) fn view_projection(camera: Camera, width: u32, height: u32) -> Mat4 {
     let view = rh::view::look_to_mat4(camera.position, camera.direction(), Vec3::Y);
     let projection = rh::proj::directx::perspective(
         camera.fov_y_radians,
         width as f32 / height as f32,
-        CAMERA_NEAR,
-        CAMERA_FAR,
+        0.05,
+        4096.0,
     );
     projection * view
 }
@@ -31,7 +28,7 @@ pub(super) fn create_depth(device: &wgpu::Device, width: u32, height: u32) -> wg
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         })
         .create_view(&Default::default())

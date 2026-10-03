@@ -256,8 +256,6 @@ pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::Vis
         cosmetics: appearance.legacy(),
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
-        glow_color: [0; 3],
-        glow_direction: [0; 3],
         glow_bounce: [0; 4],
         tint: [1.0; 3],
     }

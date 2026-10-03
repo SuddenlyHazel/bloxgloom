@@ -5,15 +5,12 @@ use crate::world::{self, BlockId, CHUNK_SIZE, Chunk, ChunkKey};
 use super::VERTEX_FLOATS;
 use super::material::face_uv;
 
-mod sources;
-
 /// Interleaved position, normal, tiled UV, and texture layer. World-space
 /// coordinates avoid per-draw uniforms; one material bind group serves all chunks.
 pub struct ChunkMesh {
     pub key: ChunkKey,
     pub version: u64,
     pub(crate) lighting_revision: u64,
-    pub(crate) local_sources: Vec<super::local_shadow::Source>,
     pub(crate) vertices: Vec<f32>,
     pub(crate) indices: Vec<u32>,
     pub(crate) cutout_vertices: Vec<f32>,
@@ -27,7 +24,6 @@ impl ChunkMesh {
             + self.cutout_vertices.len()
             + self.cutout_indices.len())
             * 4
-            + self.local_sources.len() * std::mem::size_of::<super::local_shadow::Source>()
     }
 
     #[cfg(test)]
@@ -37,7 +33,6 @@ impl ChunkMesh {
 }
 pub(super) struct GpuMesh {
     pub(super) lighting_revision: u64,
-    pub(super) local_sources: Vec<super::local_shadow::Source>,
     pub(super) opaque: Option<GpuSubmesh>,
     pub(super) cutout: Option<GpuSubmesh>,
 }
@@ -79,7 +74,6 @@ fn mesh_chunk_with_catalog(
         key: chunk.key,
         version: chunk.version,
         lighting_revision,
-        local_sources: Vec::new(),
         vertices: Vec::new(),
         indices: Vec::new(),
         cutout_vertices: Vec::new(),
@@ -96,7 +90,6 @@ fn mesh_chunk_with_catalog(
         chunk.key.y as f32 * n as f32,
         chunk.key.z as f32 * n as f32,
     ];
-    out.local_sources = sources::collect(&resolved, origin, catalog);
     for axis in 0..3 {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
@@ -131,7 +124,6 @@ fn mesh_chunk_with_catalog(
                                     glow: 0,
                                     bounce: [0; 3],
                                     glow_bounce: [0; 3],
-                                    ..LightSample::default()
                                 },
                                 |field| field.face(p, axis, side),
                             );
@@ -139,20 +131,13 @@ fn mesh_chunk_with_catalog(
                             // reflected light survives large flat surfaces.
                             let bounce_level =
                                 sample.bounce.iter().copied().max().unwrap_or(0) / 16;
-                            // Keep lit faces cell-sized: scalar ties can hide color or
-                            // incoming-direction gradients inside a greedy rectangle.
                             mask[i + n * j] = u64::from(block.id.get())
                                 | (u64::from(sample.sky) << 32)
                                 | (u64::from(sample.glow) << 36)
                                 | (u64::from(bounce_level) << 40)
                                 | (u64::from(
                                     sample.glow_bounce.iter().copied().max().unwrap_or(0) / 16,
-                                ) << 44)
-                                | (if sample.glow > 0 {
-                                    (i + n * j + 1) as u64
-                                } else {
-                                    0
-                                } << 48);
+                                ) << 44);
                         }
                     }
                 }
@@ -236,7 +221,6 @@ fn mesh_chunk_with_catalog(
                                         glow: 0,
                                         bounce: [0; 3],
                                         glow_bounce: [0; 3],
-                                        ..LightSample::default()
                                     },
                                     |field| field.face(p, axis, side),
                                 );
@@ -400,15 +384,11 @@ fn emit_quad(
         vertices.extend_from_slice(&normal);
         let (texture_u, texture_v) =
             face_uv(axis, du as f32, dv as f32, width as f32, height as f32);
-        let (corner_light, visibility) = light
-            .map_or(([sky, glow, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0), |field| {
-                field.corner_with_visibility([axis, u, v], side, slice, [i + du, j + dv])
-            });
-        let (local_rgb, local_direction) = light.map_or(([0.0; 3], [0.0; 3]), |field| {
-            field.corner_local([axis, u, v], side, slice, [i + du, j + dv])
+        let corner_light = light.map_or([sky, glow, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], |field| {
+            field.corner([axis, u, v], side, slice, [i + du, j + dv])
         });
         // Every 24-bit integer is represented exactly by f32. Packing RGB
-        // preserves exact packed bytes without reinterpretation on the CPU.
+        // keeps the default path only one float wider than its old vertex.
         let packed_bounce = (corner_light[2] * 255.0).round() as u32
             | (((corner_light[3] * 255.0).round() as u32) << 8)
             | (((corner_light[4] * 255.0).round() as u32) << 16);
@@ -418,16 +398,11 @@ fn emit_quad(
         vertices.extend_from_slice(&[
             texture_u,
             texture_v,
-            // Integer layer identity is unchanged; the otherwise unused
-            // fractional half encodes baked corner visibility without a wider
-            // vertex. Decode before interpolation, never after flat layer cast.
-            layer as f32 + (1.0 - visibility) * 0.5,
+            layer as f32,
             corner_light[0],
             corner_light[1],
             packed_bounce as f32,
             packed_glow_bounce as f32,
-            pack_light_rgb(&local_rgb) as f32,
-            pack_light_direction(local_direction) as f32,
         ]);
     }
     // (u, v, axis) is cyclic for every axis, so +axis is CCW.
@@ -445,6 +420,21 @@ fn emit_plant(
     layer: u32,
     light: Option<&LightField>,
 ) {
+    let sample = light.map_or(
+        LightSample {
+            sky: 15,
+            glow: 0,
+            bounce: [0; 3],
+            glow_bounce: [0; 3],
+        },
+        |field| field.face(p, 1, 1),
+    );
+    let packed_glow_bounce = u32::from(sample.glow_bounce[0])
+        | (u32::from(sample.glow_bounce[1]) << 8)
+        | (u32::from(sample.glow_bounce[2]) << 16);
+    let packed_bounce = u32::from(sample.bounce[0])
+        | (u32::from(sample.bounce[1]) << 8)
+        | (u32::from(sample.bounce[2]) << 16);
     let layer = layer as f32;
     let world = [
         origin[0] + p[0] as f32,
@@ -463,19 +453,6 @@ fn emit_plant(
         ] {
             let x = start[0] + (end[0] - start[0]) * t;
             let z = start[1] + (end[1] - start[1]) * t;
-            let (sample, visibility) =
-                light.map_or(([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0), |field| {
-                    field.spatial_with_visibility([
-                        p[0] as f32 + x,
-                        p[1] as f32 + height,
-                        p[2] as f32 + z,
-                    ])
-                });
-            let (local_rgb, local_direction) = light.map_or(([0.0; 3], [0.0; 3]), |field| {
-                field.spatial_local([p[0] as f32 + x, p[1] as f32 + height, p[2] as f32 + z])
-            });
-            let packed_bounce = pack_light_rgb(&sample[2..5]);
-            let packed_glow_bounce = pack_light_rgb(&sample[5..8]);
             out.cutout_vertices.extend_from_slice(&[
                 world[0] + x,
                 world[1] + height,
@@ -485,28 +462,14 @@ fn emit_plant(
                 0.0,
                 uv[0],
                 uv[1],
-                layer + (1.0 - visibility) * 0.5,
-                sample[0],
-                sample[1],
+                layer,
+                f32::from(sample.sky) / 15.0,
+                f32::from(sample.glow) / 15.0,
                 packed_bounce as f32,
                 packed_glow_bounce as f32,
-                pack_light_rgb(&local_rgb) as f32,
-                pack_light_direction(local_direction) as f32,
             ]);
         }
         out.cutout_indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
-}
-
-fn pack_light_rgb(rgb: &[f32]) -> u32 {
-    (rgb[0] * 255.0).round() as u32
-        | (((rgb[1] * 255.0).round() as u32) << 8)
-        | (((rgb[2] * 255.0).round() as u32) << 16)
-}
-
-/// Three signed normalized bytes fit exactly in the 24-bit integer mantissa.
-pub(super) fn pack_light_direction(direction: [f32; 3]) -> u32 {
-    let bytes = direction.map(|v| (v.clamp(-1.0, 1.0) * 127.0).round() as i8 as u8);
-    u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16)
 }

@@ -50,13 +50,13 @@ fn gpu_storm_fog_preserves_near_contrast_and_obscures_distant_shadows() {
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 208,
+        size: 128,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 208,
+        size: 128,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });

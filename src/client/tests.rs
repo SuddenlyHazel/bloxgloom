@@ -119,8 +119,6 @@ fn moving_object_lighting_keeps_completed_field_during_relight_then_accepts_dark
         glow: 0,
         bounce: [3, 4, 5],
         glow_bounce: [0; 3],
-        glow_color: [255, 120, 30],
-        glow_direction: [127, 0, 0],
     };
     app.chunks.insert(
         key,
@@ -186,8 +184,6 @@ fn moving_objects_sample_current_local_light_across_negative_chunk_seams() {
         glow: 13,
         bounce: [7, 9, 11],
         glow_bounce: [0; 3],
-        glow_color: [255, 120, 30],
-        glow_direction: [127, 0, 0],
     };
     let mut samples = vec![LightSample::default(); crate::world::CHUNK_VOLUME].into_boxed_slice();
     samples[Chunk::index(local).unwrap()] = lit;
@@ -539,7 +535,6 @@ fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
             key: right,
             version: 0,
             lighting_revision: old_revision,
-            local_sources: Vec::new(),
             vertices: Vec::new(),
             indices: Vec::new(),
             cutout_vertices: Vec::new(),

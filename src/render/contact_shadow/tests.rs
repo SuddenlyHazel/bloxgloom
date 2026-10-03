@@ -19,8 +19,6 @@ pub(super) fn avatar(position: Vec3) -> VisualAvatar {
         cosmetics: [0; 4],
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
-        glow_color: [0; 3],
-        glow_direction: [0; 3],
         glow_bounce: [0; 4],
         tint: [1.0; 3],
     }
@@ -203,7 +201,7 @@ fn finite_player_near_field_and_geometry_work_are_bounded() {
     assert!(
         build(
             VisualAvatar {
-                model: AvatarModel::Moving(crate::content::MOSSBUN_ENTITY_TYPE),
+                model: AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),
                 ..player
             },
             flat
@@ -284,72 +282,4 @@ fn emissive_floor_textures_and_voxel_emitters_never_receive_contact() {
         ))
         .is_empty()
     );
-}
-
-#[test]
-fn registered_creatures_receive_body_sized_floor_validated_contacts() {
-    let mut creature = avatar(Vec3::new(0.95, 1.0, 0.95));
-    creature.model = AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE);
-    let patches = build(creature, flat);
-    assert!(!patches.is_empty());
-    let body = crate::content::catalog()
-        .mobile_entity(crate::content::MOSSBUN_ENTITY_TYPE)
-        .unwrap();
-    let expected = (body.body.half_width * 1.25 + 0.12).clamp(0.2, 1.35);
-    assert_eq!(patches[0].center[3], expected);
-    assert!(patches.len() <= MAX_CELLS);
-    let ledge = build(
-        creature,
-        |x, y, z| {
-            if x >= 1 { None } else { flat(x, y, z) }
-        },
-    );
-    assert!(!ledge.is_empty());
-    assert!(ledge.iter().all(|p| p.bounds[2] <= 1.0));
-    assert!(build(creature, |_, _, _| None).is_empty());
-    creature.position.y += MAX_HEIGHT;
-    assert!(build(creature, flat).is_empty());
-}
-
-#[test]
-fn largest_registered_body_remains_bounded_and_keeps_whole_footprint() {
-    let mut catalog = Catalog::builtins();
-    let mut definition = (**catalog
-        .mobile_entity(crate::content::MOSSBUN_ENTITY_TYPE)
-        .unwrap())
-    .clone();
-    definition.key = "test:wide-contact".into();
-    definition.body.half_width = 1.0;
-    catalog.register_mobile(definition).unwrap();
-    let mut actor = avatar(Vec3::new(0.99, 1.0, -0.99));
-    actor.model =
-        AvatarModel::Registered(catalog.entity_type_id_by_key("test:wide-contact").unwrap());
-    let mut queries = 0;
-    let result = patches(&[actor], actor.position, &catalog, |x, y, z| {
-        queries += 1;
-        flat(x, y, z)
-    });
-    assert!(result.len() > 4);
-    assert!(result.len() <= MAX_CELLS);
-    assert!(queries <= MAX_CELLS * 3);
-    assert_eq!(result[0].center[3], 1.35);
-    let upload = crate::render::scene_contact::data(&result, 1.0);
-    assert_eq!(upload[0] as usize, result.len());
-}
-
-#[test]
-fn packaged_players_keep_native_ground_contacts() {
-    let native = avatar(Vec3::new(0.5, 1.0, 0.5));
-    let mut packaged = native;
-    packaged.model = AvatarModel::PackagedPlayer(0);
-    let native_patches = build(native, flat);
-    let packaged_patches = build(packaged, flat);
-    assert!(!packaged_patches.is_empty());
-    assert_eq!(packaged_patches.len(), native_patches.len());
-    for (packaged, native) in packaged_patches.iter().zip(&native_patches) {
-        assert_eq!(packaged.bounds, native.bounds);
-        assert_eq!(packaged.center, native.center);
-        assert_eq!(packaged.light, native.light);
-    }
-    assert!(build(packaged, |_, _, _| None).is_empty());
 }

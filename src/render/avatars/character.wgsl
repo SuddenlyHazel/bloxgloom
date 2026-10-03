@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<storage, read> joints: array<mat4x4<f32>>;
 @group(1) @binding(1) var body: texture_2d_array<f32>;
@@ -9,7 +9,7 @@ struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: v
 struct Input {
     @location(0) local: vec3f, @location(1) normal: vec3f, @location(2) joint: u32,
     @location(3) origin: vec3f, @location(4) cosmetics: vec4u,
-    @location(5) light_levels: vec2u, @location(6) bounce: vec4u,
+    @location(5) light_levels: vec4u, @location(6) bounce: vec4u,
     @location(7) pose: vec4f, @location(8) uv: vec2f,
     @location(9) tint: vec3f, @location(10) glow_bounce: vec4u,
     @location(11) material: u32, @builtin(instance_index) instance: u32,
@@ -17,23 +17,21 @@ struct Input {
     @location(14) hair_color_body: vec4u, @location(15) surface: u32,
 };
 struct Output {
-    @builtin(position) clip: vec4f, @location(0) light: vec4f,
-    @location(1) direct: vec4f,
-    // Pack local-light inputs into existing slots to retain the 16-varying limit.
-    // The spare w components of light/indirect/world_position carry tint.rgb.
-    @location(2) normal_sky: vec4f,
+    @builtin(position) clip: vec4f, @location(0) light: vec3f,
+    @location(1) direct: vec3f,
+    @location(2) sky: f32,
     @location(3) uv: vec2f, @location(4) @interpolate(flat) material: u32,
     @location(5) @interpolate(flat) recipe: vec3u,
     @location(6) @interpolate(flat) iris: vec4u,
     @location(7) @interpolate(flat) surface: u32,
-    @location(8) indirect: vec4f,
-    @location(9) direction_height: vec4f,
-    @location(10) @interpolate(flat) radiance_eye_height: vec4f,
+    @location(8) local: vec3f,
+    @location(9) local_height: f32,
+    @location(10) @interpolate(flat) eye_height: f32,
     @location(11) @interpolate(flat) joint: u32,
     @location(12) @interpolate(flat) hair_color_body: vec4u,
     @location(13) @interpolate(flat) cosmetics: vec3u,
     @location(14) @interpolate(flat) texture: u32,
-    @location(15) world_position: vec4f,
+    @location(15) world_position: vec3f,
 };
 fn character_vertex(input: Input, shadow: bool) -> Output {
     var output: Output;
@@ -52,23 +50,21 @@ fn character_vertex(input: Input, shadow: bool) -> Output {
     let surface = input.surface & 255u;
     let head = input.joint == 5u || (input.joint >= 15u && input.joint <= 17u) || input.joint >= 27u;
     if first_person && head { output.clip = vec4f(2.0, 2.0, 2.0, 1.0); }
+    output.local_height = local.y;
+    output.eye_height = select(0.0, input.pose.w, first_person);
     output.joint = input.joint;
-    let sky = f32(input.light_levels.x & 255u) / 15.0;
-    let glow = f32((input.light_levels.x >> 8u) & 255u) / 15.0;
-    let packed_color = vec3f(unpack4x8unorm(input.light_levels.x).zw, unpack4x8unorm(input.light_levels.y).x);
-    output.direction_height = vec4f(unpack4x8snorm(input.light_levels.y).yzw, local.y);
-    output.radiance_eye_height = vec4f(packed_color * glow * glow, select(0.0, input.pose.w, first_person));
+    let sky = f32(input.light_levels.x) / 15.0;
+    let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3f(input.bounce.xyz) / 255.0;
     let glow_bounce = vec3f(input.glow_bounce.xyz) / 255.0;
     let visibility = f32((input.surface >> 8u) & 255u) / 255.0;
-    output.light = vec4f(input.tint * bg_surface_light(normal, camera.sun, sky, vec3f(0.0), bounce, glow_bounce, visibility), input.tint.x);
-    output.direct = vec4f(input.tint * bg_direct_light(normal,camera.sun,sky),visibility);
-    output.indirect = vec4f(input.tint * bg_indirect_light(normal,camera.sun,sky,bounce,glow_bounce), input.tint.y);
-    output.world_position = vec4f(world, input.tint.z);
-    output.normal_sky = vec4f(normal, sky);
+    output.light = input.tint * bg_surface_light(normal, camera.sun, sky, glow, bounce, glow_bounce, visibility);
+    output.direct = input.tint * bg_direct_light(normal, camera.sun, sky);
+    output.world_position = world;
+    output.sky = sky;
     output.uv = input.uv; output.material = input.material;
     output.recipe = input.recipe.xyz;
-    output.iris = input.iris; output.surface = surface;
+    output.iris = input.iris; output.surface = surface; output.local = input.local;
     output.texture = input.surface >> 16u;
     output.hair_color_body = input.hair_color_body; output.cosmetics = input.cosmetics.xyz;
     return output;
@@ -89,7 +85,7 @@ fn shade_hair(neutral: vec4f, rgb: vec3f, fixed: bool) -> vec4f {
     return vec4f(select(tint_hair(neutral.rgb,rgb),neutral.rgb,fixed),neutral.a);
 }
 fn character_albedo(input: Output) -> vec4f {
-    if input.radiance_eye_height.w > 0.0 && (input.joint == 3u || input.joint == 4u) && input.direction_height.w > input.radiance_eye_height.w - 0.12 { discard; }
+    if input.eye_height > 0.0 && (input.joint == 3u || input.joint == 4u) && input.local_height > input.eye_height - 0.12 { discard; }
     let is_hair = input.material > 0u && input.material < 14u;
     if is_hair && input.material != input.recipe.z { discard; }
     var albedo = textureSampleLevel(body,pixels,input.uv,0,0.0);
@@ -112,32 +108,14 @@ fn character_albedo(input: Output) -> vec4f {
     if albedo.a < 0.05 { discard; }
     return albedo;
 }
-@fragment fn fs_main(input: Output) -> BgSceneOutput {
-    let receiver = bg_shadow_receiver(input.world_position.xyz);
+@fragment fn fs_main(input: Output) -> @location(0) vec4f {
+    let receiver = bg_shadow_receiver(input.world_position);
     let albedo = character_albedo(input);
-    // Evaluate local shadows after interpolation; indirect/bounce stays intact.
-    let local_light = bg_shadowed_local_light(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
-    let tint = vec3f(input.light.w, input.indirect.w, input.world_position.w);
-    let light = input.light.xyz + tint * local_light - input.direct.xyz * (1.0 - bg_sun_visibility(receiver));
-    // Mark local-source influence reactive before a moving shadow reaches it.
-    let history_sign = bg_local_history_sign(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
-    return bg_scene_output(albedo.rgb*light,albedo.rgb*input.indirect.xyz,input.world_position.xyz,input.normal_sky.w,input.direct.w * history_sign);
+    let light = input.light - input.direct * (1.0 - bg_sun_visibility(receiver));
+    return vec4f(bg_apply_fog(albedo.rgb * light, input.world_position, input.sky), 1.0);
 }
 @fragment fn fs_shadow(input: Output) {
     // Keep body, chosen hair and embedded texture alpha identical to color.
     // eye_height is zero in this pass, so first-person clipping never cuts it.
     _ = character_albedo(input);
-}
-
-// Reuse the exact color geometry and discard rules; only unused lighting outputs
-// carry the interpolated previous clip position in this auxiliary pass.
-@vertex fn vs_motion(input: Input) -> Output {
-    var out = character_vertex(input, false);
-    let previous = motion_frame.previous * previous_world[input.instance * 30u + input.joint] * vec4f(input.local, 1.0);
-    out.light = vec4f(previous.xyz, out.light.w); out.normal_sky.w = previous.w; out.direct = out.clip;
-    return out;
-}
-@fragment fn fs_motion(input: Output) -> @location(0) vec4f {
-    _ = character_albedo(input);
-    return bg_encode_motion(vec4f(input.light.xyz, input.normal_sky.w), input.direct);
 }

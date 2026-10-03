@@ -3,7 +3,6 @@
 use wgpu::util::DeviceExt;
 
 mod targets;
-pub(crate) mod temporal;
 
 #[cfg(test)]
 mod tests;
@@ -12,8 +11,6 @@ pub(crate) const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Fl
 
 pub(crate) struct PostProcess {
     pub scene: wgpu::TextureView,
-    temporal: Option<temporal::Temporal>,
-    pub(crate) ambient: super::scene_ao::AmbientOcclusion,
     bloom: [wgpu::TextureView; 2],
     groups: [wgpu::BindGroup; 3],
     composite_group: wgpu::BindGroup,
@@ -127,8 +124,6 @@ impl PostProcess {
         };
         Self {
             scene: targets.scene,
-            temporal: None,
-            ambient: super::scene_ao::AmbientOcclusion::new(device, width, height),
             bloom: targets.bloom,
             groups: targets.groups,
             extract: pipeline("extract", HDR_FORMAT),
@@ -157,124 +152,10 @@ impl PostProcess {
             &self.settings,
             self.effect.as_mut(),
         );
-        if self.temporal.is_some() {
-            self.temporal = Some(temporal::Temporal::new(device, width, height));
-        }
-        self.ambient.resize(device, width, height);
         self.scene = targets.scene;
         self.bloom = targets.bloom;
         self.groups = targets.groups;
         self.composite_group = targets.composite_group;
-    }
-
-    /// Temporal AA remains opt-in until scene-specific motion acceptance is done.
-    pub(crate) fn enable_temporal(&mut self, device: &wgpu::Device, enabled: bool) {
-        let enabled = if enabled && !temporal::supported(device) {
-            eprintln!("temporal AA unavailable on GL backend; keeping single-sample rendering");
-            false
-        } else {
-            enabled
-        };
-        if enabled == self.temporal.is_some() {
-            return;
-        }
-        let size = self.scene.texture().size();
-        self.temporal = enabled.then(|| temporal::Temporal::new(device, size.width, size.height));
-    }
-
-    pub(crate) fn temporal_enabled(&self) -> bool {
-        self.temporal.is_some()
-    }
-
-    pub(crate) fn prepare_temporal(
-        &mut self,
-        queue: &wgpu::Queue,
-        camera: super::Camera,
-    ) -> (glam::Mat4, glam::Vec2) {
-        let size = self.scene.texture().size();
-        self.temporal.as_mut().map_or_else(
-            || {
-                (
-                    super::view_projection(camera, size.width, size.height),
-                    glam::Vec2::ZERO,
-                )
-            },
-            |temporal| temporal.prepare(queue, camera, size.width, size.height),
-        )
-    }
-
-    pub(crate) fn resolve_ambient(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        depth: &wgpu::TextureView,
-        matrix: glam::Mat4,
-    ) {
-        self.ambient
-            .resolve(device, queue, encoder, &self.scene, depth, matrix);
-    }
-
-    pub(crate) fn draw_motion(
-        &self,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        depth: &wgpu::TextureView,
-        avatars: Option<&super::avatars::AvatarRenderer>,
-    ) {
-        let Some(temporal) = &self.temporal else {
-            return;
-        };
-        let Some(frame) = &temporal.motion_frame else {
-            return;
-        };
-        if let Some(avatars) = avatars {
-            avatars.prepare_motion(queue, frame);
-        }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("object temporal motion"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &temporal.motion,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth,
-                depth_ops: None,
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
-        if let Some(avatars) = avatars {
-            avatars.draw_motion(&mut pass);
-        }
-    }
-
-    pub(crate) fn submitted(&mut self) {
-        if let Some(temporal) = &mut self.temporal {
-            temporal.submitted();
-        }
-    }
-
-    pub(crate) fn resolve_temporal(
-        &mut self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        depth: &wgpu::TextureView,
-    ) {
-        if let Some(temporal) = &mut self.temporal {
-            temporal.resolve(
-                device,
-                encoder,
-                &self.scene,
-                depth,
-                Some(&self.ambient.indirect),
-            );
-        }
     }
 
     pub(crate) fn install_effect(

@@ -110,7 +110,6 @@ pub(super) fn register(catalog: &mut Catalog) {
             stitch_vertical: false,
             alpha_cutout: false,
             emission_strength: 0.0,
-            foliage: Default::default(),
         });
     }
 }

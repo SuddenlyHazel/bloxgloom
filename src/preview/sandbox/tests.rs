@@ -40,13 +40,7 @@ fn emissive_fixture_registration_is_valid_and_isolated_from_builtins() {
             .unwrap();
         assert_eq!(texture.emission_strength, 3.5);
     }
-    let material_count = ordinary.textures().len() + 5; // three albedos + steel N/S
-    let expected = material_count + usize::from(material_count.is_multiple_of(6));
-    assert_eq!(preview.textures().len(), expected);
-    for key in ["sandbox:steel_n", "sandbox:steel_s"] {
-        assert!(preview.textures().iter().any(|texture| texture.key == key));
-        assert!(!ordinary.textures().iter().any(|texture| texture.key == key));
-    }
+    assert_eq!(preview.textures().len(), ordinary.textures().len() + 4);
     assert!(ordinary.state_by_key("sandbox:magenta").is_none());
     assert!(!preview.textures().len().is_multiple_of(6));
     assert!(preview.state_by_key("sandbox:gles_reserved").is_none());

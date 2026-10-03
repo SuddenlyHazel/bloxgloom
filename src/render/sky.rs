@@ -13,7 +13,7 @@ pub(crate) fn create_sky_pipeline(
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("sky camera basis"),
-        size: 112,
+        size: 96,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -65,7 +65,11 @@ pub(crate) fn create_sky_pipeline(
             module: &shader,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
-            targets: &super::scene_ao::color_targets(format, None),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
         }),
         multiview_mask: None,
         cache: None,
@@ -73,20 +77,19 @@ pub(crate) fn create_sky_pipeline(
     (pipeline, camera_buffer, camera_group)
 }
 
-/// Camera basis and atmosphere packed as seven aligned vec4 uniforms. The sun stays in
+/// Camera basis packed as three aligned vec4 uniforms. The sun itself stays in
 /// world space; looking away from it cannot leave a screen-fixed bright disc.
 pub(crate) fn sky_camera_data(
     camera: Camera,
     width: u32,
     height: u32,
     atmosphere: Atmosphere,
-) -> [f32; 28] {
+) -> [f32; 24] {
     let forward = camera.direction();
     let right = Vec3::new(-camera.yaw.sin(), 0.0, camera.yaw.cos());
     let up = right.cross(forward).normalize();
     let vertical = (camera.fov_y_radians * 0.5).tan();
     let horizontal = vertical * width as f32 / height.max(1) as f32;
-    let solar = atmosphere.sun_radiance();
     [
         forward.x,
         forward.y,
@@ -112,10 +115,6 @@ pub(crate) fn sky_camera_data(
         atmosphere.zenith.y,
         atmosphere.zenith.z,
         atmosphere.drift[1],
-        solar.x,
-        solar.y,
-        solar.z,
-        0.0,
     ]
 }
 const SKY_SHADER: &str = r#"
@@ -126,7 +125,6 @@ struct SkyCamera {
     sun: vec4f,
     horizon: vec4f,
     zenith: vec4f,
-    sun_radiance: vec4f,
 };
 @group(0) @binding(0) var<uniform> sky_camera: SkyCamera;
 struct SkyVertex {
@@ -156,8 +154,7 @@ fn sky_noise(p: vec2<f32>) -> f32 {
     let high = mix(sky_hash(cell + vec2<f32>(0.0, 1.0)), sky_hash(cell + vec2<f32>(1.0, 1.0)), curve.x);
     return mix(low, high, curve.y);
 }
-struct SkyOutput { @location(0) color: vec4f, @location(1) indirect: vec4f };
-@fragment fn fs_main(input: SkyVertex) -> SkyOutput {
+@fragment fn fs_main(input: SkyVertex) -> @location(0) vec4<f32> {
     let ndc = input.uv * 2.0 - vec2<f32>(1.0);
     let ray = normalize(
         sky_camera.forward.xyz
@@ -170,8 +167,7 @@ struct SkyOutput { @location(0) color: vec4f, @location(1) indirect: vec4f };
     let sun_direction = normalize(sky_camera.sun.xyz);
     let alignment = dot(ray, sun_direction);
     let haze = pow(max(alignment, 0.0), 10.0) * (1.0 - smoothstep(0.1, 0.75, ray.y));
-    let solar = sky_camera.sun_radiance.xyz;
-    color += solar * haze * 0.22;
+    color = mix(color, vec3<f32>(0.95, 0.72, 0.54), haze * 0.22);
     let cloud_coordinates = ray.xz / max(ray.y, 0.10) * 8.0 + vec2f(sky_camera.horizon.w, sky_camera.zenith.w);
     let cloud_noise = sky_noise(cloud_coordinates * 0.45) * 0.68
         + sky_noise(cloud_coordinates * 0.90) * 0.32;
@@ -183,8 +179,8 @@ struct SkyOutput { @location(0) color: vec4f, @location(1) indirect: vec4f };
     color = mix(color, mix(vec3f(0.025, 0.035, 0.06), vec3f(0.92, 0.94, 0.94), sky_camera.sun.w) * mix(1.0, 0.52, cover), cloud);
     let glow = smoothstep(0.88, 0.997, alignment);
     let disc = smoothstep(0.9990, 0.99955, alignment);
-    color += solar * glow * 0.28;
-    color += solar * disc * 6.5;
+    color = mix(color, vec3<f32>(1.0, 0.82, 0.55), glow * 0.28 * smoothstep(-0.08, 0.08, sun_direction.y));
+    color = mix(color, vec3<f32>(5.0, 4.4, 3.2), disc * smoothstep(-0.04, 0.02, sun_direction.y) * (1.0 - cover));
     let night = 1.0 - smoothstep(0.04, 0.35, sky_camera.sun.w);
     let star_cell = floor(ray.xz / max(ray.y, 0.12) * 120.0);
     let stars = smoothstep(0.997, 1.0, sky_hash(star_cell)) * smoothstep(0.08, 0.35, ray.y);
@@ -199,7 +195,7 @@ struct SkyOutput { @location(0) color: vec4f, @location(1) indirect: vec4f };
     let storm_sky = mix(horizon, zenith, smoothstep(-0.08, 0.86, ray.y))
         * mix(1.0, 0.85 + 0.30 * cloud_noise, smoothstep(0.02, 0.20, ray.y));
     color = mix(color, storm_sky, overcast);
-    return SkyOutput(vec4f(color,1.0),vec4f(0.0));
+    return vec4<f32>(color, 1.0);
 }
 "#;
 
