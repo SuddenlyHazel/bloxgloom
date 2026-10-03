@@ -96,6 +96,7 @@ fn recipe_save_is_profile_bound_canonical_and_exposes_only_legacy_host_projectio
     )
     .unwrap();
     let expected = AppearanceState {
+        packaged: None,
         palettes: [1, 2, 3],
         character: Some(recipe),
     };
@@ -118,7 +119,7 @@ fn recipe_save_is_profile_bound_canonical_and_exposes_only_legacy_host_projectio
         .path()
         .join("players/0000000000000000000000000000a997.appearance");
     let original = std::fs::read(&path).unwrap();
-    assert_eq!(&original[..4], b"BGA3");
+    assert_eq!(&original[..4], b"BGA4");
     for bad in [
         original[..original.len() - 1].to_vec(),
         {

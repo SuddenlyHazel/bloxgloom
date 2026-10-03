@@ -20,10 +20,14 @@ mod entities;
 mod inventory;
 #[path = "gameplay/lod_exploration.rs"]
 mod lod_exploration;
+#[path = "gameplay/modifier_motion.rs"]
+mod modifier_motion;
 #[path = "gameplay/observers.rs"]
 mod observers;
 #[path = "gameplay/player_inventory.rs"]
 mod player_inventory;
+#[path = "gameplay/player_modifiers.rs"]
+mod player_modifiers;
 #[path = "gameplay/player_operations.rs"]
 mod player_operations;
 #[path = "gameplay/player_teleport.rs"]
@@ -437,6 +441,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 actor_inventory_revision: None,
                 profile_inventories: None,
                 profile_services: None,
+                player_modifiers: None,
                 players: &[],
                 action_id: None,
                 clock: None,

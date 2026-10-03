@@ -1,8 +1,8 @@
-//! V49 carries authored creature bindings; private state and scripts stay server-side.
+//! V51 carries authored creature bindings; private state and scripts stay server-side.
 use super::*;
 use bloxgloom_host_api::entity::{Animation, AuthoredModel, Body, MAX_VISUAL_BYTES, MobileEntity};
 use std::sync::Arc;
-pub(in crate::server::script::package::client) const MAGIC: &[u8] = b"BGCLIENT\x31";
+pub(in crate::server::script::package::client) const MAGIC: &[u8] = b"BGCLIENT\x33";
 pub(super) fn wrap(
     bundle: ClientBundle,
     declarations: &crate::server::script::startup::Declarations,

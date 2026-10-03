@@ -58,6 +58,7 @@ mod icons;
 mod item;
 pub(in crate::server::script) mod models;
 mod player;
+mod player_world;
 mod storage;
 pub(in crate::server::script) use storage::Declaration as StorageDeclaration;
 mod creature;
@@ -89,6 +90,8 @@ pub(in crate::server) struct Declarations {
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     pub(super) player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
+    pub(super) regions: Vec<bloxgloom_host_api::regions::Registration>,
+    pub(super) chat_hooks: Vec<bloxgloom_host_api::chat::Registration>,
     pub(super) observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     pub(super) systems: Vec<bloxgloom_host_api::system::System>,
     pub(super) storage: Vec<StorageDeclaration>,
@@ -123,6 +126,8 @@ impl Declarations {
         let mut entities = Vec::new();
         let mut systems = Vec::new();
         let mut player_lifecycles = Vec::new();
+        let mut regions = Vec::new();
+        let mut chat_hooks = Vec::new();
         let mut observers = Vec::new();
         let mut storage = Vec::new();
         let mut creatures = Vec::new();
@@ -202,6 +207,8 @@ impl Declarations {
             models.extend(declarations.models);
             handlers.extend(declarations.handlers);
             player_lifecycles.extend(declarations.player_lifecycles);
+            regions.extend(declarations.regions);
+            chat_hooks.extend(declarations.chat_hooks);
             observers.extend(declarations.observers);
             entities.extend(declarations.entities);
             storage.extend(declarations.storage);
@@ -241,6 +248,8 @@ impl Declarations {
             entities,
             systems,
             player_lifecycles,
+            regions,
+            chat_hooks,
             observers,
             storage,
             creatures,
@@ -253,6 +262,8 @@ impl Declarations {
         result
             .textures
             .sort_by(|a, b| a.definition.key.cmp(&b.definition.key));
+        result.regions.sort_by(|a, b| a.key.cmp(&b.key));
+        result.chat_hooks.sort_by(|a, b| a.key.cmp(&b.key));
         result.systems.sort_by(|a, b| a.key.cmp(&b.key));
         result.generation.sort_by(|a, b| a.key.cmp(&b.key));
         composition::validate(&result.packages, &result.systems)?;
@@ -297,6 +308,12 @@ impl Extension for Declarations {
         }
         for registration in &self.player_lifecycles {
             registrar.player_lifecycle(registration.clone())?;
+        }
+        for region in &self.regions {
+            registrar.region(region.clone())?;
+        }
+        for hook in &self.chat_hooks {
+            registrar.chat_hook(hook.clone())?;
         }
         for package in &self.packages {
             registrar.package(package.clone())?;
@@ -359,6 +376,8 @@ impl Extension for Declarations {
 #[derive(Default)]
 pub(super) struct Pending {
     pub(super) player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
+    pub(super) regions: Vec<bloxgloom_host_api::regions::Registration>,
+    pub(super) chat_hooks: Vec<bloxgloom_host_api::chat::Registration>,
     pub(super) observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
@@ -456,14 +475,28 @@ pub(super) fn invoke(
 ) -> mlua::Result<Pending> {
     let permits_content = snapshot.permits_content(namespace);
     let pending = Rc::new(RefCell::new(Pending::default()));
+    let region = player_world::region(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let chat = player_world::chat(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let player_rules = player::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let appearance = appearance::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let anchored = anchored::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let storage = storage::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let creature = creature::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let machine = machine::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
-    let register_model =
-        models::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let register_model = models::declarer(
+        lua,
+        Rc::clone(&pending),
+        namespace,
+        Arc::clone(snapshot),
+        false,
+    )?;
+    let register_player_model = models::declarer(
+        lua,
+        Rc::clone(&pending),
+        namespace,
+        Arc::clone(snapshot),
+        true,
+    )?;
     let icon = icons::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let tag = tag::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let capture = Rc::clone(&pending);
@@ -757,6 +790,9 @@ pub(super) fn invoke(
     )?;
     let host = lua.create_table()?;
     host.set("register_model", register_model)?;
+    host.set("register_player_model", register_player_model)?;
+    host.set("register_region", region)?;
+    host.set("register_chat_hook", chat)?;
     host.set("register_item", register)?;
     host.set("register_texture", register_texture)?;
     host.set("register_block", register_block)?;

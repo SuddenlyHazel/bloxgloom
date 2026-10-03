@@ -178,6 +178,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
                 cache: &mut state.profile_inventory_cache,
             }),
             profile_services: Some(&state.system_runtime),
+            player_modifiers: Some(&state.player_modifiers),
             players: &players,
             action_id: Some(action_id),
             clock: Some(state.world_time.capture()),

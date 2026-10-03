@@ -2,6 +2,7 @@
 //! an atomic per-profile file is the commit point, before transient entity publish.
 //! This does not enter the inventory/world WAL: no items or world edits are coupled.
 use super::State;
+pub(super) mod packaged;
 use crate::appearance::{AppearanceState, CharacterRecipe, MAX_APPEARANCE_BYTES};
 use crate::content::Catalog;
 use std::fs::{self, File, OpenOptions};
@@ -9,7 +10,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const MAX_LEN: usize = 4 + 16 + 1 + MAX_APPEARANCE_BYTES + 4;
+const MAX_LEN: usize = 4 + 16 + 2 + MAX_APPEARANCE_BYTES + 4;
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct Store {
@@ -35,7 +36,7 @@ impl Store {
         };
         let mut bytes = Vec::with_capacity(MAX_LEN + 1);
         file.take((MAX_LEN + 1) as u64).read_to_end(&mut bytes)?;
-        if bytes.starts_with(b"BGA2") {
+        if bytes.starts_with(b"BGA2") || bytes.starts_with(b"BGA3") {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "profile appearance is from an incompatible older world; use a new world directory (old save left unchanged)",
@@ -47,10 +48,11 @@ impl Store {
                 "invalid or unsupported profile appearance",
             )
         };
-        if !(29..=MAX_LEN).contains(&bytes.len())
-            || &bytes[..4] != b"BGA3"
+        if !(30..=MAX_LEN).contains(&bytes.len())
+            || &bytes[..4] != b"BGA4"
             || u128::from_le_bytes(bytes[4..20].try_into().unwrap()) != profile
-            || usize::from(bytes[20]) + 25 != bytes.len()
+            || usize::from(u16::from_le_bytes(bytes[20..22].try_into().unwrap())) + 26
+                != bytes.len()
         {
             return Err(invalid());
         }
@@ -58,18 +60,19 @@ impl Store {
         if u32::from_le_bytes(bytes[end..].try_into().unwrap()) != checksum(&bytes[..end]) {
             return Err(invalid());
         }
-        let appearance = AppearanceState::decode(&bytes[21..end]).ok_or_else(invalid)?;
+        let appearance = AppearanceState::decode(&bytes[22..end]).ok_or_else(invalid)?;
         if !catalog.valid_appearance_state(appearance) {
             return Err(invalid());
         }
         Ok(appearance)
     }
 
-    fn save(&self, profile: u128, appearance: AppearanceState) -> io::Result<()> {
+    fn save(&self, profile: u128, mut appearance: AppearanceState) -> io::Result<()> {
+        appearance.packaged = appearance.packaged.map(|value| value.durable());
         let payload = appearance.encode();
-        let mut bytes = b"BGA3".to_vec();
+        let mut bytes = b"BGA4".to_vec();
         bytes.extend(profile.to_le_bytes());
-        bytes.push(payload.len() as u8);
+        bytes.extend((payload.len() as u16).to_le_bytes());
         bytes.extend(payload);
         bytes.extend(checksum(&bytes).to_le_bytes());
         let temporary = self.root.join(format!(
@@ -120,6 +123,7 @@ pub(super) fn select_character(
         .appearance_state_for_session(session)
         .unwrap_or_default();
     appearance.character = recipe;
+    appearance.packaged = None;
     replace(state, session, appearance)
 }
 

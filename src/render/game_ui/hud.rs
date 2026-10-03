@@ -5,6 +5,9 @@ use crate::{content::Catalog, ui::UiFrame};
 use egui::{Align2, Color32, FontId, Stroke, Vec2};
 
 pub(super) fn draw(root: &mut egui::Ui, frame: &UiFrame<'_>, catalog: &Catalog) {
+    if let Some(chat) = frame.chat {
+        crate::ui::chat::draw(root, chat);
+    }
     let viewport = root.max_rect();
     let center = viewport.center();
     let painter = root.painter().clone();

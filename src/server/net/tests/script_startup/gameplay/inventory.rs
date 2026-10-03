@@ -509,6 +509,7 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
             actor_inventory_revision: None,
             profile_inventories: None,
             profile_services: None,
+            player_modifiers: None,
             players: &[],
             action_id: None,
             clock: None,

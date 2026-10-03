@@ -169,6 +169,7 @@ pub(crate) struct JoinProgress {
 /// Values needed to draw a frame. Borrow status text to avoid per-frame string allocation.
 #[derive(Clone, Debug)]
 pub struct UiFrame<'a> {
+    pub(crate) chat: Option<&'a crate::client::chat::Session>,
     pub show_crosshair: bool,
     pub(crate) package_ui: Option<&'a super::authored::Session>,
     pub(crate) join_address: Option<&'a str>,
@@ -198,6 +199,7 @@ pub struct UiFrame<'a> {
 impl Default for UiFrame<'_> {
     fn default() -> Self {
         Self {
+            chat: None,
             package_ui: None,
             show_crosshair: true,
             join_address: None,
@@ -242,6 +244,7 @@ impl UiRect {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CharacterPanel {
+    pub packaged: Option<crate::appearance::PackagedAppearance>,
     pub cosmetics: [u8; 4],
     pub recipe: Option<crate::appearance::CharacterRecipe>,
     pub can_apply: bool,

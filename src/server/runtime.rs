@@ -405,10 +405,29 @@ pub(super) fn tick_with_inputs(
     for (phase_index, phase) in Phase::ALL.into_iter().enumerate() {
         let phase_started = Instant::now();
         if phase == Phase::Publish {
+            if tick.get().is_multiple_of(5) {
+                let mut disconnected = Vec::new();
+                for (&id, client) in &context.state.clients {
+                    if context
+                        .state
+                        .player_runtime
+                        .is_admitted(client.profile, client.action_epoch)
+                        && !client.enqueue(ServerMessage::SimulationClock { tick: tick.get() })
+                    {
+                        disconnected.push(id);
+                    }
+                }
+                for id in disconnected {
+                    context.state.remove_client(id);
+                }
+            }
+            players::chat::publish(context.state);
             players::publish_roster(context.state);
             players::delivery::publish(context.state)?;
         }
         if phase == Phase::Simulation {
+            players::modifiers::drive(context.state, tick)?;
+            players::regions::reconcile(context.state);
             players::drive(context.state, tick)?;
         }
         let system_count = context.state.phase_plan.systems(phase).len();

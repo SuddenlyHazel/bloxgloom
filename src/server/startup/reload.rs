@@ -4,6 +4,8 @@ use super::*;
 #[derive(PartialEq, Eq)]
 pub(in crate::server) struct Contract {
     catalog: u64,
+    regions: Vec<(String, Vec<u8>)>,
+    chat: Vec<(String, u16)>,
     creatures: Vec<(String, Vec<u8>)>,
     systems: Vec<SystemDescriptor>,
     codecs: Vec<(SystemId, u16, usize)>,
@@ -15,6 +17,16 @@ impl ServerStartup {
     pub(in crate::server) fn reload_contract(&self) -> io::Result<Contract> {
         Ok(Contract {
             catalog: self.catalog.fingerprint(),
+            regions: self
+                .catalog
+                .regions()
+                .map(|r| (r.key.clone(), r.contract_bytes()))
+                .collect(),
+            chat: self
+                .catalog
+                .chat_hooks()
+                .map(|h| (h.key.clone(), h.revision))
+                .collect(),
             creatures: self
                 .catalog
                 .mobile_entities()

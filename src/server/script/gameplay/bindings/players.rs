@@ -14,6 +14,7 @@ pub(crate) fn present(lua: &Lua, player: &Player) -> mlua::Result<mlua::Table> {
         view.set("entity", handles::entity(lua, player.entity)?)?;
     }
     view.set("name", player.name.as_str())?;
+    view.set("model", player.model.as_deref())?;
     let position = lua.create_sequence_from(player.position)?;
     position.set_readonly(true);
     view.set("position", position)?;

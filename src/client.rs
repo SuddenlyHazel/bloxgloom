@@ -33,6 +33,7 @@ mod audio;
 mod camera;
 mod character;
 mod character_motion;
+pub(crate) mod chat;
 pub(crate) mod drops;
 mod fire;
 mod interactions;
@@ -285,6 +286,7 @@ mod observations;
 pub(crate) mod presentation;
 pub(crate) mod startup;
 pub(crate) use startup::prepare as prepare_package_startup;
+mod simulation_clock;
 mod weather;
 mod workers;
 mod world_time;
@@ -309,6 +311,8 @@ struct Keys {
 }
 
 struct ClientApp {
+    chat: chat::Session,
+    movement_modifiers: bloxgloom_host_api::player_modifiers::Movement,
     observations: Arc<presentation::Observations>,
     package_ui: Option<crate::ui::authored::Session>,
     visual_session: Option<presentation::VisualSession>,
@@ -349,6 +353,7 @@ struct ClientApp {
     next_lighting_revision: u64,
     world_seed: Option<u64>,
     world_time: world_time::Clock,
+    simulation_clock: simulation_clock::Clock,
     weather: weather::State,
     owned_entity_id: Option<u64>,
     player_stances: BTreeMap<u64, bool>,
@@ -414,6 +419,8 @@ impl ClientApp {
             audio.install_sounds(clips);
         }
         Self {
+            chat: chat::Session::default(),
+            movement_modifiers: Default::default(),
             observations: Arc::new(Default::default()),
             package_ui: network.package_ui(),
             visual_session: network.visual_session(),
@@ -454,6 +461,7 @@ impl ClientApp {
             next_lighting_revision: 1,
             world_seed: None,
             world_time: world_time::Clock::default(),
+            simulation_clock: simulation_clock::Clock::default(),
             weather: weather::State::default(),
             owned_entity_id: None,
             player_stances: BTreeMap::new(),
@@ -525,6 +533,7 @@ impl ClientApp {
     }
 
     fn set_screen(&mut self, screen: UiScreen) {
+        self.chat.open = false;
         if let Some(renderer) = &mut self.renderer {
             renderer.clear_game_ui_intents();
         }
@@ -747,7 +756,9 @@ impl ClientApp {
                 if self.screen == UiScreen::Character && !self.disconnected {
                     self.character_editor
                         .observe(self.replicas.owned_appearance(self.owned_entity_id));
-                    if let Some(recipe) = self.character_editor.apply() {
+                    if let Some(packaged) = self.character_editor.apply_model() {
+                        self.queue_command(ClientMessage::SelectPlayerModel { packaged });
+                    } else if let Some(recipe) = self.character_editor.apply() {
                         self.queue_command(ClientMessage::SelectCharacter { recipe });
                     }
                 }
@@ -1079,6 +1090,8 @@ impl ClientApp {
             return;
         }
         match message {
+            ServerMessage::Chat { message } => self.chat.received(message),
+            ServerMessage::ChatRejected { text } => self.chat.notice(format!("Server: {text}")),
             ServerMessage::PackageReload { reconnect, text } => {
                 self.show_status(text);
                 self.package_reload_requested |= reconnect;
@@ -1177,6 +1190,7 @@ impl ClientApp {
                 self.weather.synchronize(snapshot, Instant::now());
                 self.observe_weather(snapshot);
             }
+            ServerMessage::SimulationClock { tick } => self.simulation_clock.synchronize(tick),
             ServerMessage::WorldTime { elapsed_ms } => {
                 self.world_time.synchronize(elapsed_ms);
                 self.observe_time(elapsed_ms);
@@ -1241,6 +1255,15 @@ impl ClientApp {
                     );
                 }
                 self.position = predicted;
+            }
+            ServerMessage::PlayerModifiers {
+                profile,
+                session,
+                reset,
+                position,
+                movement,
+            } => {
+                self.accept_modifiers(profile, session, reset, position, movement);
             }
             ServerMessage::PlayerTeleport {
                 profile,
@@ -1633,7 +1656,11 @@ impl ClientApp {
     }
 
     fn move_player(&mut self, dt: f32) {
-        if self.screen != UiScreen::Playing || !self.grabbed || self.flight.pending.is_some() {
+        if self.screen != UiScreen::Playing
+            || !self.grabbed
+            || self.chat.open
+            || self.flight.pending.is_some()
+        {
             return;
         }
         if !self.pending_commands.is_empty() {
@@ -1665,9 +1692,12 @@ impl ClientApp {
         }
         let delta = direction.normalize()
             * self
-                .catalog
-                .player_rules()
-                .for_movement(self.crouching(), self.sprinting())
+                .movement_modifiers
+                .rules(
+                    self.catalog.player_rules(),
+                    self.crouching(),
+                    self.sprinting(),
+                )
                 .motion()
                 .intent_blocks_per_second
             * dt.min(0.05);
@@ -1963,7 +1993,7 @@ impl ClientApp {
         } else {
             None
         };
-        let status = if self.screen == UiScreen::Playing && !self.grabbed {
+        let status = if self.screen == UiScreen::Playing && !self.grabbed && !self.chat.open {
             Some("Click to capture mouse")
         } else {
             self.status.as_ref().map(|(message, _)| message.as_str())
@@ -1972,6 +2002,7 @@ impl ClientApp {
         self.character_editor
             .observe(self.replicas.owned_appearance(self.owned_entity_id));
         let ui = UiFrame {
+            chat: Some(&self.chat),
             show_crosshair: self.perspective != crate::render::camera::Perspective::Front,
             character: (self.screen == UiScreen::Character).then(|| self.character_editor.panel()),
             package_ui: self.package_ui.as_ref(),
@@ -2056,6 +2087,12 @@ impl ClientApp {
                 avatar.character_look[1] = self.pitch;
             }
         }
+        let presentation_tick = self.simulation_clock.now();
+        for avatar in &mut visual_avatars {
+            if let Some(visual) = &mut avatar.model_pose {
+                visual.sample_tick = visual.sample_tick.max(presentation_tick);
+            }
+        }
         self.actor_animator
             .present_with_local(&mut visual_avatars, now, self.owned_entity_id);
         for avatar in &mut visual_avatars {
@@ -2092,7 +2129,8 @@ impl ClientApp {
                 // Moving poses are body-centered; sample lighting at that
                 // authoritative center rather than the creature feet offset.
                 crate::render::AvatarModel::Moving(_) => 0.0,
-                crate::render::AvatarModel::Player => 1.45,
+                crate::render::AvatarModel::Player
+                | crate::render::AvatarModel::PackagedPlayer(_) => 1.45,
                 crate::render::AvatarModel::Registered(id) => self
                     .catalog
                     .mobile_entity(id)
@@ -2203,6 +2241,12 @@ impl ClientApp {
             .map_or_else(Vec::new, Renderer::take_game_ui_intents);
         for intent in intents {
             match intent {
+                crate::render::GameUiIntent::CharacterModel(model) => {
+                    self.character_editor.edit_model(model)
+                }
+                crate::render::GameUiIntent::CharacterModelVisual(visual) => {
+                    self.character_editor.edit_model_visual(visual)
+                }
                 crate::render::GameUiIntent::InventorySlot(slot, right) => {
                     if self.screen == UiScreen::Container {
                         self.kiln_inventory_click(slot, right);

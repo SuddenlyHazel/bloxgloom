@@ -33,6 +33,7 @@ pub(in crate::server) fn invoke(
         profile_inventories: participants.profile_inventories,
         profile_inventory_before: Default::default(),
         profile_services: participants.profile_services,
+        player_modifiers: participants.player_modifiers,
         player_operations_enabled: event.kind != bloxgloom_host_api::players::EventKind::Joining,
         players: participants.players,
         action_id: None,

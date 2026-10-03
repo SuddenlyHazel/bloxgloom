@@ -154,3 +154,28 @@ fn switching_from_flight_floor_inset_does_not_trap_walking_player() {
         "edits cannot tunnel a player out of a block"
     );
 }
+
+#[test]
+fn player_modifiers_change_authoritative_horizontal_jump_and_gravity_rates() {
+    let terrain = floor(false);
+    let mut slow = walking(1.0);
+    slow.modifiers.speed = 0.5;
+    let limited = process_movement_batch(&terrain, slow, &[command(1, [0.15, 0.0, 0.0])]);
+    assert_eq!(limited.consumed, 0);
+    assert_eq!(limited.stop_reason, StopReason::MovementBudget);
+    let normal = process_movement_batch(&terrain, walking(1.0), &[command(1, [0.15, 0.0, 0.0])]);
+    assert_eq!(normal.consumed, 1);
+    let mut high_jump = walking(1.0);
+    high_jump.modifiers.jump = 1.5;
+    high_jump.modifiers.gravity = 0.5;
+    high_jump.request_jump();
+    let mut normal_jump = walking(1.0);
+    normal_jump.request_jump();
+    let boosted = process_movement_batch(&terrain, high_jump, &[]).state;
+    let normal = process_movement_batch(&terrain, normal_jump, &[]).state;
+    close(boosted.vertical_velocity, 11.8);
+    close(normal.vertical_velocity, 7.6);
+    assert!(boosted.position()[1] > normal.position()[1]);
+    let falling = process_movement_batch(&terrain, boosted, &[]).state;
+    close(boosted.vertical_velocity - falling.vertical_velocity, 0.2);
+}

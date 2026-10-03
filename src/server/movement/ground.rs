@@ -62,11 +62,16 @@ pub(super) fn advance(view: &VoxelView, state: &mut MovementState) -> Result<(),
     below[1] -= 0.002;
     let grounded = !clear(below)?;
     if grounded && next.vertical_velocity <= 0.0 {
-        next.vertical_velocity = if next.jump_requested { JUMP_SPEED } else { 0.0 };
+        next.vertical_velocity = if next.jump_requested {
+            JUMP_SPEED * next.modifiers.jump
+        } else {
+            0.0
+        };
     }
     next.jump_requested = false;
     if !grounded || next.vertical_velocity > 0.0 {
-        next.vertical_velocity = (next.vertical_velocity - GRAVITY * DT).max(-TERMINAL_SPEED);
+        next.vertical_velocity =
+            (next.vertical_velocity - GRAVITY * next.modifiers.gravity * DT).max(-TERMINAL_SPEED);
         let distance = next.vertical_velocity * DT;
         let steps = (distance.abs() / 0.1).ceil().max(1.0) as usize;
         for _ in 0..steps {

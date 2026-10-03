@@ -5,7 +5,7 @@ pub(super) fn fingerprint() -> &'static [u8; 32] {
     static HASH: OnceLock<[u8; 32]> = OnceLock::new();
     HASH.get_or_init(|| {
         let mut hash=Sha256::new();
-        hash.update(b"bloxgloom-character-recipe/v3;native-glb-master/v1;authored-tracks/v1;embedded-only/v1;basis=y-up,+z,1.0;rigid-player/v1");
+        hash.update(b"bloxgloom-character-recipe/v3;packaged-player/v1;appearance-file/BGA4;native-glb-master/v1;authored-tracks/v1;embedded-only/v1;basis=y-up,+z,1.0;rigid-player/v1");
         hash.update(super::CharacterRecipe::default().encode());
         for (group,names) in [("bodies",super::BODIES.as_slice()),("eyes",super::EYES.as_slice()),("mouths",super::MOUTHS.as_slice()),("hair",super::HAIR.as_slice())] {
             hash.update(group.as_bytes());

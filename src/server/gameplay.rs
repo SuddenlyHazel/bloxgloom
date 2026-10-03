@@ -20,6 +20,7 @@ pub(super) struct Participants<'a> {
     pub actor_inventory_revision: Option<u64>,
     pub profile_inventories: Option<InventoryCapture<'a>>,
     pub profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
+    pub player_modifiers: Option<&'a super::players::modifiers::Runtime>,
     pub players: &'a [bloxgloom_host_api::gameplay::Player],
     pub action_id: Option<u128>,
     pub clock: Option<super::world_time::Capture>,
@@ -63,6 +64,7 @@ struct WorldSnapshot<'a> {
     profile_inventories: Option<InventoryCapture<'a>>,
     profile_inventory_before: std::collections::BTreeMap<u128, crate::inventory::Inventory>,
     profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
+    player_modifiers: Option<&'a super::players::modifiers::Runtime>,
     player_operations_enabled: bool,
     motion_reaction: Option<u64>,
     players: &'a [bloxgloom_host_api::gameplay::Player],
@@ -82,6 +84,49 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn player_modifier_state(
+        &mut self,
+        namespace: &str,
+        profile: u128,
+        session: Option<u64>,
+    ) -> Result<bloxgloom_host_api::player_modifiers::Capture, Error> {
+        if profile == 0
+            || !self.world.catalog().player_authority(namespace)
+            || !self.player_operations_enabled
+        {
+            return Err(Error::Invalid("player modifier authority denied".into()));
+        }
+        if session.is_some_and(|session| {
+            !self.players.iter().any(|player| {
+                player.profile == profile && player.session == session && session != 0
+            })
+        }) {
+            return Err(Error::Invalid("modifier session is not online".into()));
+        }
+        let runtime = self
+            .profile_services
+            .ok_or_else(|| Error::Invalid("modifier profile state unavailable".into()))?;
+        let cell = super::players::modifiers::capture_profile(runtime, profile)
+            .map_err(|e| Error::Host(e.to_string()))?;
+        self.reads
+            .profile(
+                &super::players::modifiers::system(),
+                profile,
+                cell.initialized.then_some(cell.revision),
+            )
+            .map_err(|e| Error::Invalid(e.to_string()))?;
+        let session = match session {
+            Some(session) => self
+                .player_modifiers
+                .ok_or_else(|| Error::Invalid("modifier session state unavailable".into()))?
+                .capture(profile, session),
+            None => Default::default(),
+        };
+        Ok(bloxgloom_host_api::player_modifiers::Capture {
+            profile: cell,
+            session,
+        })
+    }
     fn tags(&self) -> Option<std::sync::Arc<dyn bloxgloom_host_api::queries::Tags>> {
         Some(self.world.catalog_arc())
     }
@@ -116,6 +161,12 @@ impl Snapshot for WorldSnapshot<'_> {
         state: &bloxgloom_host_api::players::State,
     ) -> Result<(), Error> {
         self.validate_profile(namespace, key, state)
+    }
+    fn player_model_schema(&self, key: &str) -> Option<bloxgloom_host_api::entity::VisualSchema> {
+        let catalog = self.world.catalog();
+        catalog
+            .player_model(catalog.player_model_id(key)?)
+            .map(|model| model.schema())
     }
     fn valid_player_appearance(&self, palettes: [u8; 3]) -> bool {
         self.world
@@ -504,6 +555,7 @@ pub(super) fn plan_with_lifecycles(
         profile_inventories: participants.profile_inventories,
         profile_inventory_before: Default::default(),
         profile_services: participants.profile_services,
+        player_modifiers: participants.player_modifiers,
         player_operations_enabled: matches!(
             &action,
             Some(
@@ -926,7 +978,7 @@ pub(super) fn plan_with_lifecycles(
                 requested,
                 &catalog,
                 &final_edits,
-                moving.body.half_extents,
+                moving.capture_half_extents(),
                 spawn.position,
             )?;
         }

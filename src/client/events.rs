@@ -155,6 +155,17 @@ impl ClientApp {
             self.shift_down = false;
         }
         if let WindowEvent::KeyboardInput { event, .. } = &event
+            && let PhysicalKey::Code(code) = event.physical_key
+            && self.chat_key(
+                code,
+                event.text.as_deref(),
+                event.state == ElementState::Pressed,
+                event.repeat,
+            )
+        {
+            return;
+        }
+        if let WindowEvent::KeyboardInput { event, .. } = &event
             && event.state == ElementState::Pressed
             && let PhysicalKey::Code(code) = event.physical_key
             && self.package_binding_key(
@@ -539,6 +550,9 @@ impl ClientApp {
                 button,
                 ..
             } => {
+                if self.chat.open {
+                    return;
+                }
                 if self.screen == UiScreen::Package {
                     if button == MouseButton::Left
                         && let Some(session) = &mut self.package_ui

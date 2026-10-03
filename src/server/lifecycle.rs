@@ -12,6 +12,8 @@ pub(crate) struct Registration {
     sounds: Vec<String>,
     models: Vec<bloxgloom_host_api::model::ModelAsset>,
     player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
+    regions: Vec<bloxgloom_host_api::regions::Registration>,
+    chat_hooks: Vec<bloxgloom_host_api::chat::Registration>,
     gameplay_observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     gameplay_entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     gameplay_handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
@@ -29,6 +31,24 @@ pub(crate) struct Registration {
     pub(crate) generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 impl Registrar for Registration {
+    fn region(
+        &mut self,
+        registration: bloxgloom_host_api::regions::Registration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        registration.validate()?;
+        self.regions.push(registration);
+        Ok(())
+    }
+    fn chat_hook(
+        &mut self,
+        registration: bloxgloom_host_api::chat::Registration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        registration.validate()?;
+        self.chat_hooks.push(registration);
+        Ok(())
+    }
     fn model_asset(
         &mut self,
         model: bloxgloom_host_api::model::ModelAsset,
@@ -273,6 +293,8 @@ impl Registration {
             + self.gameplay_handlers.len()
             + self.gameplay_observers.len()
             + self.player_lifecycles.len()
+            + self.regions.len()
+            + self.chat_hooks.len()
             + self.cubes.len()
             + self.definitions.len()
             + self.screens.len()
@@ -445,6 +467,12 @@ impl Registration {
         candidate
             .storage_lifecycles
             .extend(registration.definitions.clone());
+        for region in &registration.regions {
+            candidate.register_region(region.clone())?;
+        }
+        for hook in &registration.chat_hooks {
+            candidate.register_chat_hook(hook.clone())?;
+        }
         candidate
             .validate()
             .map_err(|e| RegistrationError(format!("invalid catalog: {e:?}")))?;

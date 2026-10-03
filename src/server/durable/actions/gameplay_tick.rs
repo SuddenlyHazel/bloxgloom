@@ -97,6 +97,7 @@ pub(in crate::server) fn plan_event(
                 cache: &mut state.profile_inventory_cache,
             }),
             profile_services: moving.then_some(&state.system_runtime),
+            player_modifiers: moving.then_some(&state.player_modifiers),
             players: &players,
             action_id: None,
             clock: Some(state.world_time.capture()),

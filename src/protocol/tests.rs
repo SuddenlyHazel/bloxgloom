@@ -1441,3 +1441,33 @@ fn sound_batch_roundtrip_length_and_truncated_frames_are_checked() {
         .is_err()
     );
 }
+
+#[test]
+fn player_modifiers_wire_rejects_invalid_identity_nonfinite_values_and_matches_queue_size() {
+    let message = ServerMessage::PlayerModifiers {
+        profile: 1,
+        session: 2,
+        reset: 3,
+        position: [1.5, 300.0, 0.5],
+        movement: Default::default(),
+    };
+    let mut bytes = Vec::new();
+    write_server(&mut bytes, &message).unwrap();
+    assert_eq!(bytes.len(), server_wire_len(&message));
+    assert!(matches!(
+        read_server(bytes.as_slice()).unwrap(),
+        ServerMessage::PlayerModifiers {
+            profile: 1,
+            session: 2,
+            reset: 3,
+            ..
+        }
+    ));
+    let mut invalid = bytes.clone();
+    invalid[6..22].fill(0);
+    assert!(read_server(invalid.as_slice()).is_err());
+    let mut invalid = bytes;
+    let end = invalid.len();
+    invalid[end - 4..].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert!(read_server(invalid.as_slice()).is_err());
+}

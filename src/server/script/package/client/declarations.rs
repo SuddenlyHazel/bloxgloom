@@ -569,10 +569,10 @@ impl ClientBundle {
         let result = super::players::wrap(result, declarations)?;
         let result = super::observers::wrap(result, declarations)?;
         let result = anchored::wrap(result, declarations)?;
-        let result = moving::wrap(result, declarations)?;
         let result = acoustics::wrap(result, declarations)?;
         let result = icons::wrap(result, declarations)?;
         let result = models::wrap(result, declarations)?;
+        let result = moving::wrap(result, declarations)?;
         creature_authored::wrap(result, declarations)
     }
 

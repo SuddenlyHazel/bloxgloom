@@ -250,6 +250,7 @@ pub(in crate::server) fn plan(
             actor_inventory_revision: None,
             profile_inventories: None,
             profile_services: None,
+            player_modifiers: None,
             players: &[],
             action_id: None,
             clock: Some(state.world_time.capture()),

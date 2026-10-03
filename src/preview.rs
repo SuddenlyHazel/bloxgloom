@@ -1869,6 +1869,7 @@ fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
 
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
+        chat: None,
         show_crosshair: true,
         character: None,
         package_ui: None,
@@ -1946,6 +1947,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        chat: None,
         show_crosshair: true,
         character: None,
         package_ui: None,

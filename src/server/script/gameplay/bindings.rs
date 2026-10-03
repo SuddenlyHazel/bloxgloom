@@ -10,6 +10,8 @@
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
 pub(in crate::server::script) mod motion;
+mod player_models;
+mod player_modifiers;
 pub(in crate::server::script) mod players;
 mod profile_state;
 mod queries;
@@ -54,6 +56,8 @@ pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
         terrain::install(scope, &host, &context, rejected)?;
         weather::install(scope, &host, &context, rejected)?;
         players::install(scope, &host, &context, rejected)?;
+        player_modifiers::install(scope, &host, &context, rejected)?;
+        player_models::install(scope, &host, &context, rejected)?;
         profile_state::install(scope, &host, &context, rejected)?;
         motion::install(scope, &host, &context, rejected)?;
         host.set(

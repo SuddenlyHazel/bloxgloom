@@ -21,13 +21,14 @@ const MAX_SESSION_PLAYER_ENTITIES: usize = 256;
 
 /// Public cosmetic state only. Profile identity and movement authority remain
 /// in the authenticated session, never in this network-visible payload.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::server) struct PlayerEntityPayload {
     pub(in crate::server) skin: u8,
     pub(in crate::server) shirt: u8,
     pub(in crate::server) pants: u8,
     pub(in crate::server) flags: u8,
     character: Option<CharacterRecipe>,
+    packaged: Option<crate::appearance::PackagedAppearance>,
 }
 
 impl PlayerEntityPayload {
@@ -39,6 +40,7 @@ impl PlayerEntityPayload {
             pants,
             flags,
             character: None,
+            packaged: None,
         }
     }
 
@@ -50,6 +52,7 @@ impl PlayerEntityPayload {
             AppearanceState {
                 palettes: [self.skin, self.shirt, self.pants],
                 character: self.character,
+                packaged: self.packaged,
             }
             .encode(),
         )
@@ -64,6 +67,7 @@ impl From<AppearanceState> for PlayerEntityPayload {
             pants: state.palettes[2],
             flags: 0,
             character: state.character,
+            packaged: state.packaged,
         }
     }
 }

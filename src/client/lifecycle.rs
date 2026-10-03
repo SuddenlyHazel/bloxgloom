@@ -5,6 +5,7 @@ use super::*;
 
 impl ClientApp {
     pub(super) fn retire_session(&mut self) {
+        self.simulation_clock = Default::default();
         self.audio.retire_session(&self.config);
         self.weather = Default::default();
         self.disconnected = true;
@@ -17,6 +18,8 @@ impl ClientApp {
         self.keys = Default::default();
         self.crouch_requested = false;
         self.flight = Default::default();
+        self.chat = Default::default();
+        self.movement_modifiers = Default::default();
         if let Some(lane) = self.player_services.take() {
             lane.close(self.failure.as_deref().unwrap_or("session retired"));
         }

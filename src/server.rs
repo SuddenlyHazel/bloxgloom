@@ -208,6 +208,9 @@ struct State {
     entities: EntityStore,
     player_entities: PlayerEntityStore,
     player_runtime: players::Runtime,
+    player_modifiers: players::modifiers::Runtime,
+    region_runtime: players::regions::Runtime,
+    chat_runtime: players::chat::Runtime,
     roster_revision: u64,
     player_state_revision: u64,
     /// Frozen notification-effect declarations installed at startup. Entity
@@ -303,6 +306,11 @@ impl State {
     /// Release every authoritative interest pin with the session. Other
     /// clients' subscriptions keep their own pins on shared chunks.
     fn remove_client(&mut self, id: u64) -> Option<Client> {
+        if let Some(client) = self.clients.get(&id) {
+            self.player_modifiers
+                .leaving(client.profile, client.action_epoch);
+        }
+        players::chat::leaving(self, id);
         players::leaving(self, id);
         let client = self.clients.remove(&id)?;
         if client.movement.sprinting() {
@@ -664,6 +672,9 @@ fn server_state_with_startup(
         entities,
         player_entities: PlayerEntityStore::default(),
         player_runtime: players::Runtime::default(),
+        player_modifiers: players::modifiers::Runtime::default(),
+        region_runtime: players::regions::Runtime::default(),
+        chat_runtime: players::chat::Runtime::default(),
         roster_revision: 1,
         player_state_revision: 1,
         effect_kinds,
@@ -711,6 +722,10 @@ fn server_state_with_startup(
 
 fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Result<()> {
     match message {
+        ClientMessage::Chat { sequence, text } => {
+            players::chat::receive(state, id, sequence, text);
+            Ok(())
+        }
         ClientMessage::SetWorldTime { .. } => Err(io::Error::new(
             ErrorKind::InvalidInput,
             "time command requires durable dispatch",
@@ -743,6 +758,9 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             Ok(())
         }
         ClientMessage::SelectAppearance { palettes } => appearance::select(state, id, palettes),
+        ClientMessage::SelectPlayerModel { packaged } => {
+            appearance::packaged::select_packaged(state, id, packaged)
+        }
         ClientMessage::SelectCharacter { recipe } => {
             appearance::select_character(state, id, recipe)
         }

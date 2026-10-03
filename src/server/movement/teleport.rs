@@ -6,7 +6,7 @@ use std::io;
 
 #[derive(Default)]
 pub(in crate::server) struct Reset {
-    generation: u64,
+    pub(super) generation: u64,
     pub(in crate::server) pending: bool,
 }
 pub(in crate::server) fn teleport(
@@ -44,10 +44,12 @@ pub(in crate::server) fn teleport(
     let requested = client.movement.requested_crouch;
     let was_sprinting = client.movement.sprinting();
     let flying = client.movement.flying;
+    let modifiers = client.movement.modifiers;
     client.movement = MovementState::new(position, floor);
     client.movement.crouching = crouching;
     client.movement.requested_crouch = requested;
     client.movement.flying = flying;
+    client.movement.modifiers = modifiers;
     client.center = world_to_chunk(
         position[0].floor() as i32,
         position[1].floor() as i32,
@@ -75,6 +77,7 @@ pub(in crate::server) fn teleport(
     if !sent {
         state.remove_client(id);
     }
+    crate::server::players::regions::reconcile(state);
     Ok(())
 }
 
@@ -103,10 +106,16 @@ pub(in crate::server) fn ready(
     let crouching = client.movement.crouching;
     let requested = client.movement.requested_crouch;
     let flying = client.movement.flying;
+    let modifiers = client.movement.modifiers;
+    let sprinting = client.movement.sprinting;
+    let vertical_velocity = client.movement.vertical_velocity;
     client.movement = MovementState::new(client.position(), next_seq - 1);
     client.movement.crouching = crouching;
     client.movement.requested_crouch = requested;
     client.movement.flying = flying;
+    client.movement.modifiers = modifiers;
+    client.movement.sprinting = sprinting;
+    client.movement.vertical_velocity = vertical_velocity;
     client.movement_reset.pending = false;
     Ok(())
 }

@@ -594,6 +594,7 @@ fn plan_gameplay_removals(
             actor_inventory_revision: Some(actor.2),
             profile_inventories: None,
             profile_services: None,
+            player_modifiers: None,
             players: &[],
             action_id: None,
             clock: Some(state.world_time.capture()),

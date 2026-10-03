@@ -30,6 +30,7 @@ pub(crate) mod moving;
 mod observers;
 mod owner_systems;
 pub(crate) mod player;
+mod player_world;
 mod players;
 mod public;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
@@ -215,6 +216,8 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    regions: std::collections::BTreeMap<String, bloxgloom_host_api::regions::Registration>,
+    chat_hooks: std::collections::BTreeMap<String, bloxgloom_host_api::chat::Registration>,
     block_acoustics: HashMap<String, bloxgloom_host_api::content::Acoustics>,
     pub(crate) sounds: HashSet<String>,
     models: std::collections::BTreeMap<u32, (String, std::sync::Arc<models::Prepared>)>,
@@ -308,6 +311,8 @@ impl Catalog {
             item_icons: HashMap::new(),
             item_visuals: Default::default(),
             player_lifecycles: Default::default(),
+            regions: Default::default(),
+            chat_hooks: Default::default(),
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),
             anchored_entities: Vec::new(),
@@ -647,6 +652,8 @@ impl Catalog {
             .validate()
             .map_err(|_| RegistrationError::InvalidDefinition)?;
         self.validate_player_selection()?;
+        self.validate_player_world_rules()
+            .map_err(|_| RegistrationError::InvalidDefinition)?;
         if let Some(appearance) = &self.player_appearance {
             appearance
                 .validate()

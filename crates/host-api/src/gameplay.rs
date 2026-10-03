@@ -13,6 +13,8 @@ mod handlers;
 mod inventory;
 mod motion;
 mod observations;
+mod player_models;
+mod player_modifiers;
 mod player_operations;
 mod players;
 mod profile_state;
@@ -72,6 +74,17 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn player_modifier_state(
+        &mut self,
+        _namespace: &str,
+        _profile: u128,
+        _session: Option<u64>,
+    ) -> Result<crate::player_modifiers::Capture, Error> {
+        Err(Error::Invalid(
+            "player modifiers unavailable in this context".into(),
+        ))
+    }
+
     fn tags(&self) -> Option<std::sync::Arc<dyn crate::queries::Tags>> {
         None
     }
@@ -139,6 +152,9 @@ pub trait Snapshot {
     /// Granted server-package authority, separate from command-caller admin.
     fn player_authority(&self, _namespace: &str) -> bool {
         false
+    }
+    fn player_model_schema(&self, _key: &str) -> Option<crate::entity::VisualSchema> {
+        None
     }
     fn valid_player_appearance(&self, _palettes: [u8; 3]) -> bool {
         false

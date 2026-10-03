@@ -13,13 +13,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<WorkerLoad> {
+    super::modifiers::synchronize(state, tick)?;
     let rules = state.world.catalog().player_rules();
     let mut active = Vec::new();
     for (&id, client) in &mut state.clients {
-        if client.movement_reset.pending
-            || (client.pending_moves.is_empty()
-                && !client.movement.stance_pending()
-                && client.movement.flying())
+        if (client.movement_reset.pending || client.pending_moves.is_empty())
+            && !client.movement.stance_pending()
+            && client.movement.flying()
         {
             client.movement.advance_idle_tick(rules);
         } else {
@@ -77,6 +77,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
         let commands: Vec<_> = client
             .pending_moves
             .iter()
+            .filter(|_| !client.movement_reset.pending)
             .take(MAX_COMMANDS_PER_TICK + 1)
             .copied()
             .collect();
@@ -207,5 +208,6 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             break;
         }
     }
+    crate::server::players::regions::reconcile(state);
     Ok(worker_load)
 }

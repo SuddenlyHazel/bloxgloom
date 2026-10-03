@@ -22,8 +22,10 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 29;
+const WIRE_VERSION: u8 = 30;
+mod chat;
 pub(crate) mod lod;
+mod player_state;
 mod player_states;
 mod players;
 mod sounds;
@@ -44,6 +46,10 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    Chat {
+        sequence: u64,
+        text: String,
+    },
     ReloadPackages,
     LodConfig {
         horizon: u16,
@@ -78,6 +84,9 @@ pub enum ClientMessage {
         palettes: [u8; 3],
     },
     /// Change this admitted profile's articulated recipe; None resets to its default.
+    SelectPlayerModel {
+        packaged: Option<crate::appearance::PackagedAppearance>,
+    },
     SelectCharacter {
         recipe: Option<crate::appearance::CharacterRecipe>,
     },
@@ -171,6 +180,12 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    Chat {
+        message: bloxgloom_host_api::chat::Message,
+    },
+    ChatRejected {
+        text: String,
+    },
     PackageReload {
         reconnect: bool,
         text: String,
@@ -213,6 +228,16 @@ pub enum ServerMessage {
     PlayerSprint {
         entity_id: u64,
         sprinting: bool,
+    },
+    SimulationClock {
+        tick: u64,
+    },
+    PlayerModifiers {
+        profile: u128,
+        session: u64,
+        reset: u64,
+        position: [f32; 3],
+        movement: bloxgloom_host_api::player_modifiers::Movement,
     },
     FlyingMode {
         flying: bool,
@@ -331,6 +356,10 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const HEADER: usize = 4 + 2; // length, wire version, message tag
     HEADER
         + match message {
+            ServerMessage::Chat { message } => {
+                8 + 16 + 8 + 1 + message.name.len() + 2 + message.text.len()
+            }
+            ServerMessage::ChatRejected { text } => 2 + text.len(),
             ServerMessage::PackageReload { text, .. } => 3 + text.len(),
             ServerMessage::LodStatus { .. } => 11,
             ServerMessage::LodTile { tile, .. } => 16 + lod::tile_len(tile),
@@ -340,6 +369,8 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             ServerMessage::PlayerStance { .. } => 8 + 1,
             ServerMessage::PlayerSprint { .. } => 8 + 1,
             ServerMessage::FlyingMode { .. } => 1,
+            ServerMessage::SimulationClock { .. } => 8,
+            ServerMessage::PlayerModifiers { .. } => 16 + 8 + 8 + 12 + 16,
             ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
@@ -448,6 +479,14 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::Chat { sequence, text } => {
+            if *sequence == 0 {
+                return Err(invalid("invalid chat sequence"));
+            }
+            out.push(27);
+            out.extend(sequence.to_le_bytes());
+            chat::write_text(&mut out, text)?;
+        }
         ClientMessage::ReloadPackages => out.push(26),
         ClientMessage::LodConfig { horizon } => {
             out.push(21);
@@ -487,6 +526,10 @@ pub fn write_client_with_catalog(
         ClientMessage::BundleRequest { identity } => {
             out.push(14);
             bundle::write_identity(&mut out, identity)?;
+        }
+        ClientMessage::SelectPlayerModel { packaged } => {
+            out.push(28);
+            player_state::write_model(&mut out, *packaged, content_catalog)?;
         }
         ClientMessage::SelectCharacter { recipe } => {
             if recipe.is_some_and(|value| !value.valid()) {
@@ -680,6 +723,14 @@ pub fn write_server_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ServerMessage::Chat { message } => {
+            out.push(48);
+            chat::write_message(&mut out, message)?;
+        }
+        ServerMessage::ChatRejected { text } => {
+            out.push(49);
+            chat::write_text(&mut out, text)?;
+        }
         ServerMessage::PackageReload { reconnect, text } => {
             if text.len() > 4096 {
                 return Err(invalid("reload status too long"));
@@ -755,6 +806,22 @@ pub fn write_server_with_catalog(
             out.push(46);
             out.extend(entity_id.to_le_bytes());
             out.push(u8::from(*sprinting));
+        }
+        ServerMessage::SimulationClock { tick } => {
+            out.push(51);
+            out.extend(tick.to_le_bytes());
+        }
+        ServerMessage::PlayerModifiers {
+            profile,
+            session,
+            reset,
+            position,
+            movement,
+        } => {
+            out.push(50);
+            player_state::write_modifiers(
+                &mut out, *profile, *session, *reset, *position, *movement,
+            )?;
         }
         ServerMessage::FlyingMode { flying } => {
             out.push(45);
@@ -1190,6 +1257,16 @@ pub fn read_client_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        27 => {
+            let sequence = c.u64()?;
+            if sequence == 0 {
+                return Err(invalid("invalid chat sequence"));
+            }
+            ClientMessage::Chat {
+                sequence,
+                text: chat::read_text(&mut c)?,
+            }
+        }
         26 => ClientMessage::ReloadPackages,
         21 => ClientMessage::LodConfig { horizon: c.u16()? },
         22 => ClientMessage::LodRequest {
@@ -1361,6 +1438,9 @@ pub fn read_client_with_catalog(
                 _ => return Err(invalid("invalid sprint state")),
             },
         },
+        28 => ClientMessage::SelectPlayerModel {
+            packaged: player_state::read_model(&mut c, content_catalog)?,
+        },
         19 => {
             let recipe = match c.u8()? {
                 0 => None,
@@ -1397,6 +1477,12 @@ pub fn read_server_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        48 => ServerMessage::Chat {
+            message: chat::read_message(&mut c)?,
+        },
+        49 => ServerMessage::ChatRejected {
+            text: chat::read_text(&mut c)?,
+        },
         47 => {
             let reconnect = match c.u8()? {
                 0 => false,
@@ -1657,6 +1743,8 @@ pub fn read_server_with_catalog(
                 sprinting,
             }
         }
+        51 => ServerMessage::SimulationClock { tick: c.u64()? },
+        50 => player_state::read_modifiers(&mut c)?,
         45 => ServerMessage::FlyingMode {
             flying: match c.u8()? {
                 0 => false,

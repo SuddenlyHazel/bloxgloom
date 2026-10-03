@@ -5,6 +5,7 @@ use std::fmt;
 pub mod actions;
 pub mod anchored;
 pub mod appearance;
+pub mod chat;
 pub mod composition;
 pub mod content;
 pub mod entity;
@@ -17,8 +18,10 @@ pub mod machine;
 pub mod model;
 pub mod motion;
 pub mod player;
+pub mod player_modifiers;
 pub mod players;
 pub mod queries;
+pub mod regions;
 pub mod sound;
 pub mod system;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
@@ -44,6 +47,16 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn region(&mut self, _registration: regions::Registration) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "regions unsupported by this registrar".into(),
+        ))
+    }
+    fn chat_hook(&mut self, _registration: chat::Registration) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "chat hooks unsupported by this registrar".into(),
+        ))
+    }
     fn model_asset(&mut self, _model: model::ModelAsset) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "models unsupported by this registrar".into(),

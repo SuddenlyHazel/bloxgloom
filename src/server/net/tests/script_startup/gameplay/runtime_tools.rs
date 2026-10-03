@@ -53,6 +53,7 @@ fn runtime_tools_action_retry_keeps_module_randomness_across_ticks_and_log_press
                 actor_inventory_revision: None,
                 profile_inventories: None,
                 profile_services: None,
+                player_modifiers: None,
                 players: &[],
                 action_id: Some(id),
                 clock: None,

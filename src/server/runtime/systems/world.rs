@@ -463,6 +463,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             actor_inventory_revision: None,
             profile_inventories: None,
             profile_services: None,
+            player_modifiers: None,
             players: &[],
             action_id: None,
             clock: environment.map(|capture| capture.clock_capture()),
