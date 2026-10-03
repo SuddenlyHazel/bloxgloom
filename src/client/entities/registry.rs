@@ -163,12 +163,22 @@ impl EntityClientRegistry {
                 if !pose.yaw.is_finite() {
                     return Err(());
                 }
+                let model_pose = definition
+                    .behavior
+                    .visual(&entity.payload)
+                    .map_err(|_| ())?;
+                if let Some(authored) = &definition.authored_model {
+                    let prepared = catalog.model_by_key(&authored.key).ok_or(())?;
+                    if model_pose
+                        .as_ref()
+                        .is_some_and(|visual| !prepared.visual_schema().accepts(visual))
+                    {
+                        return Err(());
+                    }
+                }
                 avatars.push(VisualAvatar {
                     motion: None,
-                    model_pose: definition
-                        .behavior
-                        .visual(&entity.payload)
-                        .map_err(|_| ())?,
+                    model_pose,
                     character_pose: [0.0; 4],
                     character_look: [0.0; 2],
                     character_crouch: 0.0,
@@ -246,3 +256,6 @@ impl Default for EntityClientRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests;
