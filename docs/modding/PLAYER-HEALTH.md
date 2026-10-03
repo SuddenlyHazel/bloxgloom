@@ -105,3 +105,28 @@ applied life: reconnect applies a newer WAL checkpoint after a crash before
 native teleport publication, while preserving movement saved after that respawn.
 Malformed health/position data fails closed. No world converter is provided.
 The default world folder is v26, wire contract 32 and client runtime 14.
+
+
+## Verification
+
+The final workspace run passed 1,748 application and 61 host API tests, with
+11 opt-in tests ignored. Formatting, strict Clippy across all targets/features
+and the release build passed.
+
+Real nonblocking TCP regressions cover exact sessions, caught-invalid mutations,
+invalid pure policy output, receipt replay, dead movement/inventory rejection,
+death surviving restart, safe respawn and final callback collision rollback.
+Transaction tests exercise a lost WAL receipt and recovery of health plus rewards,
+as well as a crash after the respawn checkpoint but before teleport publication.
+The shipped fixture command runs over the same production listener.
+
+The live egui HUD and death button are checked at 640×360 and 1280×720, including
+real click dispatch. Release previews were inspected for the death screen,
+playing HUD and compact chat; the health bar moves right while chat is open.
+
+The Apple M1 Pro `perf 300 6` comparison retained 320,236 mesh vertices,
+480,354 indices, 18,573,688 mesh bytes and 88,026 final visible triangles.
+Scene setup changed from 2,296.3 to 2,399.5 ms; CPU/GPU steady medians changed
+from 1.096/0.893 to 0.830/0.818 ms. CPU p95 changed from 2.017 to 2.640 ms.
+These offscreen figures exclude live gameplay and presentation and do not
+establish a speedup; tails vary between runs.
