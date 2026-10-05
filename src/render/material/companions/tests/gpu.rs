@@ -1,6 +1,6 @@
 //! Execute production WGSL math, including mirrored faces and darkness gates.
 use wgpu::util::DeviceExt;
-const CASES: u32 = 32;
+const CASES: u32 = 34;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -59,10 +59,15 @@ const FIXTURE: &str = r#"
         result[id.x] = vec4f(bg_environment_specular(up,up,vec3f(0.5),specular,
             vec3f(1.0),sky*local_visibility,local,local_visibility),
             bg_material_diffuse_weight(specular,1.0));
-    } else {
+    } else if id.x < 32u {
         let daylight = select(0.0,1.0,id.x % 2u == 1u);
         let glow = select(0.0,1.0,id.x >= 30u);
         result[id.x] = vec4f(bg_local_material_radiance(glow*glow*vec3f(1.0,0.57,0.23),vec3f(0.0),vec3f(0.0),daylight),1.0);
+    } else {
+        let up = vec3f(0.0,1.0,0.0);
+        let px = select(vec3f(1.0,0.0,0.0),vec3f(0.0),id.x==33u);
+        result[id.x] = vec4f(bg_normal_frame(up,px,up,vec2f(1.0,0.0),vec2f(0.0,1.0),
+            normalize(vec3f(0.3,0.4,0.8660254))),1.0);
     }
 }
 "#;
@@ -135,6 +140,16 @@ fn gpu_normal_frames_and_specular_preserve_mirrors_caves_shadows_and_missing_map
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     let bytes = slice.get_mapped_range().unwrap();
     let rows: &[[f32; 4]] = bytemuck::cast_slice(&bytes);
+    assert_eq!(
+        rows[32],
+        [0.0, 1.0, 0.0, 1.0],
+        "crossed cards retain upward shading without a collapsed frame"
+    );
+    assert_eq!(
+        rows[33],
+        [0.0, 1.0, 0.0, 1.0],
+        "degenerate geometry retains its finite shading normal"
+    );
     use glam::Vec3;
     for (i, row) in rows[..8].iter().enumerate() {
         let axis = if i == 6 {

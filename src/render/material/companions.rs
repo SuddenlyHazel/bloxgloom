@@ -20,6 +20,7 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
     let layers = super::layers::Layers::new(catalog);
     let mut normal = Vec::new();
     let mut specular = Vec::new();
+    let mut categorical = Vec::new();
     let mut flags = Vec::new();
     for (id, texture) in catalog.textures().iter().enumerate() {
         let n = definitions
@@ -48,7 +49,9 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
             .copied();
         normal.extend(tile(n, [128, 128, 255, 255]));
         let mut specular_tile = tile(s, [0, 0, 0, 255]);
-        if catalog.is_lab_pbr_texture(TextureId::new(id as u32)) {
+        let lab = catalog.is_lab_pbr_texture(TextureId::new(id as u32));
+        categorical.push(lab);
+        if lab {
             for pixel in specular_tile.chunks_exact_mut(4) {
                 if pixel[3] == 255 {
                     pixel[3] = 0;
@@ -58,8 +61,8 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
         specular.extend(specular_tile);
     }
     Maps {
-        normal: mips(normal),
-        specular: mips(specular),
+        normal: mips(normal, &[]),
+        specular: mips(specular, &categorical),
         flags,
         layers: layers.by_texture,
         auxiliary_flags: layers.auxiliary_flags,
@@ -95,7 +98,7 @@ fn tile(definition: Option<&TextureDef>, fallback: [u8; 4]) -> Vec<u8> {
     pixels
 }
 
-fn mips(base: Vec<u8>) -> Vec<Vec<u8>> {
+fn mips(base: Vec<u8>, categorical: &[bool]) -> Vec<Vec<u8>> {
     let layers = base.len() / (TEXTURE_SIZE * TEXTURE_SIZE * 4) as usize;
     let mut levels = vec![base];
     for level in 1..TEXTURE_MIPS {
@@ -107,6 +110,21 @@ fn mips(base: Vec<u8>) -> Vec<Vec<u8>> {
             for y in 0..size {
                 for x in 0..size {
                     for channel in 0..4 {
+                        if categorical.get(layer).copied().unwrap_or(false)
+                            && matches!(channel, 1 | 2)
+                        {
+                            // Never invent F0/metal IDs or cross the porosity/SSS
+                            // boundary. Runtime selects these channels at LOD 0;
+                            // the stored chain also keeps valid original values.
+                            pixels.push(
+                                previous[(layer * previous_size * previous_size
+                                    + y * 2 * previous_size
+                                    + x * 2)
+                                    * 4
+                                    + channel],
+                            );
+                            continue;
+                        }
                         let sum: u32 = [(0, 0), (1, 0), (0, 1), (1, 1)]
                             .into_iter()
                             .map(|(dx, dy)| {

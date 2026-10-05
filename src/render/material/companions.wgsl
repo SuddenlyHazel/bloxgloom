@@ -1,3 +1,14 @@
+// Called after continuous-channel filtering, also exercised by GPU readbacks.
+fn bg_material_channels(filtered: vec4f, uv: vec2f, layer: i32, lab: bool) -> vec4f {
+    if !lab { return filtered; }
+    // G and B have categorical encodings, so neither spatial interpolation nor
+    // mip interpolation can decode them correctly. Repeat matches the sampler.
+    let size = textureDimensions(material_specular, 0);
+    let pixel = min(vec2i(floor(fract(uv) * vec2f(size))), vec2i(size) - vec2i(1));
+    let categorical = textureLoad(material_specular, pixel, layer, 0);
+    return vec4f(filtered.r, categorical.g, categorical.b, filtered.a);
+}
+
 // Legacy RGB and imported labPBR XY/AO normals use image-down green. Derivatives
 // reconstruct the actual UV frame, including mirrored cube faces and rotating drops.
 fn bg_material_normal(input: VertexOutput, coordinates: MaterialCoordinates) -> vec3f {
@@ -20,9 +31,13 @@ fn bg_material_occlusion(input: VertexOutput, coordinates: MaterialCoordinates) 
         bg_material_layer(input.layer), coordinates.dx, coordinates.dy).b;
 }
 fn bg_material_specular(input: VertexOutput, coordinates: MaterialCoordinates, albedo: vec3f) -> BgPbr {
-    if (material_map_flags[u32(input.layer)].flags & 2u) == 0u { return bg_decode_pbr(vec4f(0.0), albedo, false, false); }
-    let texel = textureSampleGrad(material_specular, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy);
-    return bg_decode_pbr(texel, albedo, (material_map_flags[u32(input.layer)].flags & 16u) != 0u, true);
+    let flags = material_map_flags[u32(input.layer)].flags;
+    if (flags & 2u) == 0u { return bg_decode_pbr(vec4f(0.0), albedo, false, false); }
+    let layer = bg_material_layer(input.layer);
+    let filtered = textureSampleGrad(material_specular, material_sampler, coordinates.uv, layer, coordinates.dx, coordinates.dy);
+    let lab = (flags & 16u) != 0u;
+    let texel = bg_material_channels(filtered, coordinates.uv, layer, lab);
+    return bg_decode_pbr(texel, albedo, lab, true);
 }
 
 // Shared atmosphere drives both direct highlights and a roughness-filtered

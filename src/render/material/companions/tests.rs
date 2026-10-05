@@ -3,6 +3,7 @@ use std::borrow::Cow;
 mod gpu;
 mod parallax;
 mod pbr;
+mod sampling;
 
 fn register(catalog: &mut Catalog, key: &str, pixels: &[u8]) {
     let mut bytes = vec![];
@@ -83,6 +84,29 @@ fn lab_pbr_emission_sentinel_is_removed_before_mip_filtering() {
     assert_eq!(maps.specular[0][3], 0);
     assert_eq!(maps.specular[0][(TEXTURE_SIZE * 4 - 1) as usize], 254);
     assert_eq!(maps.specular.last().unwrap()[3], 127);
+}
+
+#[test]
+fn lab_pbr_mips_keep_categories_and_filter_continuous_channels() {
+    let mut catalog = Catalog::new();
+    register(&mut catalog, "test:ore", &[170, 150, 120, 255].repeat(4));
+    register(
+        &mut catalog,
+        "test:ore_s",
+        &[
+            0, 231, 255, 254, 128, 10, 19, 255, 128, 10, 19, 255, 0, 231, 255, 254,
+        ],
+    );
+    catalog.mark_lab_pbr_texture(TextureId::new(0));
+    let maps = prepare(&catalog);
+    for level in &maps.specular {
+        for pixel in level.chunks_exact(4) {
+            assert!(matches!(pixel[1], 10 | 231), "invented material ID");
+            assert!(matches!(pixel[2], 19 | 255), "invented porosity/SSS value");
+        }
+    }
+    let last = &maps.specular.last().unwrap()[..4];
+    assert_eq!(last, [64, 231, 255, 127]);
 }
 
 #[test]

@@ -1,4 +1,13 @@
 // Pure normal-frame and reflected-light math, shared by runtime and GPU regressions.
+fn bg_normal_frame_supported(flat: vec3f, px: vec3f, py: vec3f) -> bool {
+    let geometric = cross(px,py);
+    let area = dot(geometric,geometric);
+    let alignment = dot(flat,geometric);
+    // Crossed plants intentionally shade upward on vertical cards. Projecting
+    // their UV axes onto that shading plane collapses a basis vector to zero.
+    return area > 0.000000000000000001
+        && alignment*alignment > dot(flat,flat)*area*0.00000001;
+}
 fn bg_texture_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f) -> mat3x3f {
     let determinant = ux.x * uy.y - ux.y * uy.x;
     let n = normalize(flat);
@@ -10,7 +19,8 @@ fn bg_texture_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f) -> 
 }
 fn bg_normal_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f,
     tangent_normal: vec3f) -> vec3f {
-    if abs(ux.x * uy.y - ux.y * uy.x) < 0.000000000001 { return flat; }
+    if abs(ux.x * uy.y - ux.y * uy.x) < 0.000000000001
+        || !bg_normal_frame_supported(flat,px,py) { return flat; }
     return normalize(bg_texture_frame(flat, px, py, ux, uy) * tangent_normal);
 }
 
