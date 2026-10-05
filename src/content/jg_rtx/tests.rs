@@ -1,4 +1,5 @@
 use super::*;
+mod pbr;
 
 #[test]
 fn import_preserves_original_assignments_and_compiles_every_block_item() {

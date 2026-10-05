@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import numpy as np
 from PIL import Image
+import pbr
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_SIZE = 256
@@ -68,14 +69,11 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
             if candidate.exists():
                 s_path = candidate
                 break
+    maps = {}
     for suffix in ['n', 's']:
         src = n_path if suffix == 'n' else s_path
         if edition == 'java' and src.exists():
             im = frame(src)
-            if suffix == 'n':
-                a = np.array(im)
-                a[:,:,1] = 255 - a[:,:,1]  # OpenGL -> renderer DirectX convention; retain AO blue.
-                im = Image.fromarray(a)
         elif suffix == 'n':
             im = Image.new('RGBA', color.size, (128, 128, 255, 255))
             if src.exists():
@@ -99,6 +97,11 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
                 a[:,:,3] = np.where(mer[:,:,1] > 0, np.rint(mer[:,:,1]*254), 255).astype(np.uint8)
                 im = Image.fromarray(a)
         im = im.resize(color.size, Image.Resampling.LANCZOS)
+        maps[suffix] = im
+    maps['n'], maps['s'], conversion = pbr.repair_companions(
+        BEDROCK, path.stem, maps['n'], maps['s'],
+        n_path if edition == 'java' and n_path.exists() else None, color.size)
+    for suffix, im in maps.items():
         companion = dest.with_stem(dest.stem + '_' + suffix)
         im.save(companion, optimize=True)
         companions.append({'key':key+'_'+suffix, 'path':str(companion.relative_to(ROOT)),
@@ -112,6 +115,16 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
                        'normal_source':str(n_path.relative_to(SOURCE)) if n_path.exists() else None,
                        'material_source':str(s_path.relative_to(SOURCE)) if s_path.exists() else None,
                        'edition':edition, 'tint':tint})
+    record = PROVENANCE[-1]
+    record['smoothness_source'] = record['material_source']
+    record['ao_height_source'] = record['normal_source'] if edition == 'java' else None
+    record['pbr_conversion'] = {
+        key: str(value.relative_to(SOURCE)) if isinstance(value, Path) else value
+        for key, value in conversion.items()
+    }
+    for field in ['normal_source', 'material_source']:
+        if field in conversion:
+            record[field] = str(conversion[field].relative_to(SOURCE))
     java_candidate = JAVA / area / (stem + '.png')
     if edition == 'bedrock' and java_candidate.exists():
         PROVENANCE[-1]['selection_note'] = f'Java {stem}.png is wholly transparent; selected visible Bedrock {path.suffix[1:].upper()}.'
@@ -276,7 +289,8 @@ def compose_sunflower():
         dest = top_path.with_stem(top_path.stem + suffix)
         src = front_path.with_stem(front_path.stem + suffix)
         base = Image.open(dest).convert('RGBA')
-        piece = Image.open(src).convert('RGBA').resize((head_size, head_size), Image.Resampling.LANCZOS)
+        piece = (pbr.data_image(src, (head_size, head_size)) if suffix else
+                 Image.open(src).convert('RGBA').resize((head_size, head_size), Image.Resampling.LANCZOS))
         if suffix:
             base.paste(piece, ((width-head_size)//2, 0), mask)
         else:
