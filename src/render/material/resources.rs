@@ -1,8 +1,9 @@
 //! Admission before material pixels, mipmaps or GPU arrays are allocated.
 use super::{TEXTURE_MIPS, TEXTURE_SIZE};
 
-// Preserve 512 admitted catalog layers at 256px across the three mipmapped
-// arrays. This is a ceiling; native worlds allocate only their actual layers.
+// Preserve 512 admitted material layers at 256px across the three mipmapped
+// arrays. Paired catalog companion entries share their base material layer.
+// This is a ceiling; native worlds allocate only their actual material layers.
 pub(crate) const MAX_ARRAY_BYTES: u64 = 512 * 1024 * 1024;
 const fn bytes_per_layer() -> u64 {
     let mut bytes = 0;

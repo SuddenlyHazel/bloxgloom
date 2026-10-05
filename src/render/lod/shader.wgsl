@@ -6,6 +6,8 @@ struct Tile { relative: vec4f, origin: vec4i };
 @group(1) @binding(0) var<uniform> tile: Tile;
 @group(2) @binding(0) var material: texture_2d_array<f32>;
 @group(2) @binding(1) var material_sampler: sampler;
+struct MaterialMetadata { flags: u32, layer: u32 };
+@group(2) @binding(5) var<storage, read> material_metadata: array<MaterialMetadata>;
 struct In { @location(0) position: vec3f, @location(1) color: vec4f, @location(2) surface: u32 };
 struct Out {
     @builtin(position) position: vec4f,
@@ -58,7 +60,7 @@ fn bg_lod_coverage(v: Out) {
     let encoded_layer = v.surface >> 13u;
     var albedo = v.color.rgb;
     if encoded_layer != 0u && options.y > 0.5 {
-        let texel = textureSampleGrad(material, material_sampler, uv, i32(encoded_layer-1u), dx, dy);
+        let texel = textureSampleGrad(material, material_sampler, uv, i32(material_metadata[encoded_layer-1u].layer), dx, dy);
         // Continuous fade to linear texture averages as texels become distant.
         let detail = 1.0-smoothstep(96.0, 240.0, length(v.relative));
         albedo = mix(albedo, texel.rgb, detail);

@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 pub(super) mod companions;
+pub(super) mod layers;
 pub(super) mod resources;
 
 use crate::content;
@@ -11,11 +12,11 @@ pub(super) const TEXTURE_SIZE: u32 = 256;
 pub(super) const TEXTURE_MIPS: u32 = TEXTURE_SIZE.ilog2() + 1;
 #[cfg(test)]
 pub(super) fn texture_layers() -> u32 {
-    content::catalog().textures().len() as u32
+    texture_layers_for(content::catalog())
 }
 
-pub(super) fn texture_layers_for(catalog: &content::Catalog) -> u32 {
-    catalog.textures().len() as u32
+pub(crate) fn texture_layers_for(catalog: &content::Catalog) -> u32 {
+    layers::Layers::new(catalog).definitions.len() as u32
 }
 
 /// Keep directional block textures upright on both terrain quads and item cubes.
@@ -68,18 +69,15 @@ pub(super) fn item_material_layer_for(
     }
 }
 
-#[cfg(test)]
-pub(super) fn material_tiles() -> Vec<u8> {
-    material_tiles_for(content::catalog())
-}
-
 pub(super) fn material_tiles_for(catalog: &content::Catalog) -> Vec<u8> {
-    let usage = resources::validate(catalog.textures().len(), resources::MAX_ARRAY_LAYERS)
+    let layers = layers::Layers::new(catalog);
+    let usage = resources::validate(layers.definitions.len(), resources::MAX_ARRAY_LAYERS)
         .expect("material resources must pass admission before pixel preparation");
     let mut pixels = Vec::with_capacity(
         (u64::from(TEXTURE_SIZE) * u64::from(TEXTURE_SIZE) * u64::from(usage.layers) * 4) as usize,
     );
-    for definition in catalog.textures() {
+    for id in layers.definitions {
+        let definition = &catalog.textures()[id];
         let layer_start = pixels.len();
         let mut decoder = png::Decoder::new(Cursor::new(definition.png.as_ref()));
         decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
@@ -158,6 +156,7 @@ pub(super) fn material_mips() -> Vec<Vec<u8>> {
 }
 
 pub(super) fn material_mips_for(catalog: &content::Catalog) -> Vec<Vec<u8>> {
+    let layers = texture_layers_for(catalog);
     let mut levels = Vec::with_capacity(TEXTURE_MIPS as usize);
     levels.push(material_tiles_for(catalog));
     for level in 1..TEXTURE_MIPS {
@@ -165,9 +164,8 @@ pub(super) fn material_mips_for(catalog: &content::Catalog) -> Vec<Vec<u8>> {
         let size = TEXTURE_SIZE >> level;
         let previous = levels.last().unwrap();
         let previous_layer_bytes = (previous_size * previous_size * 4) as usize;
-        let mut pixels =
-            Vec::with_capacity((size * size * texture_layers_for(catalog) * 4) as usize);
-        for layer in 0..texture_layers_for(catalog) as usize {
+        let mut pixels = Vec::with_capacity((size * size * layers * 4) as usize);
+        for layer in 0..layers as usize {
             for y in 0..size {
                 for x in 0..size {
                     let offsets = [(0, 0), (1, 0), (0, 1), (1, 1)];

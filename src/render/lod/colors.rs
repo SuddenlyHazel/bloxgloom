@@ -2,6 +2,7 @@ use crate::content::Catalog;
 /// Texture-derived linear colors. Construct on a preparation/mesh worker.
 pub(crate) struct FaceColors {
     layers: Vec<[f32; 3]>,
+    by_texture: Vec<u32>,
 }
 impl FaceColors {
     pub(crate) fn new(catalog: &Catalog) -> Self {
@@ -27,7 +28,10 @@ impl FaceColors {
                 sum.map(|s| s / weight.max(1.0))
             })
             .collect();
-        Self { layers }
+        Self {
+            layers,
+            by_texture: super::super::material::layers::Layers::new(catalog).by_texture,
+        }
     }
     pub(super) fn face(
         &self,
@@ -37,6 +41,10 @@ impl FaceColors {
         side: i32,
     ) -> [f32; 3] {
         let layer = super::super::material::material_layer_for(catalog, state, axis, side) as usize;
-        self.layers.get(layer).copied().unwrap_or([0.3, 0.3, 0.3])
+        self.by_texture
+            .get(layer)
+            .and_then(|&packed| self.layers.get(packed as usize))
+            .copied()
+            .unwrap_or([0.3, 0.3, 0.3])
     }
 }

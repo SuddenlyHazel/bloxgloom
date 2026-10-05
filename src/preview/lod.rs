@@ -104,7 +104,13 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
         })
         .await?;
     let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
+        .request_device(&wgpu::DeviceDescriptor {
+            required_limits: render::material_device_limits(
+                adapter.limits(),
+                render::material_texture_layers(crate::content::catalog()) as usize,
+            )?,
+            ..Default::default()
+        })
         .await?;
     let width = 1000;
     let height = 600;

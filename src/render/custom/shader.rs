@@ -85,7 +85,7 @@ struct BgVisualData { frame: vec4f, materials: array<BgMaterialData, 16> };
             }
             declarations.push_str(&format!(r#"
 fn {prefix}material_parameter(index: u32) -> vec4f {{ return bg_visual.materials[{index}].parameters[min(index, 7u)]; }}
-fn {prefix}material_texture(uv: vec2f, index: u32) -> vec4f {{ return textureSampleLevel(material, material_sampler, uv, i32(bg_visual.materials[{index}].textures[min(index, {last}u)]), 0.0); }}
+fn {prefix}material_texture(uv: vec2f, index: u32) -> vec4f {{ return bg_material_auxiliary(uv, bg_visual.materials[{index}].textures[min(index, {last}u)]); }}
 fn {prefix}material_time() -> f32 {{ return bg_visual.frame.x; }}
 fn {prefix}material_sun() -> vec3f {{ return normalize(camera.sun.xyz); }}
 "#, last = material.textures.len() - 1));

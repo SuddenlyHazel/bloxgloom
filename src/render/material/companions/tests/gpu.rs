@@ -219,9 +219,10 @@ fn gpu_normal_frames_and_specular_preserve_mirrors_caves_shadows_and_missing_map
 #[test]
 fn explicit_local_transport_validates_with_custom_vertex_normals() {
     let source = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
         crate::render::custom::TYPES,
         include_str!("../../relief.wgsl"),
+        include_str!("../../pbr.wgsl"),
         include_str!("../../parallax.wgsl"),
         include_str!("../../companions.wgsl"),
         r#"fn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {

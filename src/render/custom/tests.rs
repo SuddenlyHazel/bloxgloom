@@ -59,8 +59,11 @@ fn gpu_preview(extended: bool) {
     use crate::render::{VERTEX_FLOATS, pipeline};
     use wgpu::util::DeviceExt;
     let instance = wgpu::Instance::default();
-    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        apply_limit_buckets: false,
+        ..Default::default()
+    }))
+    .unwrap();
     let mut catalog = crate::content::Catalog::builtins();
     let layer = catalog
         .register_texture(crate::content::TextureDef {
@@ -116,6 +119,16 @@ fn material_fragment(input: BgSurface) -> BgSurface {
             shader: "fn material_fragment(input: BgSurface) -> BgSurface { return input; }".into(),
         });
     }
+    let required_limits = crate::render::material_device_limits(
+        adapter.limits(),
+        crate::render::material_texture_layers(&catalog) as usize,
+    )
+    .unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        required_limits,
+        ..Default::default()
+    }))
+    .unwrap();
     let ((opaque, cutout, _, _, _), mut gpu) = pipeline::create_custom_voxel_pipeline(
         &device,
         &queue,

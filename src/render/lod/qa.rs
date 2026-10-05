@@ -33,11 +33,21 @@ impl EditGpu {
     async fn new(directory: PathBuf) -> Self {
         let instance = wgpu::Instance::default();
         let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                apply_limit_buckets: false,
+                ..Default::default()
+            })
             .await
             .expect("opt-in LOD GPU QA adapter");
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor {
+                required_limits: super::super::material_device_limits(
+                    adapter.limits(),
+                    super::super::material_texture_layers(crate::content::catalog()) as usize,
+                )
+                .expect("opt-in LOD GPU QA material limits"),
+                ..Default::default()
+            })
             .await
             .expect("opt-in LOD GPU QA device");
         let (materials, _, _, _, textures) =

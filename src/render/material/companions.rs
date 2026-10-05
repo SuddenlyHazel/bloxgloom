@@ -1,12 +1,14 @@
 //! Catalog-key companion lookup and linear-data mip preparation, off the window thread.
 use super::{TEXTURE_MIPS, TEXTURE_SIZE};
-use crate::content::{Catalog, TextureDef};
+use crate::content::{Catalog, TextureDef, TextureId};
 use std::{collections::HashMap, io::Cursor};
 
 pub(crate) struct Maps {
     pub normal: Vec<Vec<u8>>,
     pub specular: Vec<Vec<u8>>,
     pub flags: Vec<u32>,
+    pub layers: Vec<u32>,
+    pub auxiliary_flags: Vec<u32>,
 }
 
 pub(crate) fn prepare(catalog: &Catalog) -> Maps {
@@ -15,10 +17,11 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
         .iter()
         .map(|t| (t.key.as_ref(), t))
         .collect();
+    let layers = super::layers::Layers::new(catalog);
     let mut normal = Vec::new();
     let mut specular = Vec::new();
     let mut flags = Vec::new();
-    for texture in catalog.textures() {
+    for (id, texture) in catalog.textures().iter().enumerate() {
         let n = definitions
             .get(format!("{}_n", texture.key).as_str())
             .copied();
@@ -30,16 +33,36 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
         flags.push(
             u32::from(n.is_some())
                 | (u32::from(s.is_some()) << 1)
+                | (u32::from(catalog.is_lab_pbr_texture(TextureId::new(id as u32))) << 4)
                 | (((texture.foliage.wrap * 255.0).round() as u32) << 8)
                 | (((texture.foliage.transmission * 255.0).round() as u32) << 16),
         );
+    }
+    for id in layers.definitions {
+        let texture = &catalog.textures()[id];
+        let n = definitions
+            .get(format!("{}_n", texture.key).as_str())
+            .copied();
+        let s = definitions
+            .get(format!("{}_s", texture.key).as_str())
+            .copied();
         normal.extend(tile(n, [128, 128, 255, 255]));
-        specular.extend(tile(s, [0, 0, 0, 255]));
+        let mut specular_tile = tile(s, [0, 0, 0, 255]);
+        if catalog.is_lab_pbr_texture(TextureId::new(id as u32)) {
+            for pixel in specular_tile.chunks_exact_mut(4) {
+                if pixel[3] == 255 {
+                    pixel[3] = 0;
+                }
+            }
+        }
+        specular.extend(specular_tile);
     }
     Maps {
         normal: mips(normal),
         specular: mips(specular),
         flags,
+        layers: layers.by_texture,
+        auxiliary_flags: layers.auxiliary_flags,
     }
 }
 

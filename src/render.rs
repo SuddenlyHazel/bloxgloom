@@ -17,6 +17,7 @@ mod material;
 pub(crate) mod water;
 pub(crate) mod weather;
 pub(crate) use material::resources::required_limits as material_device_limits;
+pub(crate) use material::texture_layers_for as material_texture_layers;
 mod mesh;
 pub(crate) mod model_asset;
 pub(crate) mod model_renderer;
@@ -271,8 +272,9 @@ impl Renderer {
             })
             .await
             .map_err(RendererError::Adapter)?;
-        let required_limits = material_device_limits(adapter.limits(), catalog.textures().len())
-            .map_err(RendererError::Materials)?;
+        let required_limits =
+            material_device_limits(adapter.limits(), material_texture_layers(&catalog) as usize)
+                .map_err(RendererError::Materials)?;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 required_limits,

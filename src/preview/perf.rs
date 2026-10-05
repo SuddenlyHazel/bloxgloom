@@ -85,7 +85,7 @@ pub(super) async fn run_perf_benchmark_async(
             required_features: requested_features,
             required_limits: render::material_device_limits(
                 adapter.limits(),
-                crate::content::catalog().textures().len(),
+                render::material_texture_layers(crate::content::catalog()) as usize,
             )?,
             ..Default::default()
         })

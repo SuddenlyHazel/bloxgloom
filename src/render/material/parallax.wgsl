@@ -31,7 +31,7 @@ fn bg_material_coordinates(input: VertexOutput, parallax: bool) -> MaterialCoord
     let px = dpdx(input.world_position);
     let py = dpdy(input.world_position);
     let unchanged = MaterialCoordinates(input.uv, dx, dy);
-    if !parallax || camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)] & 1u) == 0u
+    if !parallax || camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)].flags & 1u) == 0u
         || abs(dx.x * dy.y - dx.y * dy.x) < 0.000000000001 { return unchanged; }
     let eye = camera.eye.xyz - input.world_position;
     let distance = length(eye);
@@ -42,5 +42,5 @@ fn bg_material_coordinates(input: VertexOutput, parallax: bool) -> MaterialCoord
     let ray = bg_parallax_ray(view, distance, mip, camera.parallax);
     if dot(ray, ray) < 0.000000000001 { return unchanged; }
     let steps = u32(mix(camera.parallax.z, 12.0, clamp(view.z, 0.0, 1.0)));
-    return MaterialCoordinates(bg_parallax_trace(input.uv, input.layer, dx, dy, ray, steps), dx, dy);
+    return MaterialCoordinates(bg_parallax_trace(input.uv, bg_material_layer(input.layer), dx, dy, ray, steps), dx, dy);
 }

@@ -2,6 +2,7 @@ use super::*;
 use std::borrow::Cow;
 mod gpu;
 mod parallax;
+mod pbr;
 
 fn register(catalog: &mut Catalog, key: &str, pixels: &[u8]) {
     let mut bytes = vec![];
@@ -37,25 +38,14 @@ fn companion_keys_resolve_independently_of_registration_order_and_missing_maps_f
     register(&mut catalog, "test:plain", &[170, 150, 120, 255].repeat(4));
     let maps = prepare(&catalog);
     assert_eq!(maps.flags, vec![0, 0, 3, 0]);
+    assert_eq!(maps.layers, vec![0, 0, 0, 1]);
     let stride = (TEXTURE_SIZE * TEXTURE_SIZE * 4) as usize;
-    assert_eq!(
-        &maps.normal[0][2 * stride..2 * stride + 4],
-        &[128, 128, 255, 17]
-    );
-    assert_eq!(
-        &maps.specular[0][2 * stride..2 * stride + 4],
-        &[64, 0, 0, 255]
-    );
-    assert_eq!(
-        &maps.normal[0][3 * stride..3 * stride + 4],
-        &[128, 128, 255, 255]
-    );
-    assert_eq!(
-        &maps.specular[0][3 * stride..3 * stride + 4],
-        &[0, 0, 0, 255]
-    );
+    assert_eq!(&maps.normal[0][..4], &[128, 128, 255, 17]);
+    assert_eq!(&maps.specular[0][..4], &[64, 0, 0, 255]);
+    assert_eq!(&maps.normal[0][stride..stride + 4], &[128, 128, 255, 255]);
+    assert_eq!(&maps.specular[0][stride..stride + 4], &[0, 0, 0, 255]);
     assert_eq!(maps.normal.len(), TEXTURE_MIPS as usize);
-    assert_eq!(&maps.normal.last().unwrap()[8..12], &[128, 128, 255, 17]);
+    assert_eq!(&maps.normal.last().unwrap()[..4], &[128, 128, 255, 17]);
 }
 
 #[test]
@@ -77,13 +67,42 @@ fn data_mips_are_linear_and_do_not_weight_normals_by_height_alpha() {
 }
 
 #[test]
+fn lab_pbr_emission_sentinel_is_removed_before_mip_filtering() {
+    let mut catalog = Catalog::new();
+    register(&mut catalog, "test:rock", &[170, 150, 120, 255].repeat(4));
+    register(
+        &mut catalog,
+        "test:rock_s",
+        &[
+            64, 10, 19, 255, 64, 10, 19, 254, 64, 10, 19, 255, 64, 10, 19, 254,
+        ],
+    );
+    catalog.mark_lab_pbr_texture(crate::content::TextureId::new(0));
+    let maps = prepare(&catalog);
+    assert_eq!(maps.flags[0] & 18, 18);
+    assert_eq!(maps.specular[0][3], 0);
+    assert_eq!(maps.specular[0][(TEXTURE_SIZE * 4 - 1) as usize], 254);
+    assert_eq!(maps.specular.last().unwrap()[3], 127);
+}
+
+#[test]
 fn builtin_companions_are_registered_without_changing_original_layers() {
     let catalog = Catalog::builtins();
     let maps = prepare(&catalog);
-    assert_eq!(&maps.flags[..11], &[3; 11]);
-    assert!(maps.flags[11..19].iter().all(|&f| f & 3 == 0));
+    assert!(maps.flags[..11].iter().all(|flags| flags & 3 == 3));
+
     assert_eq!(maps.flags[19], 3);
-    assert!(maps.flags[20..].iter().all(|&f| f == 0));
+    for (id, texture) in catalog.textures().iter().enumerate() {
+        let exists = |suffix: &str| {
+            catalog
+                .textures()
+                .iter()
+                .any(|candidate| candidate.key.as_ref() == format!("{}{suffix}", texture.key))
+        };
+        let expected = u32::from(exists("_n")) | (u32::from(exists("_s")) << 1);
+        assert_eq!(maps.flags[id] & 3, expected, "{}", texture.key);
+    }
+    assert!(super::super::texture_layers_for(&catalog) < catalog.textures().len() as u32);
     assert_eq!(catalog.textures()[3].key, "bloxgloom:stone");
     assert_eq!(catalog.textures()[27].key, "bloxgloom:grass_top_n");
     assert_eq!(catalog.textures()[45].key, "bloxgloom:wood_side_n");
@@ -117,7 +136,7 @@ fn foliage_metadata_is_opt_in_bounded_and_fingerprinted() {
         }
     }
     let builtins = Catalog::builtins();
-    for texture in builtins.textures() {
+    for texture in &builtins.textures()[..27] {
         if matches!(
             texture.key.as_ref(),
             "bloxgloom:leaves"

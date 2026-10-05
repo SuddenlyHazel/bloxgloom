@@ -671,7 +671,7 @@ async fn render_previews_weather(
         .request_device(&wgpu::DeviceDescriptor {
             required_limits: render::material_device_limits(
                 adapter.limits(),
-                crate::content::catalog().textures().len(),
+                render::material_texture_layers(crate::content::catalog()) as usize,
             )?,
             ..Default::default()
         })

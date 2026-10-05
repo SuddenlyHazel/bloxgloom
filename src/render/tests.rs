@@ -65,7 +65,8 @@ fn public_fixture_assets_reach_material_upload_lighting_and_mesh_compilation() {
     }
     let tiles = material::material_tiles_for(&catalog);
     let stride = (material::TEXTURE_SIZE.pow(2) * 4) as usize;
-    let pixels = &tiles[layer * stride..(layer + 1) * stride];
+    let packed = material::layers::Layers::new(&catalog).by_texture[layer] as usize;
+    let pixels = &tiles[packed * stride..(packed + 1) * stride];
     assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
     assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
 }
@@ -269,22 +270,21 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         &mips[0][(material::TEXTURE_SIZE * material::TEXTURE_SIZE * 3 * 4) as usize..][..3]
     );
     let layer_bytes = (material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize;
-    for (layer, _) in crate::content::catalog()
+    let layers = material::layers::Layers::new(crate::content::catalog());
+    for (texture_id, texture) in crate::content::catalog()
         .textures()
         .iter()
         .enumerate()
         .filter(|(_, texture)| texture.alpha_cutout)
     {
+        let layer = layers.by_texture[texture_id] as usize;
         let mut alpha = mips[0][layer * layer_bytes..(layer + 1) * layer_bytes]
             .chunks_exact(4)
             .map(|pixel| pixel[3]);
         assert!(
-            alpha.clone().any(|value| value == 0),
-            "layer {layer} needs transparent texels"
-        );
-        assert!(
             alpha.any(|value| value >= 128),
-            "layer {layer} needs visible texels"
+            "{} (layer {layer}) needs visible texels",
+            texture.key
         );
     }
 }
@@ -382,8 +382,10 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
     );
     assert_eq!(
         material::material_tiles_for(&catalog).len(),
-        (catalog.textures().len() as u32 * material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4)
-            as usize
+        (material::texture_layers_for(&catalog)
+            * material::TEXTURE_SIZE
+            * material::TEXTURE_SIZE
+            * 4) as usize
     );
 }
 
@@ -428,23 +430,68 @@ fn remapped_connection_catalog_drives_foliage_meshes_and_drop_art() {
 }
 
 #[test]
-fn material_edges_tile_without_seams() {
-    let tiles = material::material_tiles();
+fn material_edges_tile_only_when_requested() {
+    let mut encoded = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut encoded, 2, 2);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&[
+                230, 10, 50, 255, 10, 90, 120, 255, 20, 150, 200, 255, 60, 230, 40, 255,
+            ])
+            .unwrap();
+    }
+    let mut catalog = crate::content::Catalog::new();
+    for (key, horizontal, vertical) in [
+        ("test:both", true, true),
+        ("test:horizontal", true, false),
+        ("test:authored", false, false),
+    ] {
+        catalog
+            .register_texture(crate::content::TextureDef {
+                key: key.into(),
+                png: std::borrow::Cow::Owned(encoded.clone()),
+                stitch_edges: horizontal,
+                stitch_vertical: vertical,
+                alpha_cutout: false,
+                emission_strength: 0.0,
+                foliage: Default::default(),
+            })
+            .unwrap();
+    }
+    let tiles = material::material_tiles_for(&catalog);
     let size = material::TEXTURE_SIZE as usize;
     let layer_bytes = size * size * 4;
-    for layer in 0..11 {
+    for (layer, texture) in catalog.textures().iter().enumerate() {
         let pixels = &tiles[layer * layer_bytes..(layer + 1) * layer_bytes];
+        if !texture.stitch_edges {
+            assert_eq!(
+                &pixels[..4],
+                &[230, 10, 50, 255],
+                "authored art is preserved"
+            );
+            continue;
+        }
         for y in 0..size {
             let left = &pixels[y * size * 4..y * size * 4 + 3];
             let right = &pixels[(y * size + size - 1) * 4..][..3];
-            assert_eq!(left, right, "horizontal seam in layer {layer}, row {y}");
+            assert_eq!(left, right, "horizontal seam in {}, row {y}", texture.key);
         }
-        if layer != 1 {
+        if texture.stitch_vertical {
             for x in 0..size {
                 let top = &pixels[x * 4..x * 4 + 3];
                 let bottom = &pixels[((size - 1) * size + x) * 4..][..3];
-                assert_eq!(top, bottom, "vertical seam in layer {layer}, column {x}");
+                assert_eq!(top, bottom, "vertical seam in {}, column {x}", texture.key);
             }
+        } else {
+            assert_ne!(
+                &pixels[..3],
+                &pixels[(size - 1) * size * 4..][..3],
+                "directional top/bottom art remains distinct"
+            );
         }
     }
 }

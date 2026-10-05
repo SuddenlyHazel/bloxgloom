@@ -13,7 +13,7 @@ fn counts_every_mipmap_and_enforces_the_array_byte_boundary() {
 
 #[test]
 fn requests_enough_device_layers_for_package_textures_and_native_materials() {
-    let layers = crate::content::Catalog::builtins().textures().len() + 256;
+    let layers = MAX_ARRAY_LAYERS as usize;
     assert!(layers > wgpu::Limits::default().max_texture_array_layers as usize);
     let adapter = wgpu::Limits {
         max_texture_array_layers: 2048,
@@ -60,7 +60,9 @@ fn target_package_texture_count_builds_a_valid_gpu_material_array() {
             .unwrap();
     }
     let png: std::borrow::Cow<'static, [u8]> = std::borrow::Cow::Owned(png_bytes);
-    for i in 0..256 {
+    let target = MAX_ARRAY_LAYERS as usize;
+    let extra = target - super::super::texture_layers_for(&catalog) as usize;
+    for i in 0..extra {
         catalog
             .public_texture(&bloxgloom_host_api::content::Texture {
                 key: format!("capacity:t{i}"),
@@ -81,7 +83,10 @@ fn target_package_texture_count_builds_a_valid_gpu_material_array() {
         eprintln!("material capacity GPU test skipped: no headless adapter");
         return;
     };
-    let required_limits = match required_limits(adapter.limits(), catalog.textures().len()) {
+    let required_limits = match required_limits(
+        adapter.limits(),
+        super::super::texture_layers_for(&catalog) as usize,
+    ) {
         Ok(limits) => limits,
         Err(error) => {
             eprintln!(

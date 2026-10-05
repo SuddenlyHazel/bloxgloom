@@ -11,8 +11,22 @@ fn asynchronous_gpu_candidate_contains_both_materials_and_effects() {
     );
     let material = bundle.material().unwrap().resolve(&catalog).unwrap();
     let instance = wgpu::Instance::default();
-    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        apply_limit_buckets: false,
+        ..Default::default()
+    }))
+    .unwrap();
+    let (device, queue) = pollster::block_on(
+        adapter.request_device(&wgpu::DeviceDescriptor {
+            required_limits: crate::render::material_device_limits(
+                adapter.limits(),
+                crate::render::material_texture_layers(&catalog) as usize,
+            )
+            .unwrap(),
+            ..Default::default()
+        }),
+    )
+    .unwrap();
     let mut preparation = Preparation::start(
         device.clone(),
         queue.clone(),
@@ -21,7 +35,10 @@ fn asynchronous_gpu_candidate_contains_both_materials_and_effects() {
         bundle.effect().map(|e| e.as_ref()),
     )
     .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    // Full material arrays are deliberately prepared off-thread. This test
+    // verifies asynchronous composition, not GPU upload latency under parallel
+    // headless tests; retain a generous watchdog for a stuck worker.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     let ready = loop {
         if let Some(result) = preparation.poll() {
             break result.unwrap();

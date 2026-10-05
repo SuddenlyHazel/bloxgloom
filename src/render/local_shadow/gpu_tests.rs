@@ -27,14 +27,26 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            apply_limit_buckets: false,
+            ..Default::default()
+        }))
+        .unwrap();
         Self::from_adapter(adapter)
     }
 
     fn from_adapter(adapter: wgpu::Adapter) -> Self {
         eprintln!("point shadow GPU: {:?}", adapter.get_info());
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+        let required_limits = crate::render::material_device_limits(
+            adapter.limits(),
+            crate::render::material_texture_layers(crate::content::catalog()) as usize,
+        )
+        .unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            required_limits,
+            ..Default::default()
+        }))
+        .unwrap();
         let (pipeline, _, camera, _, textures) =
             pipeline::create_voxel_pipeline(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
         let caster_pipelines = pipeline::create_sun_shadow_pipelines(&device, &pipeline, None);
@@ -507,7 +519,10 @@ fn gpu_gl_point_shadow_depth_array_and_six_face_receivers() {
         backends: wgpu::Backends::GL,
         ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
-    let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        apply_limit_buckets: false,
+        ..Default::default()
+    })) else {
         eprintln!("GL adapter unavailable; optional local shadow validation skipped");
         return;
     };
