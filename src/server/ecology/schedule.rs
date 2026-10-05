@@ -43,10 +43,9 @@ impl Runtime {
         if let Some(y) = cell[1].checked_sub(1) {
             self.hint([cell[0], y, cell[2]]);
         }
-        if matches!(
-            block,
-            crate::world::AIR | crate::world::WOOD | crate::world::WOOD_X | crate::world::WOOD_Z
-        ) {
+        if block == crate::world::AIR
+            || crate::content::jg_rtx::is_log(crate::content::catalog(), block)
+        {
             let range = i32::from(LOG_RANGE);
             for dz in -range..=range {
                 for dy in -range..=range {

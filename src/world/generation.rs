@@ -244,9 +244,16 @@ fn builtin_state_key(block: BlockId) -> Result<&'static str, GenerationError> {
         "bloxgloom:tall_grass",
         "bloxgloom:water",
     ];
-    KEYS.get(block.0 as usize).copied().ok_or_else(|| {
-        GenerationError::Contributor(format!("unknown builtin generation block ID {}", block.0))
-    })
+    KEYS.get(block.0 as usize)
+        .copied()
+        .or_else(|| {
+            crate::content::catalog()
+                .state(block)
+                .map(|state| state.key.as_ref())
+        })
+        .ok_or_else(|| {
+            GenerationError::Contributor(format!("unknown builtin generation block ID {}", block.0))
+        })
 }
 
 /// The standalone builtin preview follows the same contributor/composition path

@@ -40,10 +40,14 @@ pub(in crate::server) fn advance(state: &mut State, tick: TickId) -> io::Result<
     let mut missing = Vec::new();
     for cell in state.ecology.samples() {
         // Non-ecological voxels do not need a read-stamp allocation.
-        if !matches!(
-            state.world.cached_block(cell[0], cell[1], cell[2]),
-            Some(world::LEAVES | world::DIRT | world::GRASS)
-        ) {
+        if !state
+            .world
+            .cached_block(cell[0], cell[1], cell[2])
+            .is_some_and(|block| {
+                matches!(block, world::DIRT | world::GRASS)
+                    || crate::content::jg_rtx::is_leaf(state.world.catalog(), block)
+            })
+        {
             continue;
         }
         let mut reads = TerrainReads::default();

@@ -1,12 +1,22 @@
 //! Deterministic terrain generation, biome sampling, and chunk decoration.
 mod hydrology;
+mod materials;
+#[cfg(test)]
+mod tests;
+mod trees;
+mod vegetation;
+pub(super) use vegetation::ground_plant;
+
+#[cfg(test)]
+use trees::tree_block_at;
+use trees::{TREE_CELL, tree_piece};
+pub(super) use trees::{TREE_RADIUS, Tree, tree_anchor};
 
 use std::collections::HashMap;
 
 use super::{
-    AIR, BEDROCK_Y, BLUE_FLOWER, BlockId, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey, DIRT, FERN,
-    GRASS, GRAVEL, LEAVES, MAX_GENERATED_HEIGHT, MOSS, RED_FLOWER, SAND, SNOW, STONE, TALL_GRASS,
-    WATER, WOOD, YELLOW_FLOWER, supports_plant,
+    AIR, BEDROCK_Y, BlockId, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey, DIRT, GRASS, GRAVEL,
+    MAX_GENERATED_HEIGHT, MOSS, SAND, SNOW, STONE, WATER,
 };
 
 pub(super) fn generate_blocks(key: ChunkKey, seed: u64) -> Vec<BlockId> {
@@ -61,105 +71,6 @@ pub(super) fn generated_block(x: i64, y: i64, z: i64, seed: u64) -> BlockId {
     AIR
 }
 
-const TREE_CELL: i64 = 16;
-pub(super) const TREE_RADIUS: i64 = 3;
-
-#[derive(Clone, Copy)]
-pub(super) struct Tree {
-    pub(super) x: i64,
-    pub(super) z: i64,
-    pub(super) ground_y: i64,
-    pub(super) trunk_top: i64,
-}
-
-pub(super) fn tree_anchor(cell_x: i64, cell_z: i64, seed: u64) -> Option<Tree> {
-    let hash = lattice_hash(seed ^ 0x906f_89ad, cell_x, 0, cell_z);
-    let x = cell_x * TREE_CELL + 2 + ((hash >> 8) % 13) as i64;
-    let z = cell_z * TREE_CELL + 2 + ((hash >> 16) % 13) as i64;
-    if x.abs() <= 14 && z.abs() <= 14 {
-        return None;
-    }
-    let column = terrain_column(x, z, seed);
-    if column.water_level.is_some() {
-        return None;
-    }
-    let frequency = match column.biome {
-        Biome::Forest => 380,
-        Biome::Plains => 45,
-        _ => 0,
-    };
-    if hash % 1000 >= frequency
-        || !supports_plant(generated_block_in_column(x, column.height, z, column, seed))
-    {
-        return None;
-    }
-    Some(Tree {
-        x,
-        z,
-        ground_y: column.height,
-        trunk_top: column.height + 5 + ((hash >> 28) % 3) as i64,
-    })
-}
-
-fn tree_piece(tree: Tree, x: i64, y: i64, z: i64) -> Option<BlockId> {
-    let dx = (x - tree.x).abs();
-    let dz = (z - tree.z).abs();
-    if dx == 0 && dz == 0 && y > tree.ground_y && y <= tree.trunk_top {
-        return Some(WOOD);
-    }
-    let layer = (y - tree.trunk_top).abs();
-    let radius = match layer {
-        0 => 3,
-        1 => 2,
-        2 => 1,
-        _ => return None,
-    };
-    (dx <= radius && dz <= radius && dx + dz <= radius + 1).then_some(LEAVES)
-}
-
-#[cfg(test)]
-fn tree_block_at(x: i64, y: i64, z: i64, seed: u64) -> Option<BlockId> {
-    let mut leaf = false;
-    for cz in (z - TREE_RADIUS).div_euclid(TREE_CELL)..=(z + TREE_RADIUS).div_euclid(TREE_CELL) {
-        for cx in (x - TREE_RADIUS).div_euclid(TREE_CELL)..=(x + TREE_RADIUS).div_euclid(TREE_CELL)
-        {
-            if let Some(tree) = tree_anchor(cx, cz, seed) {
-                match tree_piece(tree, x, y, z) {
-                    Some(WOOD) => return Some(WOOD),
-                    Some(LEAVES) => leaf = true,
-                    _ => {}
-                }
-            }
-        }
-    }
-    leaf.then_some(LEAVES)
-}
-
-pub(super) fn ground_plant(x: i64, z: i64, seed: u64, biome: Biome, soil: BlockId) -> BlockId {
-    if !supports_plant(soil) || (x.abs() <= 12 && z.abs() <= 12) {
-        return AIR;
-    }
-    let cluster = noise2(x, z, 19, seed ^ 0x36f9_91cb);
-    let hash = lattice_hash(seed ^ 0xc483_f4a2, x, 0, z);
-    let roll = hash % 1000;
-    match biome {
-        Biome::Forest if cluster > -0.3 => match roll {
-            0..=129 => FERN,
-            130..=199 => TALL_GRASS,
-            200..=214 => BLUE_FLOWER,
-            _ => AIR,
-        },
-        Biome::Plains if cluster > -0.15 => match roll {
-            0..=199 => TALL_GRASS,
-            200..=224 => RED_FLOWER,
-            225..=249 => YELLOW_FLOWER,
-            250..=269 => BLUE_FLOWER,
-            _ => AIR,
-        },
-        _ => AIR,
-    }
-}
-
 fn decorate_chunk(
     key: ChunkKey,
     seed: u64,
@@ -192,7 +103,13 @@ fn decorate_chunk(
                                 (z - first_z) as usize,
                             ];
                             let at = Chunk::index(local).unwrap();
-                            if blocks[at] == AIR || (piece == WOOD && blocks[at] == LEAVES) {
+                            if blocks[at] == AIR
+                                || (piece == tree.log
+                                    && crate::content::jg_rtx::is_leaf(
+                                        crate::content::catalog(),
+                                        blocks[at],
+                                    ))
+                            {
                                 blocks[at] = piece;
                             }
                         }
@@ -252,6 +169,8 @@ pub(super) struct Column {
     pub(super) water_level: Option<i64>,
     water_kind: Option<hydrology::Kind>,
     pub(super) shore: bool,
+    rock_region: i64,
+    strata_offset: i64,
 }
 
 pub(super) fn terrain_column(x: i64, z: i64, seed: u64) -> Column {
@@ -298,6 +217,8 @@ fn base_column(x: i64, z: i64, seed: u64) -> Column {
         water_level: None,
         water_kind: None,
         shore: false,
+        rock_region: (continent * 8.0).round() as i64,
+        strata_offset: (hills * 7.0).round() as i64,
     }
 }
 
@@ -352,18 +273,27 @@ fn generated_block_with_pattern(
             }
         }
         if y < column.height - 4 {
-            return STONE;
+            return materials::rock(x, y, z, column, seed);
         }
         let top = if column.shore {
             if matches!(column.biome, Biome::Desert) {
                 SAND
+            } else if column.biome == Biome::Forest {
+                materials::palette().soils[3]
             } else {
                 GRAVEL
             }
         } else {
             match column.biome {
-                Biome::Plains => [GRASS, GRASS, GRAVEL, STONE][pattern as usize],
-                Biome::Forest => [GRASS, MOSS, MOSS, STONE][pattern as usize],
+                Biome::Plains => {
+                    [GRASS, GRASS, materials::palette().soils[0], STONE][pattern as usize]
+                }
+                Biome::Forest => [
+                    GRASS,
+                    materials::palette().soils[1],
+                    MOSS,
+                    materials::palette().soils[2],
+                ][pattern as usize],
                 Biome::Desert => [SAND, SAND, GRAVEL, STONE][pattern as usize],
                 Biome::Tundra => [SNOW, SNOW, GRAVEL, STONE][pattern as usize],
                 Biome::Highland => [STONE, GRAVEL, GRAVEL, SNOW][pattern as usize],
@@ -592,16 +522,17 @@ impl LodSampler {
                 if ground != AIR {
                     return ground;
                 }
-                let mut leaf = false;
+                let mut leaf = None;
                 for tree in &trees {
-                    match tree_piece(*tree, x, y, z) {
-                        Some(WOOD) => return WOOD,
-                        Some(LEAVES) => leaf = true,
-                        _ => {}
+                    if let Some(piece) = tree_piece(*tree, x, y, z) {
+                        if piece == tree.log {
+                            return piece;
+                        }
+                        leaf.get_or_insert(piece);
                     }
                 }
-                if leaf {
-                    return LEAVES;
+                if let Some(leaf) = leaf {
+                    return leaf;
                 }
                 if y == column.height + 1 {
                     let soil = generated_block_with_pattern(

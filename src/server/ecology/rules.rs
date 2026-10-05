@@ -71,7 +71,7 @@ pub(in crate::server) fn check(
     sun_up: bool,
 ) -> io::Result<Option<Rule>> {
     let block = read(world, reads, missing, cell)?;
-    if block == world::LEAVES {
+    if crate::content::jg_rtx::is_leaf(world.catalog(), block) {
         return supported(world, reads, missing, cell)
             .map(|supported| (!supported).then_some(Rule::LeafDecay));
     }
@@ -124,10 +124,10 @@ fn supported(
                 continue;
             }
             let block = read(world, reads, missing, next)?;
-            if matches!(block, world::WOOD | world::WOOD_X | world::WOOD_Z) {
+            if crate::content::jg_rtx::is_log(world.catalog(), block) {
                 return Ok(true);
             }
-            if block == world::LEAVES && distance + 1 < LOG_RANGE {
+            if crate::content::jg_rtx::is_leaf(world.catalog(), block) && distance + 1 < LOG_RANGE {
                 queue.push_back((next, distance + 1));
             }
         }

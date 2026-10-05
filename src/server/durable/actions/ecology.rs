@@ -31,7 +31,14 @@ pub(super) fn plan(
     if rule == Rule::GrassGrowth {
         reads.clock = Some(clock.stamp);
     }
-    let (before, after) = rule.transition();
+    let (mut before, after) = rule.transition();
+    if rule == Rule::LeafDecay {
+        before = reads
+            .read(&mut state.world, cell[0], cell[1], cell[2])?
+            .ok_or_else(|| {
+                io::Error::new(ErrorKind::WouldBlock, "leaf decay terrain unavailable")
+            })?;
+    }
     let edits = [(cell[0], cell[1], cell[2], after)];
     let cause = if rule == Rule::LeafDecay {
         RemovalCause::SupportLoss

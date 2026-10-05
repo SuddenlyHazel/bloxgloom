@@ -61,6 +61,27 @@ fn connected_leaves_find_all_log_orientations_within_six_steps() {
 }
 
 #[test]
+fn named_leaves_accept_oriented_wood_but_not_directional_stone() {
+    let save = Save::new();
+    let mut world = World::new(7, save.0.clone()).unwrap();
+    let state = |key: &str| crate::content::catalog().state_by_key(key).unwrap();
+    edit(&mut world, CELL, state("bloxgloom:cherry_leaves"));
+    for axis in ["x", "y", "z"] {
+        edit(
+            &mut world,
+            [7, 88, 8],
+            state(&format!("bloxgloom:cherry_log[axis={axis}]")),
+        );
+        assert_eq!(check(&mut world, CELL, true).unwrap(), None);
+    }
+    edit(&mut world, [7, 88, 8], state("bloxgloom:basalt[axis=y]"));
+    assert_eq!(
+        check(&mut world, CELL, true).unwrap(),
+        Some(Rule::LeafDecay)
+    );
+}
+
+#[test]
 fn missing_seam_never_counts_as_absent_log_support() {
     let save = Save::new();
     let mut world = World::new(7, save.0.clone()).unwrap();

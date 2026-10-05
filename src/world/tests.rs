@@ -581,7 +581,9 @@ fn broadleaf_crowns_cross_chunk_seams_and_match_edit_baseline() {
     let tree = (-20..=20)
         .flat_map(|z| (-20..=20).map(move |x| (x, z)))
         .filter_map(|(x, z)| tree_anchor(x, z, seed))
-        .find(|tree| tree.x.rem_euclid(16) >= 13 || tree.z.rem_euclid(16) >= 13)
+        .find(|tree| {
+            tree.log == WOOD && (tree.x.rem_euclid(16) >= 13 || tree.z.rem_euclid(16) >= 13)
+        })
         .expect("a tree crown should span a chunk seam");
     let mut chunks = HashMap::new();
     let mut leaves = 0;
@@ -645,7 +647,9 @@ fn biome_plants_are_reproducible_and_non_solid() {
             let y = column.height + 1;
             let soil = generated_block_in_column(x, column.height, z, column, seed);
             let candidate = ground_plant(x, z, seed, column.biome, soil);
-            if candidate == AIR || seen[(candidate.0 - RED_FLOWER.0) as usize] {
+            if !(RED_FLOWER.0..=TALL_GRASS.0).contains(&candidate.0)
+                || seen[(candidate.0 - RED_FLOWER.0) as usize]
+            {
                 continue;
             }
             let plant = generated_block(x, y, z, seed);

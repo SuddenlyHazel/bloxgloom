@@ -54,7 +54,7 @@ package definitions or choose a fresh directory. There is no automatic upgrade.
 
 Save metadata is now format **8**, with optional source digests per generation
 contributor. `content.map` remains BGCM v2. The default save directory is
-**`world-v28/`** (`world-v28-fixture/` with the lifecycle fixture). Older metadata
+**`world-v29/`** (`world-v29-fixture/` with the lifecycle fixture). Older metadata
 formats, including existing `world-v23/` saves, are rejected without conversion.
 Water changes the builtin catalog and terrain generator revision to 5. Previous `world-v27/` and older directories must not be reused for this build. Existing folders
 are left untouched.
