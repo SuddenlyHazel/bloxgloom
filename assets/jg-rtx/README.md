@@ -59,7 +59,7 @@ The expanded catalog has 1,053 texture entries packed into 351 full-resolution m
 
 Reproduce with `cargo run --release -- perf 300 6` and `cargo run --release -- perf 300 6 bounced`. These benchmarks exclude presentation and live gameplay. Final visual acceptance is through the user's fresh-world play test.
 
-## Automated acceptance
+## Original import acceptance
 
 The final `cargo test --quiet -- --test-threads=4` run passed **1,893 tests**, with zero failures and 14 ignored tests. Coverage includes real nonblocking TCP joins/edits/recovery using isolated saves, catalog and manifest identities, paired-plant inventory conservation and support removal, imported inventory art, material/shadow GPU readbacks, generation fingerprints, and chunk/LOD canopy seams. Four test threads avoid contention with the existing script startup wall-time limits; those runtime limits were preserved.
 
