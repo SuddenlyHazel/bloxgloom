@@ -8,7 +8,7 @@ fn request(service: &Service, world: &World, key: TileKey, revision: u64) -> wor
             key,
             revision,
             overlays: world.lod_overlays(key.bounds().unwrap()).unwrap(),
-            resident: vec![],
+            resident: world.lod_resident(key.bounds().unwrap()).unwrap(),
             children: None,
             requested_at: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -30,6 +30,7 @@ fn key() -> TileKey {
 fn restart_reuses_unchanged_tile_and_rebases_its_publication_revision() {
     let root = temporary();
     let mut world = World::with_capacity(7, root.clone(), 4).unwrap();
+    world.edit(0, 100, 0, crate::world::GLOWSTONE).unwrap();
     let service = Service::new(&world, root.clone()).unwrap();
     let cold = request(&service, &world, key(), 25);
     assert!(!cold.cache_hit);

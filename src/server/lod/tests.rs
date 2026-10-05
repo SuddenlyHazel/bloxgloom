@@ -1,13 +1,15 @@
 use super::*;
 mod persistent;
 fn temporary() -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     std::env::temp_dir().join(format!(
-        "bloxgloom-lod-{}-{}",
+        "bloxgloom-lod-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
     ))
 }
 #[test]
@@ -55,7 +57,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
     );
     assert_eq!(world.cached_len(), count);
     assert_eq!(world.pinned_chunk_count(), pins);
-    // Same-session derived cache is reusable, but an edit advances its namespace.
+    // Unchanged authoritative inputs reuse persistent derived data.
     service
         .jobs
         .as_ref()

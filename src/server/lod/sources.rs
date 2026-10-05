@@ -66,7 +66,12 @@ impl Sources {
         let resident: BTreeMap<_, _> = job
             .resident
             .iter()
-            .filter(|c| world.lod_max_level() != 4 || c.version != 0)
+            // Native chunks covered by frozen checkpoints/overlays add no
+            // information. Their transient residency must not prevent a warm
+            // hit after restart or ordinary gameplay-cache eviction.
+            .filter(|c| {
+                world.lod_max_level() != 4 || (c.version != 0 && !saved.contains_key(&c.key))
+            })
             .map(|c| (c.key, c.clone()))
             .collect();
         if resident.keys().any(|key| !inside(*key)) || saved.len() + resident.len() > 8192 {
@@ -101,6 +106,7 @@ impl Sources {
         if let Some(children) = &job.children {
             for child in children {
                 hash.update([2]);
+                hash.update(child.geometric_error.to_le_bytes());
                 for column in &child.columns {
                     hash.update((column.coverage.len() as u32).to_le_bytes());
                     for v in &column.coverage {
