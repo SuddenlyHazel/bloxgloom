@@ -1,6 +1,7 @@
 //! Session-owned distant terrain replicas. Never read by gameplay or collision.
 #[cfg(test)]
 mod tests;
+mod uploads;
 mod workers;
 
 use crate::{
@@ -37,6 +38,7 @@ pub(super) struct State {
     center: Option<[i32; 2]>,
     wanted: Vec<TileKey>,
     tiles: HashMap<TileKey, Arc<LodTile>>,
+    timings: HashMap<TileKey, crate::lod::loading::ClientTrace>,
     requests: HashMap<TileKey, Request>,
     retry: HashMap<TileKey, Instant>,
     minimum: HashMap<TileKey, u64>,
@@ -44,6 +46,7 @@ pub(super) struct State {
     pending_mesh: HashSet<TileKey>,
     builds: HashMap<TileKey, u64>,
     worker: Worker,
+    ready_upload: Option<uploads::Pending>,
 }
 
 impl State {
@@ -59,6 +62,7 @@ impl State {
             center: None,
             wanted: vec![],
             tiles: HashMap::new(),
+            timings: HashMap::new(),
             requests: HashMap::new(),
             retry: HashMap::new(),
             minimum: HashMap::new(),
@@ -66,6 +70,7 @@ impl State {
             pending_mesh: HashSet::new(),
             builds: HashMap::new(),
             worker: Worker::new(catalog),
+            ready_upload: None,
         }
     }
     pub(super) fn status(&mut self, session: u64, horizon: u16, max_level: u8) {
@@ -80,7 +85,10 @@ impl State {
         if session != self.session || self.requests.get(&key).is_none_or(|r| r.id != request) {
             return;
         }
-        self.requests.remove(&key);
+        let requested = self.requests.remove(&key).unwrap().started;
+        let received = Instant::now();
+        tracing::debug!(target: "bloxgloom::lod_loading", ?key, request, revision=tile.revision,
+            request_roundtrip_ms=crate::lod::loading::ms(received.saturating_duration_since(requested)), "LOD client received");
         if tile.revision < self.minimum.get(&key).copied().unwrap_or(0) {
             return;
         }
@@ -89,6 +97,15 @@ impl State {
         {
             return;
         }
+        self.timings.insert(
+            key,
+            crate::lod::loading::ClientTrace {
+                request,
+                requested,
+                received,
+                queued: received,
+            },
+        );
         self.tiles.insert(key, Arc::new(tile));
         self.retry.remove(&key);
         self.rebuild_neighbors(key);
@@ -138,7 +155,9 @@ impl State {
     }
     pub(super) fn reset(&mut self) {
         self.worker.clear();
+        self.ready_upload = None;
         self.tiles.clear();
+        self.timings.clear();
         self.requests.clear();
         self.retry.clear();
         self.minimum.clear();
@@ -209,6 +228,7 @@ impl State {
                 .collect();
             for key in removed {
                 self.tiles.remove(&key);
+                self.timings.remove(&key);
                 self.worker.cancel(key);
                 renderer.remove_lod_tile(key);
             }
@@ -219,7 +239,8 @@ impl State {
             self.pending_mesh.retain(|key| wanted.contains(key));
             self.builds.retain(|key, _| wanted.contains(key));
         }
-        for _ in 0..8 {
+        let upload_ready = uploads::retry(self, |mesh| renderer.enqueue_lod_mesh(mesh));
+        for _ in 0..if upload_ready { 8 } else { 0 } {
             let Ok(result) = self.worker.results.try_recv() else {
                 break;
             };
@@ -227,19 +248,24 @@ impl State {
             if self.builds.get(&key) != Some(&result.generation) {
                 continue;
             }
-            self.builds.remove(&key);
+            tracing::debug!(target: "bloxgloom::lod_loading", ?key, generation=result.generation,
+                mesh_queue_ms=crate::lod::loading::ms(result.queue_time), material_prepare_ms=crate::lod::loading::ms(result.material_time),
+                meshing_ms=crate::lod::loading::ms(result.mesh_time), result_wait_ms=crate::lod::loading::ms(result.finished.elapsed()),
+                "LOD mesh completion");
             match result.mesh {
                 Ok(mesh) => {
                     if mesh.revision < self.minimum.get(&key).copied().unwrap_or(0) {
+                        self.builds.remove(&key);
                         continue;
                     }
-                    if renderer.enqueue_lod_mesh(mesh).is_err() {
-                        self.mesh_retry
-                            .insert(key, Instant::now() + Duration::from_secs(2));
-                        self.pending_mesh.insert(key);
+                    if !uploads::offer(self, result.generation, mesh, |mesh| {
+                        renderer.enqueue_lod_mesh(mesh)
+                    }) {
+                        break;
                     }
                 }
                 Err(error) => {
+                    self.builds.remove(&key);
                     tracing::warn!(?key, %error, "distant mesh unavailable within resource budget");
                     self.mesh_retry
                         .insert(key, Instant::now() + Duration::from_secs(60));
@@ -248,7 +274,7 @@ impl State {
             }
         }
 
-        for _ in 0..2 {
+        for _ in 0..if self.ready_upload.is_none() { 4 } else { 0 } {
             let Some(key) = self
                 .wanted
                 .iter()
@@ -279,13 +305,19 @@ impl State {
                 .filter(|(other, _)| **other != key && neighboring(key, **other))
                 .map(|(_, tile)| Arc::clone(tile))
                 .collect();
+            let submitted = Instant::now();
+            let trace = self.timings.get(&key).copied();
             if !self.worker.submit(Job {
                 tile: Arc::clone(tile),
                 neighbors,
                 generation,
+                submitted,
+                trace,
             }) {
                 break;
             }
+            tracing::debug!(target: "bloxgloom::lod_loading", ?key, generation,
+                client_schedule_ms=trace.map(|t| crate::lod::loading::ms(submitted.saturating_duration_since(t.received))), "LOD mesh admitted");
             self.builds.insert(key, generation);
             self.pending_mesh.remove(&key);
         }

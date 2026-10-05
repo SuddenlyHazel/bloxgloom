@@ -191,7 +191,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub(crate) fn enqueue_lod_mesh(&mut self, mesh: lod::Mesh) -> Result<(), Box<lod::Mesh>> {
+    pub(crate) fn enqueue_lod_mesh(&mut self, mesh: lod::Mesh) -> Result<(), lod::UploadError> {
         self.lod.enqueue(mesh)
     }
     pub(crate) fn discard_obsolete_lod(&mut self, key: crate::lod::TileKey, minimum: u64) {

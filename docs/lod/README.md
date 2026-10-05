@@ -17,7 +17,7 @@ survive. Over-budget material simplification merges only contiguous occupied
 boundaries and never fills a vertical air gap. Summaries return unavailable if
 occupied geometry still exceeds the cap.
 
-`src/server/lod/` uses a dedicated worker without installing distant chunks into
+`src/server/lod/` uses a bounded CPU pool without installing distant chunks into
 simulation. Builtin terrain has direct scale-dependent sampling. Saved chunks
 and committed snapshots awaiting checkpoint override procedural samples,
 including high structures outside the builtin terrain band. Registered
@@ -42,7 +42,7 @@ use one global refresh. Session, request, revision, and build generation fences
 reject obsolete replies and meshes across edits, teleports, and reconnects.
 
 `src/client/lod/` requests coarse skyline tiles first and uses movement
-hysteresis. A dedicated mesh worker prepares texture-derived linear face colors.
+hysteresis. A bounded mesh pool shares lazy texture-derived linear face colors.
 `src/render/lod/` draws camera-relative span geometry into the shared HDR/depth
 scene. Complete sibling families refine uploaded parents only when the children
 have examined the parent's occupied height intervals. Pending or incomplete
@@ -94,12 +94,14 @@ remain the fallback.
 | Resource | Limit |
 | --- | --- |
 | Summary payload | 60 KiB; 3,072 spans; 2,048 examined intervals; 32 spans/column |
-| Server admitted builds / worker threads | 4 / 1 |
+| Server admitted builds / worker threads | 4 / 1–4 |
 | Server requests per client / summary cache | 8 / 64 tiles |
 | Source snapshot overlay / fallback source chunks | 4 MiB / 4,096 chunks |
 | Captured resident snapshots per build | 8 MiB / 2,048 chunks, without cache pins |
 | Client requests / retained summaries | 4 / 128 tiles |
 | Mesh worker job/result queues | 8 each |
+| Mesh worker threads / per-frame job admission | 1–4 / 4 |
+| Retained completion awaiting GPU queue capacity | 1 mesh, up to 8 MiB |
 | CPU mesh / pending GPU uploads | 8 MiB per mesh / 8 meshes |
 | LOD GPU geometry | 128 MiB, independent of near terrain |
 | Uploads | At most one LOD mesh per frame, after near uploads |
@@ -419,3 +421,77 @@ The full workspace suite passed **1,934 tests, zero failures, 13 ignored**
 (1,873 game tests and 61 host-API tests). All 10 focused server-cache tests passed.
 Formatting, all-target/all-feature Clippy with warnings denied, and the final
 release build also passed: [checks](verification/2026-10-05/finishing/checks.txt).
+
+## Loading pipeline, 2026-10-05
+
+Server admission scans past already pending or ready requests and fills up to
+four global build slots. Delivery scans past a slow request for ready tiles.
+Round-robin client passes preserve fairness. A tick admits at most four builds
+and delivers at most eight tiles globally, four per client, with a conservative
+128-KiB per-client delivery budget. Clients with more than 32 KiB or eight frames
+already queued at the start of the LOD pass defer both admission and delivery.
+Gameplay publication still runs first and outbound reservation caps still apply.
+
+Generation and client meshing each use 1–4 CPU workers. Automatic selection is
+`clamp((available CPUs - 2) / 2, 1, 4)` per pool, leaving capacity for other work
+when both pools are active. The server still admits only four builds; meshing
+retains eight queued jobs and eight queued results. Shared receiver locks are
+released before computation. Server lanes own detached loader views; client
+lanes share one lazy material-color preparation. Disk writes and trimming use a
+short shared lock to preserve the 128-file cache cap. Revision, session, request
+and cancellation fencing remain in place. GPU upload stays limited to one LOD
+mesh per frame after near uploads.
+
+A full GPU upload queue retains one completed mesh and stops draining/submitting
+mesh work until space opens. It no longer discards that geometry and starts a
+two-second remesh timer. Invalidated, superseded or retired completions cannot
+enter the queue. Residency-budget rejection still defers the affected tile while
+allowing other tiles through; the 128-MiB geometry cap and coarse fallback remain.
+
+For comparison or constrained machines, each environment override accepts only
+1–4; invalid values warn and use automatic selection:
+
+```sh
+BLOXGLOOM_LOD_GENERATION_WORKERS=1 BLOXGLOOM_LOD_MESH_WORKERS=1 cargo run --release
+```
+
+Enable loading diagnostics with:
+
+```sh
+RUST_LOG='warn,bloxgloom::lod_loading=debug' cargo run --release 2>lod-loading.log
+```
+
+Run with the same filter on a dedicated server to capture its stages too.
+Logs use milliseconds and tile key/revision plus request/client or build identity:
+
+| Event | Timing fields |
+| --- | --- |
+| Build admitted | `admission_wait_ms`, `capture_ms` |
+| Terrain completion | `worker_queue_ms`, `sources_ms`, `cache_read_ms`, `generation_ms`, `cache_write_ms`, `worker_ms`, `completion_wait_ms`, `cache_hit` |
+| Delivery queued | `request_to_enqueue_ms`, conservative `bytes` |
+| Client received | `request_roundtrip_ms` |
+| Mesh admitted | `client_schedule_ms` |
+| Mesh completion | `mesh_queue_ms`, `material_prepare_ms`, `meshing_ms`, `result_wait_ms` |
+| Upload admitted | `upload_admission_ms` |
+| GPU upload | `upload_wait_ms`, `upload_cpu_ms`, `request_to_upload_ms` |
+
+`request_roundtrip_ms` includes client send queuing, server work, transport,
+decoding and the client mailbox; it is not an isolated one-way network timing.
+No cross-machine clocks are subtracted. `cache_write_ms` includes filesystem-lock
+wait, and material preparation includes waiting for another lane's shared lazy
+initialization. Client scheduling and request-to-upload ages can repeat for seam
+remeshing. `upload_admission_ms` includes the result mailbox and waiting for GPU
+queue space; `upload_wait_ms` covers admission to buffer creation. Upload timing
+measures CPU buffer creation/readiness, not GPU completion
+or the first presented frame. No timestamps were added to the save/wire format.
+
+The opt-in release benchmark streams the Balanced 512 set through the production
+nonblocking listener with four outstanding requests, an isolated seed-7 save,
+near radius 1 and interleaved pings. It separately measures cold loading, a repeat
+and restart. Its 77-tile set exceeds the 64-entry server memory cache, so repeat
+loading includes disk-cache work. This benchmark ends at receipt/validation of
+summaries and excludes client meshing and GPU upload:
+
+```sh
+cargo test --release lod_loading_throughput_over_real_listener -- --ignored --nocapture
+```

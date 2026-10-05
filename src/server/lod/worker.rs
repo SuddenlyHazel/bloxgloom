@@ -4,6 +4,7 @@ use crate::world::{BEDROCK_Y, CHUNK_SIZE, MAX_GENERATED_HEIGHT};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender};
 
@@ -23,35 +24,62 @@ pub(super) struct Completion {
     pub elapsed: Duration,
     pub queue_age: Duration,
     pub cache_hit: bool,
+    pub sources: Duration,
+    pub cache_read: Duration,
+    pub generation: Duration,
+    pub cache_write: Duration,
+    pub finished: Instant,
 }
 
 pub(super) fn run(
     world: World,
     root: PathBuf,
-    jobs: Receiver<Job>,
+    jobs: Arc<Mutex<Receiver<Job>>>,
     results: SyncSender<Completion>,
+    disk: Arc<Mutex<()>>,
 ) {
     let cache = root.join("lod-cache");
     let _ = fs::create_dir_all(&cache);
-    while let Ok(job) = jobs.recv() {
+    loop {
+        // Release the receiver before computation: each lane owns one job.
+        let received = jobs.lock().unwrap().recv();
+        let Ok(job) = received else {
+            break;
+        };
         let started = Instant::now();
         let path = super::disk::path(&cache, job.key);
         let sources = (!job.cancelled.load(Ordering::Relaxed))
             .then(|| super::sources::Sources::capture(&world, &root, &job))
             .and_then(Result::ok);
+        let source_time = started.elapsed();
+        let read_at = Instant::now();
         let cached = sources
             .as_ref()
             .and_then(|s| super::disk::load(&path, s.stamp, &world, &job));
+        let cache_read = read_at.elapsed();
         let cache_hit = cached.is_some();
+        let build_at = Instant::now();
         let tile = cached.or_else(|| sources.as_ref().and_then(|s| build(&world, &job, s).ok()));
+        let generation = if cache_hit {
+            Duration::ZERO
+        } else {
+            build_at.elapsed()
+        };
         let tile = if job.cancelled.load(Ordering::Relaxed) {
             None
         } else {
             tile
         };
+        let write_at = Instant::now();
         if let Some(tile) = &tile {
-            super::disk::store(&path, sources.as_ref().unwrap().stamp, &world, tile);
+            // Atomic replacements may run concurrently, but cap enforcement
+            // and temporary-file lifecycle share one short filesystem lane.
+            let _guard = disk.lock().unwrap();
+            if !job.cancelled.load(Ordering::Relaxed) {
+                super::disk::store(&path, sources.as_ref().unwrap().stamp, &world, tile);
+            }
         }
+        let cache_write = write_at.elapsed();
         if results
             .send(Completion {
                 key: job.key,
@@ -60,6 +88,11 @@ pub(super) fn run(
                 elapsed: started.elapsed(),
                 queue_age: started.saturating_duration_since(job.requested_at),
                 cache_hit,
+                sources: source_time,
+                cache_read,
+                generation,
+                cache_write,
+                finished: Instant::now(),
             })
             .is_err()
         {

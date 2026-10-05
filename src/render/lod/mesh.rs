@@ -7,6 +7,7 @@ use crate::{
 pub(crate) struct Mesh {
     pub key: TileKey,
     pub revision: u64,
+    pub loading: Option<crate::lod::loading::ClientTrace>,
     pub(super) vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub water_indices: Vec<u32>,
@@ -38,6 +39,7 @@ pub(crate) fn mesh(
     let mut m = Mesh {
         key: tile.key,
         revision: tile.revision,
+        loading: None,
         vertices: vec![],
         indices: vec![],
         water_indices: vec![],

@@ -9,7 +9,7 @@ mod selection;
 mod surface;
 mod vertex;
 pub(crate) use colors::FaceColors;
-pub(crate) use gpu::Gpu;
+pub(crate) use gpu::{Gpu, UploadError};
 pub(crate) use mesh::{Mesh, mesh};
 pub(crate) use selection::desired_tiles;
 #[cfg(test)]

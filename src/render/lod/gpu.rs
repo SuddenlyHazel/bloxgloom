@@ -9,6 +9,11 @@ use wgpu::util::DeviceExt;
 // Independent hard residency cap also accommodates the 1,024-block fixture.
 const MAX_BYTES: usize = 128 * 1024 * 1024;
 const MAX_PENDING: usize = 8;
+#[derive(Debug)]
+pub(crate) enum UploadError {
+    QueueFull(Box<Mesh>),
+    Budget(Box<Mesh>),
+}
 const COVERAGE_SLOTS: usize = super::near_coverage::SLOTS;
 struct Tile {
     vertex: wgpu::Buffer,
@@ -77,12 +82,12 @@ impl Gpu {
             jitter: glam::Vec2::ZERO,
         }
     }
-    pub(crate) fn enqueue(&mut self, mesh: Mesh) -> Result<(), Box<Mesh>> {
-        if mesh.byte_len() > MAX_BYTES
-            || (!self.pending.iter().any(|m| m.key == mesh.key)
-                && self.pending.len() >= MAX_PENDING)
-        {
-            return Err(Box::new(mesh));
+    pub(crate) fn enqueue(&mut self, mut mesh: Mesh) -> Result<(), UploadError> {
+        if mesh.byte_len() > MAX_BYTES {
+            return Err(UploadError::Budget(Box::new(mesh)));
+        }
+        if !self.pending.iter().any(|m| m.key == mesh.key) && self.pending.len() >= MAX_PENDING {
+            return Err(UploadError::QueueFull(Box::new(mesh)));
         }
         if self
             .pending
@@ -119,9 +124,12 @@ impl Gpu {
             .collect();
         keys.insert(mesh.key);
         if resident + reserved + growth > MAX_BYTES || keys.len() > 256 {
-            return Err(Box::new(mesh));
+            return Err(UploadError::Budget(Box::new(mesh)));
         }
         self.pending.retain(|m| m.key != mesh.key);
+        if let Some(trace) = &mut mesh.loading {
+            trace.queued = std::time::Instant::now();
+        }
         self.pending.push_back(mesh);
         Ok(())
     }
@@ -138,6 +146,7 @@ impl Gpu {
             return 0;
         }
         let m = self.pending.pop_front().unwrap();
+        let upload_started = std::time::Instant::now();
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("LOD relative tile origin"),
             size: 32,
@@ -182,6 +191,12 @@ impl Gpu {
                 distance: 0.0,
             },
         );
+        if let Some(trace) = m.loading {
+            tracing::debug!(target: "bloxgloom::lod_loading", key=?m.key, request=trace.request, revision=m.revision,
+                upload_wait_ms=crate::lod::loading::ms(upload_started.saturating_duration_since(trace.queued)),
+                upload_cpu_ms=crate::lod::loading::ms(upload_started.elapsed()),
+                request_to_upload_ms=crate::lod::loading::ms(trace.requested.elapsed()), "LOD GPU upload");
+        }
         self.selection_dirty = true;
         1
     }

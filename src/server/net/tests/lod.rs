@@ -1,5 +1,7 @@
 //! Real reactor, nonblocking listener, and isolated authoritative save.
 use super::*;
+#[path = "lod/loading.rs"]
+mod loading;
 #[test]
 fn distant_tile_streams_with_session_and_keeps_gameplay_ping_responsive() {
     let stamp = std::time::SystemTime::now()

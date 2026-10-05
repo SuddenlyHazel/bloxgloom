@@ -3,6 +3,7 @@
 use crate::content::{BlockStateId, Catalog};
 
 mod extract;
+pub(crate) mod loading;
 mod reduce;
 pub(crate) mod skylight;
 #[cfg(test)]
