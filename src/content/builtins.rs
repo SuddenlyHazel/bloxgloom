@@ -799,6 +799,8 @@ impl Catalog {
                 handler: std::sync::Arc::new(crate::gameplay::respawn::Respawn),
             })
             .expect("builtin respawn handler");
+        // Thumbnails may refer to any builtin/imported item, including machines.
+        super::jg_rtx::register_icons(&mut catalog);
         catalog
     }
 }

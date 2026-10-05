@@ -271,6 +271,7 @@ fn remapped_inventory_item_uses_connection_name_color_and_builtin_art() {
     use crate::content::ContentManifest;
     use crate::items::ItemId;
 
+    // The imported flower thumbnail must follow the saved item assignment.
     let local = crate::content::Catalog::builtins();
     let mut manifest = ContentManifest::from_catalog(&local);
     for entry in &mut manifest.entries {
@@ -288,6 +289,13 @@ fn remapped_inventory_item_uses_connection_name_color_and_builtin_art() {
     assert_eq!(
         super::draw::item_color_for(item, &catalog),
         [0.86, 0.20, 0.29, 1.0]
+    );
+    assert!(catalog.item_icon(item).is_some());
+    assert!(
+        catalog
+            .item_icon(ItemId::new(crate::world::RED_FLOWER.get()))
+            .is_none(),
+        "saved assignment must resolve art through the connection ID"
     );
     let mut vertices = Vec::new();
     let mut builder = UiBuilder {

@@ -5,6 +5,7 @@ use bloxgloom_host_api::content as api;
 use serde::Deserialize;
 
 mod assets;
+mod icons;
 #[cfg(test)]
 mod tests;
 
@@ -118,6 +119,10 @@ pub(super) fn register(catalog: &mut Catalog) {
     for block in &import.blocks {
         register_block(catalog, block);
     }
+}
+
+pub(super) fn register_icons(catalog: &mut Catalog) {
+    icons::register(catalog);
 }
 
 fn register_block(catalog: &mut Catalog, b: &ImportedBlock) {

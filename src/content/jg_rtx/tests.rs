@@ -81,3 +81,37 @@ fn imported_catalog_round_trips_the_world_manifest_and_handshake() {
     assert!(restored.is_lab_pbr_texture(dirt));
     assert!(!catalog.is_lab_pbr_texture(stick));
 }
+
+#[test]
+fn source_art_thumbnails_cover_new_blocks_plants_and_replaced_legacy_items() {
+    let catalog = Catalog::builtins();
+    for item in catalog.items() {
+        assert!(
+            catalog.item_icon(item.id).is_some(),
+            "missing palette icon for {}",
+            item.key
+        );
+    }
+    for (key, name) in [
+        ("oak_planks", "OAK PLANKS"),
+        ("poppy", "POPPY"),
+        ("red_flower", "RED FLOWER"),
+        ("wood", "WOOD"),
+    ] {
+        let item = catalog.item_by_key(&format!("bloxgloom:{key}")).unwrap();
+        assert_eq!(catalog.item(item).unwrap().name, name);
+        let icon = catalog.item_icon(item).expect("imported texture thumbnail");
+        icon.validate().unwrap();
+        assert!(icon.rows.iter().any(|row| row.bytes().any(|c| c != b'.')));
+        assert!(icon.palette.len() > 1, "preserve material color detail");
+    }
+    let flower = catalog
+        .item_icon(catalog.item_by_key("bloxgloom:poppy").unwrap())
+        .unwrap();
+    assert!(
+        flower.rows.iter().any(|row| row.contains('.')),
+        "plant silhouette preserves transparency"
+    );
+    assert!(catalog.item_icon(crate::items::SEEDS).is_some());
+    assert!(catalog.item_icon(crate::items::STICK).is_some());
+}

@@ -2,29 +2,56 @@
 use bloxgloom_host_api::icon::ItemIcon;
 
 pub(super) fn definitions() -> Vec<ItemIcon> {
-    vec![ItemIcon {
-        item: "bloxgloom:seeds".into(),
-        rows: [
-            "....ssss....",
-            "...stttss...",
-            "..stuuuttss..",
-            "..sttttstss..",
-            "...sssstss...",
-            "......ss.....",
-            "..ssss.......",
-            ".stttss.......",
-            ".stuutss......",
-            "..sstsss......",
-            "....sss.......",
-            "..............",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .collect(),
-        palette: vec![
-            (b's', [0.35, 0.23, 0.15, 1.0]),
-            (b't', [0.72, 0.48, 0.24, 1.0]),
-            (b'u', [0.92, 0.72, 0.40, 1.0]),
-        ],
-    }]
+    vec![
+        ItemIcon {
+            item: "bloxgloom:seeds".into(),
+            rows: [
+                "....ssss....",
+                "...stttss...",
+                "..stuuuttss..",
+                "..sttttstss..",
+                "...sssstss...",
+                "......ss.....",
+                "..ssss.......",
+                ".stttss.......",
+                ".stuutss......",
+                "..sstsss......",
+                "....sss.......",
+                "..............",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            palette: vec![
+                (b's', [0.35, 0.23, 0.15, 1.0]),
+                (b't', [0.72, 0.48, 0.24, 1.0]),
+                (b'u', [0.92, 0.72, 0.40, 1.0]),
+            ],
+        },
+        ItemIcon {
+            item: "bloxgloom:stick".into(),
+            rows: [
+                "........b.....",
+                ".......bbm....",
+                "......bbmmk...",
+                ".....bbmmk....",
+                "....bbmmk.....",
+                "...bbmmk......",
+                "..bbmmk.......",
+                ".bbmmk........",
+                "bbmmk.........",
+                "bmmk..........",
+                "bk............",
+                "..............",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            palette: vec![
+                (b'b', [0.31, 0.19, 0.12, 1.0]),
+                (b'm', [0.55, 0.34, 0.19, 1.0]),
+                (b'k', [0.76, 0.52, 0.28, 1.0]),
+            ],
+        },
+    ]
 }
