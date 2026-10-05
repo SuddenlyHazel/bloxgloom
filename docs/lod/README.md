@@ -67,8 +67,24 @@ use eight-bit channels (maximum rounding error 0.5/255). Packing and bounds run
 on the mesh worker; uploads retain the existing per-frame admission limit.
 
 Daylight, emission, weather, and shelter affect distant shading. Clear-weather
-fog ends at the negotiated horizon. Opaque terrain and static leaf canopies use
-texture averages; small plants are omitted. Transparent, animated, and moving
+fog ends at the negotiated horizon. One-, two- and four-block LOD cells use actual
+face textures from the same admitted, mipmapped array as near terrain. World-aligned
+UVs repeat once per block, including after greedy merging and at negative tile
+origins. Textures fade into linear averages between 96 and 240 blocks from the
+camera. Cutout alpha follows the fade; coarser cells retain averaged silhouettes.
+This is static albedo sampling: distant normal/specular/parallax maps and custom
+animated material hooks remain deferred. Texture layers and fluid/cutout flags fit
+in existing vertex metadata; vertices remain 20 bytes. No second texture array is
+allocated. `BLOXGLOOM_LOD_TEXTURES=0` disables texture sampling for comparisons.
+
+Fluid geometry uses a separate post-AO transparent pass with depth testing and no
+depth writes. Opaque bed/bank faces remain visible against fluids; interior fluid
+faces are suppressed. Water-only tiles participate in geometry bounds, admission
+and parent/child coverage. Near-ready 3D masking applies to both passes. The near
+and distant water shaders share tint, normal ripples, sky reflection, sun highlights,
+fog and one monotonic animation clock. Fluid tiles draw back to front. This remains
+an approximate, chunk-sorted transparent surface; flow, refraction and underwater
+volumetrics are outside this pass. Small plants are omitted. Animated and moving
 content, distant bounced lighting, and screen-space error selection are deferred.
 Finer detail can be unavailable within resource caps; drawable coarse parents
 remain the fallback.
@@ -89,13 +105,23 @@ remain the fallback.
 | Uploads | At most one LOD mesh per frame, after near uploads |
 | Derived disk cache | 128 tile files, approximately 8 MiB maximum |
 
-`<world>/lod-cache` is disposable derived data. Atomic replacement and checksums
-protect same-session reloads. Startup conservatively discards the previous cache,
-avoiding stale summaries after a crash between world commit and invalidation.
-The cache therefore accelerates same-session eviction/revisit, not restart.
-Deleting or corrupting it never changes authoritative save data.
+`<world>/lod-cache` is disposable derived data that survives restart. A versioned
+header and SHA-256 checksum protect atomic replacement. Each file also records a
+SHA-256 identity covering the world seed, catalog, generator revision/identity,
+wire representation, tile key and exact captured source inputs. Saved snapshots,
+newer committed overlays, observed contributor heights and reduced child inputs
+are included; publication revisions are session-local and rebased on reuse.
 
-The wire version is 26 (versioned component data in drop and pickup snapshots). Disabled LOD preserves ordinary play with a matching
+Cache validation and generation share frozen inputs. A commit followed by a crash
+before cache invalidation cannot reuse an old tile after authoritative recovery.
+Unrelated edits preserve unaffected cached tiles. Source scans and hashing run on
+the LOD worker; captured saved snapshots are capped at 16 MiB alongside existing
+source-count/resident budgets. This avoids generating full terrain on a warm hit,
+while retaining source-validation and client remesh/upload work. Missing, corrupt,
+old-format or mismatched cache entries rebuild without changing save data. The
+128-file bound still applies; no world-format converter or fresh world is needed.
+
+The wire version is 33 (the native fluid catalog); this LOD appearance/cache pass does not change it. Disabled LOD preserves ordinary play with a matching
 server; older wire versions still fail the existing handshake version check.
 No authoritative world-format conversion was added.
 
@@ -318,3 +344,78 @@ inspected output. Paired logs:
 13 ignored; 49 focused LOD tests passed after the final coverage ownership
 adjustment, one ignored. Formatting, strict all-target/all-feature Clippy,
 release build, GPU edit fixture, and AST graph refresh passed.
+
+## Textures, water and restart cache, 2026-10-05
+
+Transition cells at levels 0–2 now reuse the near terrain's mipmapped albedo
+array, including leaf cutouts. Texture detail fades to the existing linear
+average between 96 and 240 blocks. The packed vertex remains 20 bytes and no
+second texture array is uploaded. Normal/specular/parallax maps and custom
+animated material hooks remain near-renderer features.
+
+Distant fluids draw transparently after ambient resolve, with the same ripple,
+Fresnel, daylight and fog response as near water. Solid beds and banks retain
+their underwater surfaces. Full 3D ready-near masking applies to both passes.
+Fluid tiles sort back to front; arbitrary overlapping transparent surfaces
+still use approximate ordering rather than order-independent transparency.
+
+Derived summaries survive server restarts. Their source fingerprints cover
+world/catalog/generator identity, exact frozen committed snapshots, observed
+contributor chunks and reduced children. Session revisions are rebased when
+loading. Pending edits beat checkpoints, and corrupt or mismatched files rebuild.
+Native chunk residency alone does not change identity. The restart fixture
+measured **40.846 ms cold versus 6.231 ms cached** in a debug test; this is one
+tile, not a whole-world startup guarantee. The cache retains its 128-file cap.
+No wire or save-version change is needed for this pass.
+
+The following serial runs use Apple M1 Pro/Metal, 1,280×720, seed B10C6100,
+near radius 6, medium sun shadows and 300 steady offscreen frames. TAA is off
+except for the explicit TAA row. CPU submit time includes driver backpressure;
+these measurements do not establish live gameplay FPS.
+
+| Scene | CPU p50 / p95 (ms) | GPU p50 / p95 (ms) | Near setup (ms) | Near mesh bytes | LOD mesh bytes |
+| --- | --- | --- | --- | --- | --- |
+| Near only | 2.134 / 5.013 | 3.627 / 6.038 | 2,816.4 | 20,754,456 | 0 |
+| Near, bounced | 2.761 / 7.092 | 3.677 / 7.650 | 3,208.7 | 20,990,472 | 0 |
+| Balanced 512 | 2.625 / 5.590 | 4.274 / 6.643 | 2,858.0 | 20,754,456 | 58,593,184 |
+| Balanced 1,024 | 3.994 / 6.709 | 4.319 / 5.282 | 2,840.5 | 20,754,456 | 61,477,624 |
+| Balanced 512, TAA | 4.026 / 5.854 | 4.753 / 6.092 | — | 20,754,456 | 58,593,184 |
+
+The immediately preceding water-enabled 512 baseline measured 2.931 ms CPU /
+4.236 ms GPU p50 and 58,075,992 LOD bytes. This pass adds 517,192 geometry
+bytes (0.9%) for retained underwater surfaces; GPU p50 differs by 0.038 ms
+in this single comparison. No CPU speedup is claimed. All 77 / 73 summaries
+were available at 512 / 1,024; 28 / 31 tiles were selected for drawing.
+
+| Horizon | Cold summary generation | Summary bytes | Meshing | Reduction |
+| --- | --- | --- | --- | --- |
+| 512 | 973.54 ms | 3,369,170 | 271.86 ms | 22.44 ms |
+| 1,024 | 825.23 ms | 3,182,816 | 284.39 ms | 17.13 ms |
+
+GPU previews were inspected for texture-on/off transition terrain, negative
+coordinates, storm fog, water at noon/night, ready-near masking, natural near
+river water, and integrated terrain with TAA. The storm fixture is fully fogged
+at its camera distance. The integrated preview's HUD values are fixture data.
+
+Captured evidence:
+[textured transition](verification/2026-10-05/finishing/transition-textured.png),
+[average-only comparison](verification/2026-10-05/finishing/transition-average.png),
+[transparent water](verification/2026-10-05/finishing/water-noon.png),
+[water ready-near masking](verification/2026-10-05/finishing/water-ready-3d.png),
+[integrated TAA frame](verification/2026-10-05/finishing/integrated-taa.png),
+[512 benchmark](verification/2026-10-05/finishing/lod-512.txt),
+[1,024 benchmark](verification/2026-10-05/finishing/lod-1024.txt), and
+[restart cache tests](verification/2026-10-05/finishing/cache.txt).
+
+The final real nonblocking-listener fixture refreshed two distant clients after
+an accepted edit without waiting for checkpoint. The first client's production
+GPU output changed 15,323 pixels in 263.796 ms; both clients received refreshed
+summaries in 394 ms. The captured
+[before](verification/2026-10-05/finishing/edit-before.png) and
+[after](verification/2026-10-05/finishing/edit-after.png) frames were inspected;
+[edit log](verification/2026-10-05/finishing/edit.txt) records the timing boundary.
+
+The full workspace suite passed **1,934 tests, zero failures, 13 ignored**
+(1,873 game tests and 61 host-API tests). All 10 focused server-cache tests passed.
+Formatting, all-target/all-feature Clippy with warnings denied, and the final
+release build also passed: [checks](verification/2026-10-05/finishing/checks.txt).

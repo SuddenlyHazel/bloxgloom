@@ -1,0 +1,20 @@
+   Compiling bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.85s
+     Running unittests src/main.rs (target/debug/deps/bloxgloom-0262567789175cf5)
+
+running 10 tests
+test server::lod::tests::cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_queue ... ok
+LOD restart: cold=40.846ms warm=6.231ms
+test server::lod::tests::persistent::restart_reuses_unchanged_tile_and_rebases_its_publication_revision ... ok
+test server::lod::tests::persistent::committed_edit_before_invalidation_or_checkpoint_never_reuses_stale_disk_data ... ok
+test server::lod::tests::persistent::different_world_identity_and_corrupt_cache_rebuild_from_authoritative_sources ... ok
+test server::lod::tests::revision_exhaustion_cancels_every_inflight_dependency ... ok
+test server::lod::tests::resident_capture_budget_rejects_excessive_observed_columns_and_ignores_builtin_high_air ... ok
+LOD cold=39ms warm=5ms bytes=50333
+test server::lod::tests::worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth ... ok
+test server::lod::tests::new_authoritative_high_load_invalidates_cached_partial_contributor_summary ... ok
+test server::lod::tests::resident_high_contributor_coverage_survives_eviction_without_save_data_or_pins ... ok
+test server::lod::tests::unrelated_commit_keeps_inflight_tile_while_related_commit_rejects_old_result ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1876 filtered out; finished in 1.29s
+

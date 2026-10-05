@@ -2,7 +2,7 @@
 
 The builtin generator now creates meandering rivers, larger lakes and small ponds. `bloxgloom:water` is a registered, non-solid fluid block. Water surfaces are transparent, with animated normal ripples, sky reflections, light absorption and the existing water rain-impact profile. Sand/gravel shores and sealed upper beds keep generated basins readable. Tree roots and ground plants stay out of generated water; neighboring dry trees can overhang it.
 
-Generation uses absolute coordinates and the world seed, including negative coordinates. A river has a constant surface elevation; each lake/pond has its own level based on surrounding terrain. Channels and basin profiles are shared by authoritative chunks and builtin LOD summaries. The starter area stays dry. Fluid boundaries survive LOD budget reduction; distant water uses the existing opaque color approximation, while streamed near water uses the transparent pass.
+Generation uses absolute coordinates and the world seed, including negative coordinates. A river has a constant surface elevation; each lake/pond has its own level based on surrounding terrain. Channels and basin profiles are shared by authoritative chunks and builtin LOD summaries. The starter area stays dry. Fluid boundaries survive LOD budget reduction; distant and streamed near water now use transparent passes with shared tint, ripples, reflections and lighting. See [distant terrain](docs/lod/README.md) for transition textures and persistent caching.
 
 ## Try it
 

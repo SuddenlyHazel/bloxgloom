@@ -14,15 +14,22 @@ struct Tile {
     vertex: wgpu::Buffer,
     index: wgpu::Buffer,
     count: u32,
+    water_index: wgpu::Buffer,
+    water_count: u32,
     bytes: usize,
     revision: u64,
     uniform: wgpu::Buffer,
     group: wgpu::BindGroup,
     coverage: Box<super::coverage::Coverage>,
     bounds: Option<[Vec3; 2]>,
+    distance: f32,
 }
 pub(crate) struct Gpu {
     pipeline: wgpu::RenderPipeline,
+    water_pipeline: wgpu::RenderPipeline,
+    materials: wgpu::BindGroup,
+    options: wgpu::Buffer,
+    textured: bool,
     camera: wgpu::Buffer,
     group: wgpu::BindGroup,
     tile_layout: wgpu::BindGroupLayout,
@@ -37,95 +44,28 @@ pub(crate) struct Gpu {
     jitter: glam::Vec2,
 }
 impl Gpu {
-    pub(crate) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
-        let camera = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("LOD camera"),
-            size: 208,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        material_pipeline: &wgpu::RenderPipeline,
+        materials: &wgpu::BindGroup,
+    ) -> Self {
         let coverage = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ready 3D chunk coverage"),
             size: (COVERAGE_SLOTS * 16) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("LOD camera coverage"),
-            entries: &[
-                entry(0, wgpu::BufferBindingType::Uniform),
-                entry(1, wgpu::BufferBindingType::Storage { read_only: true }),
-            ],
-        });
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("LOD scene"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: coverage.as_entire_binding(),
-                },
-            ],
-        });
-        let tile_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("LOD tile origin"),
-            entries: &[entry(0, wgpu::BufferBindingType::Uniform)],
-        });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("LOD shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                super::super::daylight::surface_shader(include_str!("shader.wgsl")).into(),
-            ),
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("LOD pipeline"),
-            bind_group_layouts: &[Some(&layout), Some(&tile_layout)],
-            immediate_size: 0,
-        });
-        let attrs = wgpu::vertex_attr_array![0=>Float32x3,1=>Unorm8x4,2=>Uint32];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("distant terrain"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<super::vertex::Vertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &attrs,
-                })],
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: super::super::DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &super::super::scene_ao::color_targets(format, None),
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let p = super::pipelines::new(device, format, &coverage, material_pipeline);
         Self {
-            pipeline,
-            camera,
-            group,
-            tile_layout,
+            pipeline: p.opaque,
+            water_pipeline: p.water,
+            materials: materials.clone(),
+            options: p.options,
+            textured: std::env::var("BLOXGLOOM_LOD_TEXTURES").as_deref() != Ok("0"),
+            camera: p.camera,
+            group: p.group,
+            tile_layout: p.tile_layout,
             coverage,
             tiles: HashMap::new(),
             pending: VecDeque::new(),
@@ -137,12 +77,12 @@ impl Gpu {
             jitter: glam::Vec2::ZERO,
         }
     }
-    pub(crate) fn enqueue(&mut self, mesh: Mesh) -> Result<(), Mesh> {
+    pub(crate) fn enqueue(&mut self, mesh: Mesh) -> Result<(), Box<Mesh>> {
         if mesh.byte_len() > MAX_BYTES
             || (!self.pending.iter().any(|m| m.key == mesh.key)
                 && self.pending.len() >= MAX_PENDING)
         {
-            return Err(mesh);
+            return Err(Box::new(mesh));
         }
         if self
             .pending
@@ -179,7 +119,7 @@ impl Gpu {
             .collect();
         keys.insert(mesh.key);
         if resident + reserved + growth > MAX_BYTES || keys.len() > 256 {
-            return Err(mesh);
+            return Err(Box::new(mesh));
         }
         self.pending.retain(|m| m.key != mesh.key);
         self.pending.push_back(mesh);
@@ -228,12 +168,18 @@ impl Gpu {
                 ),
                 index: buffer(bytemuck::cast_slice(&m.indices), wgpu::BufferUsages::INDEX),
                 count: m.indices.len() as u32,
+                water_index: buffer(
+                    bytemuck::cast_slice(&m.water_indices),
+                    wgpu::BufferUsages::INDEX,
+                ),
+                water_count: m.water_indices.len() as u32,
                 bytes: m.byte_len(),
                 revision: m.revision,
                 uniform,
                 group,
                 coverage: m.coverage,
                 bounds: m.bounds,
+                distance: 0.0,
             },
         );
         self.selection_dirty = true;
@@ -294,6 +240,16 @@ impl Gpu {
             data[29] = f32::from(self.horizon);
         }
         queue.write_buffer(&self.camera, 0, bytemuck::cast_slice(&data));
+        queue.write_buffer(
+            &self.options,
+            0,
+            bytemuck::cast_slice(&[
+                super::super::water::time(),
+                if self.textured { 1.0 } else { 0.0 },
+                0.0,
+                0.0,
+            ]),
+        );
         if let Some(slots) = self.near.update(near) {
             queue.write_buffer(&self.coverage, 0, bytemuck::cast_slice(slots));
         }
@@ -313,7 +269,10 @@ impl Gpu {
                 continue;
             };
             let origin = Vec3::new(x as f32, 0.0, z as f32) - camera.position;
-            let tile = &self.tiles[key];
+            let tile = self.tiles.get_mut(key).unwrap();
+            tile.distance = tile.bounds.map_or(origin.length_squared(), |[min, max]| {
+                (origin + (min + max) * 0.5).length_squared()
+            });
             if !tile.bounds.is_some_and(|[min, max]| {
                 super::super::visibility::bounds_visible(vp, min + origin, max + origin)
             }) {
@@ -321,7 +280,12 @@ impl Gpu {
             }
             self.visible.push(*key);
             let mut bytes = [0u8; 32];
-            bytes[..16].copy_from_slice(bytemuck::cast_slice(&[origin.x, origin.y, origin.z, 0.0]));
+            bytes[..16].copy_from_slice(bytemuck::cast_slice(&[
+                origin.x,
+                origin.y,
+                origin.z,
+                key.sample_width().unwrap_or(1) as f32,
+            ]));
             bytes[16..].copy_from_slice(bytemuck::cast_slice(&[x, 0, z, 0i32]));
             queue.write_buffer(&tile.uniform, 0, &bytes);
         }
@@ -330,6 +294,7 @@ impl Gpu {
         let mut triangles = 0;
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.group, &[]);
+        pass.set_bind_group(2, &self.materials, &[]);
         for key in &self.visible {
             let tile = &self.tiles[key];
             pass.set_bind_group(1, &tile.group, &[]);
@@ -340,17 +305,60 @@ impl Gpu {
         }
         triangles
     }
-}
-fn entry(binding: u32, ty: wgpu::BufferBindingType) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-        ty: wgpu::BindingType::Buffer {
-            ty,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
+    pub(crate) fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
+        pass.set_pipeline(&self.water_pipeline);
+        pass.set_bind_group(0, &self.group, &[]);
+        pass.set_bind_group(2, &self.materials, &[]);
+        let mut visible = self.visible.clone();
+        visible.sort_by(|a, b| {
+            // Camera-relative origins are available through preparation; sort
+            // stored distances rather than mapping/readback of GPU uniforms.
+            self.tiles[b]
+                .distance
+                .total_cmp(&self.tiles[a].distance)
+                .then_with(|| a.cmp(b))
+        });
+        let mut triangles = 0;
+        for key in visible {
+            let tile = &self.tiles[&key];
+            if tile.water_count == 0 {
+                continue;
+            }
+            pass.set_bind_group(1, &tile.group, &[]);
+            pass.set_vertex_buffer(0, tile.vertex.slice(..));
+            pass.set_index_buffer(tile.water_index.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..tile.water_count, 0, 0..1);
+            triangles += tile.water_count as usize / 3;
+        }
+        triangles
+    }
+    /// Offscreen callers share the same post-AO transparent ordering as play.
+    pub(crate) fn draw_water_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        scene: &wgpu::TextureView,
+        indirect: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+    ) -> usize {
+        let mut attachments =
+            super::super::scene_ao::attachments(scene, indirect, wgpu::Color::TRANSPARENT);
+        for attachment in attachments.iter_mut().flatten() {
+            attachment.ops.load = wgpu::LoadOp::Load;
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("distant water after ambient resolve"),
+            color_attachments: &attachments,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+        self.draw_water(&mut pass)
     }
 }
 /// A ready parent covers its entire footprint until all four children can draw.

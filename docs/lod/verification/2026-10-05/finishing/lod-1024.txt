@@ -1,0 +1,16 @@
+    Finished `release` profile [optimized] target(s) in 0.36s
+     Running `target/release/bloxgloom lod-perf 300 6 1024`
+temporal AA: off
+sun shadows: medium (2048px, 40m); GPU timestamps include shadow pass
+LOD scene: horizon=1024 quality=1 tiles=73 unavailable=0 summary=825.23ms summary_bytes=3182816 reduction=17.13ms reduction_parents=12 reduction_unavailable=0 meshing=284.39ms mesh_bytes=61477624 triangles=1182262
+CPU frame (n=529): p50=2.113 ms, p95=5.724 ms, p99=8.296 ms
+CPU upload-ramp frame (n=229): p50=1.771 ms, p95=2.370 ms, p99=2.590 ms
+CPU steady frame (n=300): p50=3.994 ms, p95=6.709 ms, p99=9.516 ms
+GPU render passes (n=529): p50=4.261 ms, p95=4.883 ms, p99=7.440 ms
+GPU upload-ramp passes (n=229): p50=3.627 ms, p95=4.261 ms, p99=5.648 ms
+GPU steady passes (n=300): p50=4.319 ms, p95=5.282 ms, p99=9.864 ms
+LOD benchmark: horizon=1024 summary-bytes=3182816 mesh-bytes=61477624 gpu-tiles=73 selected-tiles=31 gpu-bytes=61477624
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=313, gpu-resident=313 (313 uploaded), final-visible=168 / max-visible=168, final-triangles=549918 / max-triangles=549918, mesh-bytes=20754456, upload-bytes=20754456, max-upload/frame=2 chunks / 313104 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 314612 mesh vertices (51412 cutout), 471918 indices (77118 cutout), generated in 2840.5 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 229 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback

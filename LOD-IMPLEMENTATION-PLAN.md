@@ -8,7 +8,9 @@ the original implementation sequence and explicitly deferred follow-up work.
 The October 5 improvement pass preserves Balanced's detail ring when selecting
 Detailed, samples every fine column in two-block transition cells, packs LOD
 vertices to 20 bytes, culls against worker-computed geometry bounds, and caches
-unchanged ready coverage and refinement selection. See the linked architecture
+unchanged ready coverage and refinement selection. The finishing pass adds actual
+textures in transition cells, transparent distant water and source-validated disk
+caching across restarts. See the linked architecture
 and measurements for verification and remaining approximation limits.
 
 Add a server-supplied distant terrain layer that extends the visible landscape
@@ -63,9 +65,10 @@ Use independent resource caps and give nearby gameplay precedence.
 
 Initial scope includes opaque terrain, cliffs, overhangs, static block structures,
 and simplified leaf canopies. Omit small decorative plants at distance. Moving
-entities, drops, water transparency, custom animated materials, and distant
-bounced lighting are deferred. Unsupported material appearances receive a
-documented static fallback rather than invoking arbitrary material shaders.
+entities, drops, custom animated materials, and distant bounced lighting are
+deferred. Transparent distant source water is implemented. Unsupported material
+appearances receive a documented static fallback rather than invoking arbitrary
+material shaders.
 
 ## Data model and module boundaries
 
@@ -263,8 +266,9 @@ unavailable results when resource limits prevent it.
 Document the Rust and Luau authoring surfaces if this contract becomes public.
 Do not bypass extensions merely to make builtin benchmarks faster.
 
-Screen-space error selection, further geometry compression, and distant
-transparency can follow measured need. They are not first-release requirements.
+Screen-space error selection and further geometry compression can follow
+measured need; they are not first-release requirements. Distant water
+transparency is implemented.
 
 ## Verification and completion criteria
 

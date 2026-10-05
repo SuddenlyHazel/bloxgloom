@@ -2,7 +2,6 @@
 use super::{DEPTH_FORMAT, daylight, post, scene_ao};
 use crate::world::{CHUNK_SIZE, ChunkKey};
 use glam::Vec3;
-use std::time::Instant;
 use wgpu::util::DeviceExt;
 
 pub(crate) fn distance(key: ChunkKey, eye: Vec3) -> f32 {
@@ -14,15 +13,12 @@ pub(crate) struct WaterRenderer {
     pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     time: wgpu::Buffer,
-    started: Instant,
 }
 impl WaterRenderer {
     pub(crate) fn new(device: &wgpu::Device, camera: &wgpu::Buffer) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("water shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                daylight::surface_shader(include_str!("water.wgsl")).into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(shader(include_str!("water.wgsl")).into()),
         });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("water uniforms"),
@@ -69,19 +65,13 @@ impl WaterRenderer {
             pipeline,
             group,
             time,
-            started: Instant::now(),
         }
     }
     pub(crate) fn prepare(&self, queue: &wgpu::Queue) {
         queue.write_buffer(
             &self.time,
             0,
-            bytemuck::cast_slice(&[
-                self.started.elapsed().as_secs_f32() % (std::f32::consts::TAU * 10.0),
-                0.0,
-                0.0,
-                0.0,
-            ]),
+            bytemuck::cast_slice(&[time(), 0.0, 0.0, 0.0]),
         );
     }
     pub(crate) fn draw(
@@ -98,6 +88,17 @@ impl WaterRenderer {
         pass.draw_indexed(0..indices, 0, 0..1);
         indices as usize / 3
     }
+}
+pub(crate) fn time() -> f32 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    (START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64()
+        % (std::f64::consts::TAU * 10.0)) as f32
+}
+pub(super) fn shader(source: &str) -> String {
+    daylight::surface_shader(&format!("{}\n{source}", include_str!("water_surface.wgsl")))
 }
 #[cfg(test)]
 mod tests;

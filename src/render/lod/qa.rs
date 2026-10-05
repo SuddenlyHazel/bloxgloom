@@ -40,7 +40,9 @@ impl EditGpu {
             .request_device(&wgpu::DeviceDescriptor::default())
             .await
             .expect("opt-in LOD GPU QA device");
-        let gpu = Gpu::new(&device, post::HDR_FORMAT);
+        let (materials, _, _, _, textures) =
+            super::super::create_voxel_pipeline(&device, &queue, post::HDR_FORMAT);
+        let gpu = Gpu::new(&device, post::HDR_FORMAT, &materials, &textures);
         let post = post::PostProcess::new(&device, WIDTH, HEIGHT, FORMAT);
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("network edit GPU QA framebuffer"),
@@ -159,6 +161,12 @@ impl EditGpu {
             &mut encoder,
             &self.depth,
             super::super::view_projection(camera, WIDTH, HEIGHT),
+        );
+        self.gpu.draw_water_pass(
+            &mut encoder,
+            &self.post.scene,
+            &self.post.ambient.indirect,
+            &self.depth,
         );
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &self.view);

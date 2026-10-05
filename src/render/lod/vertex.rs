@@ -7,6 +7,13 @@ pub(super) struct Vertex {
     surface: u32,
 }
 impl Vertex {
+    pub(super) fn material(mut self, surface: super::surface::Surface) -> Self {
+        self.color[3] = (surface.color[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+        self.surface |= (u32::from(surface.fluid) << 11)
+            | (u32::from(surface.cutout) << 12)
+            | (surface.layer.map_or(0, |layer| layer + 1) << 13);
+        self
+    }
     pub(super) fn new(
         position: [f32; 3],
         axis: usize,

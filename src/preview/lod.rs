@@ -77,7 +77,10 @@ pub(super) fn terrain_meshes(
         tiles.len(),
         started.elapsed().as_secs_f64() * 1000.0,
         meshes.iter().map(Mesh::byte_len).sum::<usize>(),
-        meshes.iter().map(|m| m.indices.len() / 3).sum::<usize>()
+        meshes
+            .iter()
+            .map(|m| (m.indices.len() + m.water_indices.len()) / 3)
+            .sum::<usize>()
     );
     Ok((meshes, summary_bytes))
 }
@@ -105,7 +108,9 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
         .await?;
     let width = 1000;
     let height = 600;
-    let mut gpu = Gpu::new(&device, render::post::HDR_FORMAT);
+    let (materials, _, _, _, textures) =
+        render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+    let mut gpu = Gpu::new(&device, render::post::HDR_FORMAT, &materials, &textures);
     gpu.set_horizon(horizon);
     let camera = Camera {
         position: Vec3::new(8.5, 80.0, -24.0),
@@ -123,7 +128,29 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
     }
     let (sky, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
+    let transition_position = Vec3::new(
+        100.0,
+        world::terrain_height(100, -32, SEED) as f32 + 18.0,
+        -32.0,
+    );
+    let transition_direction = (Vec3::new(
+        155.0,
+        world::terrain_height(155, 35, SEED) as f32 + 4.0,
+        35.0,
+    ) - transition_position)
+        .normalize();
     let mut cases = vec![
+        (
+            "terrain-transition",
+            Camera {
+                position: transition_position,
+                yaw: transition_direction.z.atan2(transition_direction.x),
+                pitch: transition_direction.y.asin(),
+                ..camera
+            },
+            crate::daylight::INITIAL_MS,
+            0.0,
+        ),
         ("terrain-noon", camera, crate::daylight::INITIAL_MS, 0.0),
         (
             "terrain-night",
@@ -244,7 +271,98 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &directory.join(format!("{name}.png")),
         )?;
     }
+    gpu.clear();
+    let water = water_tile();
+    gpu.enqueue(render::lod::mesh(
+        &water,
+        &[],
+        crate::content::catalog(),
+        &colors,
+    )?)
+    .map_err(|_| "water fixture admission")?;
+    gpu.upload(&device);
+    let position = Vec3::new(34.0, 44.0, -16.0);
+    let direction = (Vec3::new(32.0, 11.0, 32.0) - position).normalize();
+    let water_camera = Camera {
+        position,
+        yaw: direction.z.atan2(direction.x),
+        pitch: direction.y.asin(),
+        ..camera
+    };
+    for (name, time, mask) in [
+        ("water-noon", crate::daylight::INITIAL_MS, false),
+        ("water-night", crate::daylight::CYCLE_MS * 3 / 4, false),
+        ("water-ready-3d", crate::daylight::INITIAL_MS, true),
+    ] {
+        let atmosphere = render::daylight::Atmosphere::at(time);
+        gpu.prepare(
+            &queue,
+            water_camera,
+            width,
+            height,
+            atmosphere,
+            std::iter::once(world::ChunkKey { x: 0, y: 0, z: 0 }).filter(|_| mask),
+        );
+        queue.write_buffer(
+            &sky_buffer,
+            0,
+            bytemuck::cast_slice(&render::sky_camera_data(
+                water_camera,
+                width,
+                height,
+                atmosphere,
+            )),
+        );
+        draw_image(
+            &device,
+            &queue,
+            &gpu,
+            &sky,
+            &sky_group,
+            water_camera,
+            width,
+            height,
+            &directory.join(format!("{name}.png")),
+        )?;
+    }
     Ok(())
+}
+
+fn water_tile() -> LodTile {
+    let mut tile = structure_tile();
+    tile.key.level = 1;
+    for z in 0..32 {
+        for x in 0..32 {
+            let wet = (4..28).contains(&x) && (4..28).contains(&z);
+            let bed = if wet {
+                if (x / 4 + z / 4) % 2 == 0 { 7 } else { 10 }
+            } else {
+                12
+            };
+            let column = &mut tile.columns[x + 32 * z];
+            column.spans = vec![Span {
+                bottom: 0,
+                top: bed,
+                state: if (x / 4 + z / 4) % 2 == 0 {
+                    world::GRAVEL
+                } else {
+                    world::SAND
+                },
+                sky: 12,
+                glow: 0,
+            }];
+            if wet {
+                column.spans.push(Span {
+                    bottom: bed,
+                    top: 12,
+                    state: world::WATER,
+                    sky: 15,
+                    glow: 0,
+                });
+            }
+        }
+    }
+    tile
 }
 
 fn structure_tile() -> LodTile {
@@ -388,6 +506,7 @@ fn draw_image(
         &depth,
         render::view_projection(camera, width, height),
     );
+    gpu.draw_water_pass(&mut encoder, &post.scene, &post.ambient.indirect, &depth);
     post.encode(device, queue, &mut encoder, &view);
     queue.submit(Some(encoder.finish()));
     super::capture::save_texture(device, queue, &color, width, height, path)

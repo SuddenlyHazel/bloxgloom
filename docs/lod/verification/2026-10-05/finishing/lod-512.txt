@@ -1,0 +1,17 @@
+    Finished `release` profile [optimized] target(s) in 0.53s
+     Running `target/release/bloxgloom lod-perf 300 6 512`
+temporal AA: off
+sun shadows: medium (2048px, 40m); GPU timestamps include shadow pass
+LOD scene: horizon=512 quality=1 tiles=77 unavailable=0 summary=973.54ms summary_bytes=3369170 reduction=22.44ms reduction_parents=17 reduction_unavailable=0 meshing=271.86ms mesh_bytes=58593184 triangles=1126792
+CPU frame (n=533): p50=2.783 ms, p95=5.985 ms, p99=9.917 ms
+CPU upload-ramp frame (n=233): p50=2.956 ms, p95=6.359 ms, p99=8.427 ms
+CPU steady frame (n=300): p50=2.625 ms, p95=5.590 ms, p99=14.174 ms
+GPU render passes (n=533): p50=4.241 ms, p95=6.825 ms, p99=12.535 ms
+GPU upload-ramp passes (n=233): p50=3.775 ms, p95=7.114 ms, p99=9.903 ms
+GPU steady passes (n=300): p50=4.274 ms, p95=6.643 ms, p99=13.929 ms
+LOD benchmark: horizon=512 summary-bytes=3369170 mesh-bytes=58593184 gpu-tiles=77 selected-tiles=28 gpu-bytes=58593184
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=313, gpu-resident=313 (313 uploaded), final-visible=168 / max-visible=168, final-triangles=462050 / max-triangles=462050, mesh-bytes=20754456, upload-bytes=20754456, max-upload/frame=2 chunks / 313104 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 314612 mesh vertices (51412 cutout), 471918 indices (77118 cutout), generated in 2858.0 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 233 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback
+final-frame image: /tmp/bloxgloom-lod-finish-integrated.png

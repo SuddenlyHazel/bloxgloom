@@ -191,7 +191,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub(crate) fn enqueue_lod_mesh(&mut self, mesh: lod::Mesh) -> Result<(), lod::Mesh> {
+    pub(crate) fn enqueue_lod_mesh(&mut self, mesh: lod::Mesh) -> Result<(), Box<lod::Mesh>> {
         self.lod.enqueue(mesh)
     }
     pub(crate) fn discard_obsolete_lod(&mut self, key: crate::lod::TileKey, minimum: u64) {
@@ -317,7 +317,7 @@ impl Renderer {
         let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
-        let lod = lod::Gpu::new(&device, post::HDR_FORMAT);
+        let lod = lod::Gpu::new(&device, post::HDR_FORMAT, &pipeline, &texture_group);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let water = water::WaterRenderer::new(&device, &camera_buffer);
         let rain =
@@ -915,6 +915,7 @@ impl Renderer {
                     .total_cmp(&water::distance(*a, camera.position))
                     .then_with(|| a.cmp(b))
             });
+            stats.drawn_triangles += self.lod.draw_water(&mut pass);
             self.water.prepare(&self.queue);
             for (_, mesh) in water {
                 stats.drawn_triangles +=

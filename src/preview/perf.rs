@@ -247,7 +247,8 @@ pub(super) async fn run_perf_benchmark_async(
         pitch: direction.y.asin(),
         fov_y_radians: 70.0f32.to_radians(),
     };
-    let mut lod_gpu = render::lod::Gpu::new(&device, render::post::HDR_FORMAT);
+    let mut lod_gpu =
+        render::lod::Gpu::new(&device, render::post::HDR_FORMAT, &pipeline, &texture_group);
     lod_gpu.set_horizon(lod_horizon);
     let (lod_meshes, lod_summary_bytes) = if lod_horizon > 0 {
         super::lod::terrain_meshes(camera, lod_horizon)?
@@ -585,6 +586,7 @@ pub(super) async fn run_perf_benchmark_async(
                 }),
                 ..Default::default()
             });
+            final_triangles += lod_gpu.draw_water(&mut pass);
             water_renderer.prepare(&queue);
             let mut water = gpu_meshes
                 .iter()

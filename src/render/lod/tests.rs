@@ -1,4 +1,5 @@
 use super::*;
+mod appearance;
 use crate::{
     lod::{Column, Interval, LodTile, Span, TILE_COLUMNS, TileKey},
     world::STONE,
@@ -124,7 +125,7 @@ fn coarse_boundary_splits_only_where_fine_spans_differ() {
 }
 #[test]
 fn distant_shader_validates_and_uses_three_dimensional_coverage() {
-    let source = super::super::daylight::surface_shader(include_str!("shader.wgsl"));
+    let source = super::super::water::shader(include_str!("shader.wgsl"));
     let module = wgpu::naga::front::wgsl::parse_str(&source).unwrap();
     wgpu::naga::valid::Validator::new(
         wgpu::naga::valid::ValidationFlags::all(),

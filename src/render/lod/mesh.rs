@@ -9,6 +9,7 @@ pub(crate) struct Mesh {
     pub revision: u64,
     pub(super) vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    pub water_indices: Vec<u32>,
     pub(super) bounds: Option<[glam::Vec3; 2]>,
     pub(super) coverage: Box<super::coverage::Coverage>,
 }
@@ -21,7 +22,8 @@ impl Mesh {
         }))
     }
     pub(crate) fn byte_len(&self) -> usize {
-        self.vertices.len() * std::mem::size_of::<Vertex>() + self.indices.len() * 4
+        self.vertices.len() * std::mem::size_of::<Vertex>()
+            + (self.indices.len() + self.water_indices.len()) * 4
     }
 }
 /// Exact retained span surfaces. Side boundaries are split into unit strips:
@@ -38,6 +40,7 @@ pub(crate) fn mesh(
         revision: tile.revision,
         vertices: vec![],
         indices: vec![],
+        water_indices: vec![],
         bounds: None,
         coverage: Box::new(super::coverage::Coverage::from_tile(tile)),
     };
@@ -59,10 +62,10 @@ pub(crate) fn mesh(
             for span in &c.spans {
                 for (side, y) in [(-1, span.bottom), (1, span.top)] {
                     // Spans touching vertically share no visible cap.
-                    if c.spans
-                        .iter()
-                        .any(|s| if side > 0 { s.bottom == y } else { s.top == y })
-                    {
+                    if c.spans.iter().any(|s| {
+                        super::surface::occludes(catalog, span.state, s.state)
+                            && if side > 0 { s.bottom == y } else { s.top == y }
+                    }) {
                         continue;
                     }
                     caps.entry((
@@ -116,9 +119,16 @@ pub(crate) fn mesh(
                                     .zip(nz)
                                     .and_then(|(nx, nz)| find_column(tile, neighbors, nx, nz));
                                 if let Some(nc) = neighbor {
-                                    if !edge {
+                                    if !edge
+                                        || catalog.block_flags(span.state) & crate::content::FLUID
+                                            != 0
+                                    {
                                         for s in &nc.spans {
-                                            intervals = subtract(intervals, s.bottom, s.top);
+                                            if super::surface::occludes(
+                                                catalog, span.state, s.state,
+                                            ) {
+                                                intervals = subtract(intervals, s.bottom, s.top);
+                                            }
                                         }
                                     } else {
                                         // Keep the exterior walls until the neighbor is
@@ -176,7 +186,14 @@ pub(crate) fn mesh(
                                         size,
                                         axis,
                                         side,
-                                        colors.face(catalog, span.state, axis, side),
+                                        super::surface::Surface::new(
+                                            catalog,
+                                            colors,
+                                            span.state,
+                                            axis,
+                                            side,
+                                            tile.key.level,
+                                        ),
                                         sky,
                                         span.glow,
                                     )?;
@@ -217,7 +234,7 @@ pub(crate) fn mesh(
                     [dx as i64 * i64::from(w), 0, dz as i64 * i64::from(w)],
                     1,
                     side,
-                    colors.face(catalog, state, 1, side),
+                    super::surface::Surface::new(catalog, colors, state, 1, side, tile.key.level),
                     sky,
                     glow,
                 )?;
@@ -309,7 +326,7 @@ fn quad(
     size: [i64; 3],
     axis: usize,
     side: i32,
-    color: [f32; 3],
+    surface: super::surface::Surface,
     sky: u8,
     glow: u8,
 ) -> Result<(), String> {
@@ -323,16 +340,24 @@ fn quad(
         let mut pos = p.map(i64::from);
         pos[u] += a * size[u];
         pos[v] += b * size[v];
-        mesh.vertices.push(Vertex::new(
-            pos.map(|x| x as f32),
-            axis,
-            side,
-            color,
-            sky,
-            glow,
-        ));
+        mesh.vertices.push(
+            Vertex::new(
+                pos.map(|x| x as f32),
+                axis,
+                side,
+                [surface.color[0], surface.color[1], surface.color[2]],
+                sky,
+                glow,
+            )
+            .material(surface),
+        );
     }
-    mesh.indices.extend(if side > 0 {
+    let indices = if surface.fluid {
+        &mut mesh.water_indices
+    } else {
+        &mut mesh.indices
+    };
+    indices.extend(if side > 0 {
         [base, base + 1, base + 2, base, base + 2, base + 3]
     } else {
         [base, base + 2, base + 1, base, base + 3, base + 2]
