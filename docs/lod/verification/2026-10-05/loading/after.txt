@@ -1,0 +1,20 @@
+   Compiling bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `release` profile [optimized] target(s) in 1m 27s
+     Running unittests src/main.rs (target/release/deps/bloxgloom-22513d94d45a3148)
+
+running 1 test
+2026-10-05T16:42:46.339739Z  INFO server::net::tests::lod::loading::lod_loading_throughput_over_real_listener bloxgloom::lod_loading: LOD generation pool ready workers=4 admitted=4
+2026-10-05T16:42:46.348885Z  INFO ThreadId(74) server{listen_addr=127.0.0.1:55971}: bloxgloom::server::net::reactor: server listening max_clients=128
+2026-10-05T16:42:46.413405Z  INFO ThreadId(74) server{listen_addr=127.0.0.1:55971}: bloxgloom::server::net::reactor::connection: player joined player_id=1 connection_key=1
+LOD loading cold: tiles=77 window=4 first=40.431ms total=959.888ms request_p50=40.741ms request_p95=60.316ms worst_ping=24.201ms
+LOD loading repeat: tiles=77 window=4 first=40.755ms total=800.312ms request_p50=39.977ms request_p95=42.962ms worst_ping=23.096ms
+2026-10-05T16:42:48.213951Z  WARN                                                          server-coordinator server_simulation: bloxgloom::server: disconnecting client after outbound queue failure error=Disconnected queued_frames=0 queued_bytes=0
+2026-10-05T16:42:48.264887Z  INFO server::net::tests::lod::loading::lod_loading_throughput_over_real_listener bloxgloom::lod_loading: LOD generation pool ready workers=4 admitted=4
+2026-10-05T16:42:48.276052Z  INFO ThreadId(158) server{listen_addr=127.0.0.1:55975}: bloxgloom::server::net::reactor: server listening max_clients=128
+2026-10-05T16:42:48.340411Z  INFO ThreadId(158) server{listen_addr=127.0.0.1:55975}: bloxgloom::server::net::reactor::connection: player joined player_id=4294967297 connection_key=1
+LOD loading restart: tiles=77 window=4 first=37.002ms total=796.565ms request_p50=39.872ms request_p95=43.688ms worst_ping=24.615ms
+2026-10-05T16:42:49.181462Z  WARN                                                          server-coordinator server_simulation: bloxgloom::server: disconnecting client after outbound queue failure error=Disconnected queued_frames=0 queued_bytes=0
+test server::net::tests::lod::loading::lod_loading_throughput_over_real_listener ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1892 filtered out; finished in 2.98s
+

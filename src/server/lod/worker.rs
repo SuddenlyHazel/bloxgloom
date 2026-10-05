@@ -29,6 +29,7 @@ pub(super) struct Completion {
     pub generation: Duration,
     pub cache_write: Duration,
     pub finished: Instant,
+    pub error: Option<String>,
 }
 
 pub(super) fn run(
@@ -48,9 +49,18 @@ pub(super) fn run(
         };
         let started = Instant::now();
         let path = super::disk::path(&cache, job.key);
-        let sources = (!job.cancelled.load(Ordering::Relaxed))
-            .then(|| super::sources::Sources::capture(&world, &root, &job))
-            .and_then(Result::ok);
+        let mut error = None;
+        let sources = if job.cancelled.load(Ordering::Relaxed) {
+            None
+        } else {
+            match super::sources::Sources::capture(&world, &root, &job) {
+                Ok(sources) => Some(sources),
+                Err(failure) => {
+                    error = Some(failure.to_string());
+                    None
+                }
+            }
+        };
         let source_time = started.elapsed();
         let read_at = Instant::now();
         let cached = sources
@@ -59,7 +69,15 @@ pub(super) fn run(
         let cache_read = read_at.elapsed();
         let cache_hit = cached.is_some();
         let build_at = Instant::now();
-        let tile = cached.or_else(|| sources.as_ref().and_then(|s| build(&world, &job, s).ok()));
+        let tile = cached.or_else(|| {
+            sources.as_ref().and_then(|s| match build(&world, &job, s) {
+                Ok(tile) => Some(tile),
+                Err(failure) => {
+                    error = Some(failure.to_string());
+                    None
+                }
+            })
+        });
         let generation = if cache_hit {
             Duration::ZERO
         } else {
@@ -93,6 +111,7 @@ pub(super) fn run(
                 generation,
                 cache_write,
                 finished: Instant::now(),
+                error,
             })
             .is_err()
         {

@@ -1,0 +1,34 @@
+LOD loading verification, 2026-10-05
+
+RUST_TEST_THREADS=4 cargo test --workspace
+test result: ok. 1879 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 223.90s
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Checking bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 13.85s
+
+cargo fmt --all -- --check
+Passed.
+
+cargo build --release
+   Compiling bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `release` profile [optimized] target(s) in 53.59s
+
+graphify update .
+Re-extracting code files in . (no LLM needed)...
+[graphify watch] 78 file(s) not classified (no supported extension or shebang), skipped: .gitignore, NoiseMachine-LICENSE, authored.wgsl, bloxgloom-lod-edit-gpu-qa.log, body.ttf, character.wgsl (+72 more)
+  AST extraction: 77/77 uncached files (100%) [10 workers]
+  warning: 68 file(s) had syntax errors and may be partially extracted: docs/modding/types/player-modifiers.luau (first error at line 2, no symbols extracted), docs/modding/types/player-world.luau (first error at line 1, no symbols extracted), fixtures/anchored-counter/packages/counter/server/main.luau (first error at line 3, no symbols extracted), fixtures/combined-mod/packages/verdant/client/client_startup.luau (first error at line 2, no symbols extracted), fixtures/combined-mod/packages/verdant/client/view.luau (first error at line 2, no symbols extracted) (+63 more)
+[graphify watch] community set changed since labeling (1078 saved labels, 1049 communities now; renamed 332 community(ies) by their hub). Run `graphify label` to refresh names with the LLM.
+[graphify] backed up curated graph (5 files) -> 2026-10-05/
+Graph has 19712 nodes (above 5000 limit). Building aggregated community view...
+graph.html written (aggregated: 1049 community nodes, 4111 cross-community edges)
+Tip: run with --obsidian for full node-level detail.
+[graphify watch] Rebuilt: 19712 nodes, 43904 edges, 1049 communities
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Tip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.

@@ -112,6 +112,9 @@ impl State {
     }
     pub(super) fn unavailable(&mut self, session: u64, request: u64, key: TileKey) {
         if session == self.session && self.requests.get(&key).is_some_and(|r| r.id == request) {
+            tracing::debug!(target: "bloxgloom::lod_loading", ?key, request,
+                request_roundtrip_ms=crate::lod::loading::ms(self.requests[&key].started.elapsed()),
+                retry_s=RETRY.as_secs(), "LOD client unavailable");
             self.requests.remove(&key);
             self.retry.insert(key, Instant::now() + RETRY);
         }

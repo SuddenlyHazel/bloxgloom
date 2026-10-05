@@ -211,6 +211,7 @@ pub(super) fn poll(state: &mut State) {
     while let Ok(result) = state.lod.results.try_recv() {
         let valid = state.lod.finish(&result);
         tracing::debug!(target: "bloxgloom::lod_loading", key=?result.key, revision=result.revision, valid,
+            available=result.tile.is_some(), error=result.error.as_deref(),
             worker_ms=crate::lod::loading::ms(result.elapsed), worker_queue_ms=crate::lod::loading::ms(result.queue_age),
             sources_ms=crate::lod::loading::ms(result.sources), cache_read_ms=crate::lod::loading::ms(result.cache_read),
             generation_ms=crate::lod::loading::ms(result.generation), cache_write_ms=crate::lod::loading::ms(result.cache_write),

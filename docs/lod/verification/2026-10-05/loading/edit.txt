@@ -1,0 +1,12 @@
+Command: BLOXGLOOM_LOD_GPU_QA=/tmp/bloxgloom-lod-loading-edit RUST_TEST_THREADS=1 cargo test committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint -- --nocapture
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running unittests src/main.rs (target/debug/deps/bloxgloom-0262567789175cf5)
+
+running 1 test
+test server::net::tests::lod::committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint ... LOD accepted edit -> first client GPU-drawn: 290.634ms; changed=15323 pixels; production CPU meshing on scoped worker; offscreen GPU completion, excludes image readback/PNG; images=/tmp/bloxgloom-lod-loading-edit
+LOD committed edit to two refreshed clients: 400ms
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1892 filtered out; finished in 3.96s
+

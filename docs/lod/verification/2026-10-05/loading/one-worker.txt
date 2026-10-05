@@ -1,0 +1,19 @@
+    Finished `release` profile [optimized] target(s) in 0.44s
+     Running unittests src/main.rs (target/release/deps/bloxgloom-22513d94d45a3148)
+
+running 1 test
+2026-10-05T16:43:13.918003Z  INFO server::net::tests::lod::loading::lod_loading_throughput_over_real_listener bloxgloom::lod_loading: LOD generation pool ready workers=1 admitted=4
+2026-10-05T16:43:13.925709Z  INFO ThreadId(71) server{listen_addr=127.0.0.1:55996}: bloxgloom::server::net::reactor: server listening max_clients=128
+2026-10-05T16:43:13.990063Z  INFO ThreadId(71) server{listen_addr=127.0.0.1:55996}: bloxgloom::server::net::reactor::connection: player joined player_id=1 connection_key=1
+LOD loading cold: tiles=77 window=4 first=40.523ms total=1200.705ms request_p50=59.970ms request_p95=83.190ms worst_ping=28.975ms
+LOD loading repeat: tiles=77 window=4 first=40.584ms total=800.947ms request_p50=40.003ms request_p95=43.761ms worst_ping=24.391ms
+2026-10-05T16:43:16.026474Z  WARN                                                          server-coordinator server_simulation: bloxgloom::server: disconnecting client after outbound queue failure error=Disconnected queued_frames=0 queued_bytes=0
+2026-10-05T16:43:16.068238Z  INFO server::net::tests::lod::loading::lod_loading_throughput_over_real_listener bloxgloom::lod_loading: LOD generation pool ready workers=1 admitted=4
+2026-10-05T16:43:16.079336Z  INFO ThreadId(152) server{listen_addr=127.0.0.1:56000}: bloxgloom::server::net::reactor: server listening max_clients=128
+2026-10-05T16:43:16.143300Z  INFO ThreadId(152) server{listen_addr=127.0.0.1:56000}: bloxgloom::server::net::reactor::connection: player joined player_id=4294967297 connection_key=1
+LOD loading restart: tiles=77 window=4 first=37.258ms total=799.418ms request_p50=39.966ms request_p95=43.428ms worst_ping=24.791ms
+2026-10-05T16:43:16.983637Z  WARN                                                          server-coordinator server_simulation: bloxgloom::server: disconnecting client after outbound queue failure error=Disconnected queued_frames=0 queued_bytes=0
+test server::net::tests::lod::loading::lod_loading_throughput_over_real_listener ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1892 filtered out; finished in 3.16s
+

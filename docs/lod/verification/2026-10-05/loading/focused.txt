@@ -1,0 +1,110 @@
+   Compiling bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+warning: field `0` is never read
+  --> src/render/lod/gpu.rs:15:12
+   |
+15 |     Budget(Box<Mesh>),
+   |     ------ ^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `UploadError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+15 -     Budget(Box<Mesh>),
+15 +     Budget(()),
+   |
+
+warning: `bloxgloom` (bin "bloxgloom" test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.84s
+     Running unittests src/main.rs (target/debug/deps/bloxgloom-0262567789175cf5)
+
+running 66 tests
+test client::lod::tests::mixed_detail_boundary_neighbors_are_remeshed_without_overlapping_ancestors ... ok
+test client::lod::tests::teleport_reset_cancels_requests_without_reusing_request_identity ... ok
+test client::lod::tests::invalidation_rejects_old_builds_but_keeps_displayed_replicas ... ok
+test client::lod::tests::obsolete_requests_and_other_sessions_cannot_install_tiles ... ok
+test client::lod::uploads::tests::full_upload_queue_retains_completed_geometry_without_a_remesh_or_timer ... ok
+test config::tests::lod_settings_reject_unbounded_work_and_preserve_disable ... ok
+test lod::loading::tests::cpu_policy_bounds_both_pools_and_leaves_capacity_for_gameplay ... ok
+test lod::tests::bridges_and_sealed_cavities_survive_deterministic_reduction ... ok
+test client::lod::uploads::tests::residency_budget_rejection_does_not_block_other_completed_tiles ... ok
+test lod::tests::budget_reduction_preserves_water_and_solid_boundaries ... ok
+test lod::tests::coarse_extraction_requires_every_horizontal_sample ... ok
+test client::lod::workers::tests::pooled_meshes_preserve_identity_trace_and_release_catalog_after_completion ... ok
+test lod::tests::euclidean_keys_and_checked_edges ... ok
+test lod::tests::empty_is_known_missing_is_not_and_seams_join ... ok
+test lod::tests::excessive_geometry_and_illegal_states_are_rejected ... ok
+test lod::tests::foliage_transmits_sky_but_solid_roofs_and_unknown_gaps_do_not ... ok
+test lod::tests::hostile_vertical_extent_cannot_overflow_mesh_dimensions ... ok
+test lod::tests::parent_maps_child_quadrants_and_rejects_wrong_children ... ok
+test lod::tests::render_budget_simplification_cannot_erase_invalid_data_or_air_gaps ... ok
+test protocol::lod::tests::bounded_summary_wire_roundtrip_and_allocation_rejection ... ok
+test render::game_ui::menus::tests::native_graphics_lod_values_cover_off_horizons_and_quality_choices ... ok
+test render::lod::near_coverage::tests::ready_coverage_initializes_empty_and_tracks_additions_removals_and_hash_collisions ... ok
+test lod::tests::snapshot_order_preserves_trees_bridges_and_unknown_vertical_gaps ... ok
+test lod::tests::composed_contributor_bridge_survives_bounded_render_extraction ... ok
+test client::lod::uploads::tests::invalidation_and_retirement_cannot_upload_a_retained_old_completion ... ok
+test render::lod::tests::appearance::fluid_only_tiles_remain_drawable_and_count_toward_geometry_budget ... ok
+test render::lod::tests::appearance::only_transition_levels_receive_actual_face_textures ... ok
+test render::lod::tests::appearance::transparent_water_retains_opaque_bed_and_removes_internal_fluid_faces ... ok
+test render::lod::tests::bridge_keeps_both_gap_faces_and_sides ... ok
+test render::lod::tests::detailed_ring_extends_past_near_chunks_with_complete_sibling_families ... ok
+test render::lod::tests::distant_shader_validates_and_uses_three_dimensional_coverage ... ok
+test render::lod::tests::coarse_boundary_splits_only_where_fine_spans_differ ... ok
+test render::lod::tests::coordinate_and_vertical_extremes_mesh_without_wrapping ... ok
+test render::lod::tests::increasing_quality_never_shrinks_an_existing_refinement_ring ... ok
+test render::lod::tests::parent_stays_until_four_uploaded_children_replace_it ... ok
+test render::lod::tests::refinement_requests_complete_sibling_families_at_negative_boundaries ... ok
+test render::lod::tests::request_rings_are_bounded_and_coarse_first ... ok
+test render::lod::tests::culling_keeps_crossing_bounds_and_empty_tiles_keep_ready_coverage ... ok
+test render::lod::tests::unknown_child_height_cannot_remove_parent_bridge ... ok
+test render::lod::vertex::tests::appearance_bits_do_not_corrupt_normals_light_or_vertex_stride ... ok
+test render::lod::vertex::tests::compact_layout_preserves_positions_cardinal_normals_and_voxel_light ... ok
+test server::lod::tests::cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_queue ... ok
+test render::lod::tests::flat_roof_caps_merge_without_filling_openings ... ok
+test render::lod::tests::foliage_undersides_and_adjacent_outdoor_walls_receive_sky ... ok
+test render::lod::tests::sky_lit_roof_does_not_light_its_retained_cavity ... ok
+test server::lod::tests::persistent::committed_edit_before_invalidation_or_checkpoint_never_reuses_stale_disk_data ... ok
+LOD restart: cold=42.088ms warm=9.135ms
+test server::lod::tests::persistent::restart_reuses_unchanged_tile_and_rebases_its_publication_revision ... ok
+test server::lod::tests::persistent::different_world_identity_and_corrupt_cache_rebuild_from_authoritative_sources ... ok
+test server::lod::tests::revision_exhaustion_cancels_every_inflight_dependency ... ok
+test server::lod::tests::resident_capture_budget_rejects_excessive_observed_columns_and_ignores_builtin_high_air ... ok
+LOD cold=39ms warm=5ms bytes=50333
+test server::lod::tests::worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth ... ok
+test server::lod::tests::new_authoritative_high_load_invalidates_cached_partial_contributor_summary ... ok
+test server::lod::tests::resident_high_contributor_coverage_survives_eviction_without_save_data_or_pins ... ok
+test server::net::tests::lod::distant_tile_streams_with_session_and_keeps_gameplay_ping_responsive ... ok
+test server::net::tests::lod::loading::lod_loading_throughput_over_real_listener ... ignored, manual cold/memory/restart LOD throughput benchmark
+LOD committed edit to two refreshed clients: 249ms
+test server::net::tests::lod::loading::later_lod_request_and_ping_progress_while_first_generation_is_blocked ... ok
+test server::net::tests::script_startup::gameplay::lod_exploration::lod_exploration_revisits_evicted_tiles_without_pinning_authority ... ignored, 130 cold authoritative teleports; run manually for sustained exploration pressure
+test server::lod::tests::unrelated_commit_keeps_inflight_tile_while_related_commit_rejects_old_result ... ok
+test server::net::tests::lod::committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint ... ok
+builtin seed1 tile-2,-2: 43722 bytes 2243 spans
+test world::lod::tests::high_off_center_saved_structures_override_coarse_sampling ... ok
+test world::lod::tests::sampler_matches_authoritative_chunks_including_negative_coordinates ... ok
+test world::lod::tests::transition_sampling_retains_off_center_canopies_and_shared_vertical_air ... ok
+test world::lod::tests::coarse_tiles_are_deterministic_and_dark_beneath_top_surface ... ok
+builtin seed1 tile-1,0: 43946 bytes 2259 spans
+builtin seed1 tile0,0: 42532 bytes 2158 spans
+test world::terrain::hydrology::tests::water_survives_distant_lod_without_exceeding_transport_budgets ... ok
+builtin seed1 tile1,-1: 42728 bytes 2172 spans
+builtin seed1 tile2,2: 42798 bytes 2177 spans
+builtin seed17 tile-2,-2: 43106 bytes 2199 spans
+builtin seed17 tile-1,0: 42014 bytes 2121 spans
+LOD exact contributor128-block tile cold: 3565ms
+test server::net::tests::lod::registered_contributor_summary_negotiates_bounded_fallback_and_preserves_marker ... ok
+builtin seed17 tile0,0: 43232 bytes 2208 spans
+builtin seed17 tile1,-1: 42700 bytes 2170 spans
+builtin seed17 tile2,2: 43526 bytes 2229 spans
+builtin seed44 tile-2,-2: 42756 bytes 2174 spans
+builtin seed44 tile-1,0: 42266 bytes 2139 spans
+builtin seed44 tile0,0: 42504 bytes 2156 spans
+builtin seed44 tile1,-1: 42588 bytes 2162 spans
+builtin seed44 tile2,2: 43834 bytes 2251 spans
+test world::lod::tests::routine_distant_skyline_tiles_fit_payload_budget ... ok
+
+test result: ok. 64 passed; 0 failed; 2 ignored; 0 measured; 1827 filtered out; finished in 9.03s
+

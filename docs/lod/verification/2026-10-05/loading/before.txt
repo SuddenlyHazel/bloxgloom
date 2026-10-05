@@ -1,0 +1,13 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `release` profile [optimized] target(s) in 1m 30s
+     Running unittests src/main.rs (target/release/deps/bloxgloom-22513d94d45a3148)
+
+running 1 test
+LOD loading cold: tiles=77 window=4 first=40.228ms total=3678.306ms request_p50=163.690ms request_p95=240.940ms worst_ping=31.250ms
+LOD loading repeat: tiles=77 window=4 first=41.651ms total=3100.030ms request_p50=159.997ms request_p95=179.623ms worst_ping=37.043ms
+LOD loading restart: tiles=77 window=4 first=50.986ms total=3109.102ms request_p50=159.963ms request_p95=176.373ms worst_ping=29.323ms
+test server::net::tests::lod::loading::lod_loading_throughput_over_real_listener ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1886 filtered out; finished in 10.26s
+

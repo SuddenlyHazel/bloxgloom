@@ -467,9 +467,10 @@ Logs use milliseconds and tile key/revision plus request/client or build identit
 | Event | Timing fields |
 | --- | --- |
 | Build admitted | `admission_wait_ms`, `capture_ms` |
-| Terrain completion | `worker_queue_ms`, `sources_ms`, `cache_read_ms`, `generation_ms`, `cache_write_ms`, `worker_ms`, `completion_wait_ms`, `cache_hit` |
+| Terrain completion | `worker_queue_ms`, `sources_ms`, `cache_read_ms`, `generation_ms`, `cache_write_ms`, `worker_ms`, `completion_wait_ms`, `cache_hit`, `available`, `error` |
 | Delivery queued | `request_to_enqueue_ms`, conservative `bytes` |
 | Client received | `request_roundtrip_ms` |
+| Client unavailable | `request_roundtrip_ms`, `retry_s` |
 | Mesh admitted | `client_schedule_ms` |
 | Mesh completion | `mesh_queue_ms`, `material_prepare_ms`, `meshing_ms`, `result_wait_ms` |
 | Upload admitted | `upload_admission_ms` |
@@ -495,3 +496,78 @@ summaries and excludes client meshing and GPU upload:
 ```sh
 cargo test --release lod_loading_throughput_over_real_listener -- --ignored --nocapture
 ```
+
+On the same 10-CPU Apple M1 Pro, serial release runs before and after this change
+measured the following summary-arrival times. Automatic selection used four
+generation workers. No rendering/build jobs ran concurrently with these samples.
+
+| 77 summaries | Before | New scheduling, 1 worker | New scheduling, 4 workers |
+| --- | --- | --- | --- |
+| Cold | 3,678.306 ms | 1,200.705 ms | 959.888 ms |
+| Repeat | 3,100.030 ms | 800.947 ms | 800.312 ms |
+| Restart | 3,109.102 ms | 799.418 ms | 796.565 ms |
+
+Cold summary arrival improved 74%; restart arrival improved 74%. First-tile
+arrival remained about 40 ms: the improvement fills the horizon sooner rather
+than reducing initial latency. Four workers reduced cold time another 20%
+against new scheduling with one worker; warm loading remains limited by the
+four-request window and tick delivery. Worst observed ping in the four-worker
+run was 24.615 ms. These are single comparisons on this machine, not laptop
+or end-to-end visual-loading guarantees.
+
+[Before](verification/2026-10-05/loading/before.txt),
+[four workers](verification/2026-10-05/loading/after.txt),
+[one worker](verification/2026-10-05/loading/one-worker.txt), and
+[server stage diagnostics](verification/2026-10-05/loading/server-stages.txt)
+record the samples and commands. A separate [final debug diagnostic probe](verification/2026-10-05/loading/server-stages-final.txt)
+confirms the added availability fields; it is not part of the release comparison.
+The deterministic real-listener regression
+blocks the first tile's contributor while requiring the second tile and ping
+reply to arrive; it passed with two workers. Retained-completion tests cover
+upload-queue backpressure, invalidation, retirement and residency-budget fallback.
+The [two-client committed-edit check](verification/2026-10-05/loading/edit.txt)
+also passed with opt-in GPU verification; its inspected
+[before](verification/2026-10-05/loading/edit-before.png) and
+[after](verification/2026-10-05/loading/edit-after.png) frames show the removed
+block disappearing. Offscreen edit-to-drawn completion was 290.634 ms; this
+fixture excludes presentation and image readback.
+
+The full suite passed **1,940 tests, zero failures, 14 ignored** (1,879 game
+tests and 61 host-API tests). All 64 focused LOD tests passed, two ignored;
+formatting and strict all-target/all-feature Clippy passed:
+[checks](verification/2026-10-05/loading/checks.txt).
+
+A release client in an isolated temporary world with the existing Detailed 512
+settings exercised every client timing event, including 100 GPU uploads and
+upload-admission backpressure: [client stages](verification/2026-10-05/loading/live-stages.txt).
+The native UI could not be attached through CUA, so no live visual judgment is
+claimed. The [integrated offscreen frame](verification/2026-10-05/loading/integrated.png)
+was inspected. Its HUD values are fixture data.
+
+The Detailed live cold start also exposed remaining upload pacing. For the first
+upload of each of 90 received requests, request-to-upload p50 was 6,264.115 ms
+and the maximum 8,888.949 ms. Across seam rebuilds, upload-admission wait reached
+2,579.884 ms and admitted-queue wait 2,634.657 ms; there were no residency-budget
+rejections. Near radius was 6. These ages include off-camera requested tiles and
+do not measure the first visible frame. Near chunks can consume both upload
+slots and temporarily defer LOD, so faster summaries do not guarantee a fully
+uploaded horizon in one second. Fair/adaptive GPU upload budgeting remains a
+separate follow-up; this pass preserves the existing near-upload priority.
+
+The serial Balanced 512 rendering check measured 2.514 / 4.510 ms CPU p50/p95
+and 4.262 / 4.599 ms GPU p50/p95. The preceding pass measured 2.625 / 5.590 ms
+CPU and 4.274 / 6.643 ms GPU. Near setup took 2,955.5 ms; LOD summary generation
+980.28 ms and meshing 338.38 ms (previously 973.54 / 271.86 ms). The headless
+fixture preprocesses serially and does not exercise the loading pools, network
+or upload backpressure. No steady-frame or serial-meshing speedup is claimed.
+Near geometry stayed at 20,754,456 bytes, LOD geometry at 58,593,184 bytes, and
+submitted triangles at 462,050: [rendering check](verification/2026-10-05/loading/lod-perf.txt).
+
+The near-only rendering check retained 20,754,456 geometry bytes and 83,616
+submitted triangles. Its first run measured CPU p50/p95 3.526 / 6.565 ms and
+GPU 3.687 / 5.987 ms. A repeat without code changes measured CPU
+2.182 / 4.226 ms and GPU 3.647 / 4.762 ms; the preceding pass was CPU
+2.134 / 5.013 ms and GPU 3.627 / 6.038 ms. Setup was 2,926.1 / 2,918.5 ms
+versus 2,816.4 ms previously. Both [first](verification/2026-10-05/loading/near-perf.txt)
+and [repeat](verification/2026-10-05/loading/near-perf-repeat.txt) samples are
+recorded; this variation does not establish a steady-frame improvement.

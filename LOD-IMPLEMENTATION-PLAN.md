@@ -13,6 +13,13 @@ textures in transition cells, transparent distant water and source-validated dis
 caching across restarts. See the linked architecture
 and measurements for verification and remaining approximation limits.
 
+The loading pass pipelines queued requests across bounded generation and meshing
+CPU pools, delivers ready summaries in fair byte-limited bursts, retains completed
+meshes under upload-queue backpressure, and records per-stage loading timings.
+Near gameplay priority and independent work/resource caps remain in place.
+The live trace still showed LOD upload delays when near chunks consumed both
+upload slots; fair/adaptive GPU upload budgeting is a separate measured follow-up.
+
 Add a server-supplied distant terrain layer that extends the visible landscape
 without extending full voxel simulation and replication to the same radius.
 Keep existing chunks, lighting, and gameplay authority for the nearby world.
