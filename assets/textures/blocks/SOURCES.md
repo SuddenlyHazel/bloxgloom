@@ -1,5 +1,9 @@
 # Block texture sources
 
+Current JG RTX imports and replacements are documented in [JG RTX attribution and import notes](../../jg-rtx/README.md), with per-file sources in its `provenance.json`. The notes below describe retained historical sources and any artwork not replaced by that import.
+
+## Previous imports and retained sources
+
 The current terrain albedo textures (`grass_top`, `grass_side`, `dirt`,
 `sand`, `snow`, `moss`, `gravel`, and `glowstone`) are a local trial of the user's
 NAPP 512x FREE 5.0.1 pack, provided from `Downloads/NAPP_512x_FREE_5.0.1`.

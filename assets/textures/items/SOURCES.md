@@ -1,5 +1,9 @@
 # Item texture sources
 
+Current JG RTX imports and replacements are documented in [JG RTX attribution and import notes](../../jg-rtx/README.md), with per-file sources in its `provenance.json`. The notes below describe retained historical sources and any artwork not replaced by that import.
+
+## Previous imports and retained sources
+
 `stick.png` and its `_n`/`_s` companions come from the user's local NAPP 512x
 FREE 5.0.1 pack (`assets/minecraft/textures/item/stick*.png`), by the NAPP team:
 https://napplab.com/. The albedo is resized to 128×128 with Lanczos filtering

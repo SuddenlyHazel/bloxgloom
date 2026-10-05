@@ -1,5 +1,9 @@
 # Foliage texture sources
 
+Current JG RTX imports and replacements are documented in [JG RTX attribution and import notes](../../jg-rtx/README.md), with per-file sources in its `provenance.json`. The notes below describe retained historical sources and any artwork not replaced by that import.
+
+## Previous imports and retained sources
+
 `source/vegetation-concept-sheet.png` is the retained 3-by-2 pixel-art concept sheet for the flower, fern, grass, and sapling sprites. The six 512-pixel cells were cropped and scaled to 128 pixels with nearest-neighbor filtering. The sapling cell supplies `assets/textures/items/sapling.png`.
 
 `leaves.png` now comes from the user's local NAPP 512x FREE 5.0.1 pack
