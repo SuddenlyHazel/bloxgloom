@@ -1,8 +1,7 @@
 """Canonical JG RTX companion sources and LabPBR data-channel conversion.
 
 Edition aliases and material rules follow JG RTX's src/scripts/labpbr modules.
-Albedo and smoothness remain the responsibility of import.py so the live-test
-stage does not change their conversion.
+Albedo is handled separately from linear normal and material data.
 """
 import json
 import re
@@ -112,8 +111,9 @@ def porosity(name):
 
 
 def encode_material(mer, name, original, has_subsurface):
-    """Keep original smoothness while repairing F0, SSS/porosity, and emission."""
+    """Convert perceptual MER roughness and encode the LabPBR channel contract."""
     result = np.array(original).copy()
+    result[:, :, 0] = 255 - mer[:, :, 2]
     target, threshold = metal_rule(name)
     result[:, :, 1] = np.where(mer[:, :, 0] >= threshold * 255, target, 10)
     result[:, :, 2] = (65 + np.rint(mer[:, :, 3].astype(float) * 190 / 255)
@@ -125,7 +125,7 @@ def encode_material(mer, name, original, has_subsurface):
 
 def repair_companions(directory, stem, normal, specular, java_normal, size):
     name, n_path, mer, height, sss, texture_set = canonical_sources(directory, stem)
-    details = {'normal_convention': 'DirectX image-down', 'smoothness': 'legacy conversion retained for stage 2'}
+    details = {'normal_convention': 'DirectX image-down'}
     if texture_set:
         details['texture_set'] = texture_set
     # Keep AO/height from Java but replace XY with the canonical Bedrock direction.
@@ -149,10 +149,12 @@ def repair_companions(directory, stem, normal, specular, java_normal, size):
             pixels = np.array(data_image(mer, size))
             details['material_source'] = mer
         specular = encode_material(pixels, name, specular, sss)
+        details['smoothness'] = '255 minus canonical MER perceptual roughness'
         details['material_encoding'] = 'MER to LabPBR 1.3 with curated F0 and metal rules'
     else:
         data = np.array(specular).copy()
         data[:, :, 1] = np.where(data[:, :, 1] == 0, 10, data[:, :, 1])
         specular = Image.fromarray(data)
         details['material_fallback'] = 'Java LabPBR with zero F0 corrected to dielectric 4 percent'
+        details['smoothness'] = 'authored Java LabPBR fallback; no canonical MER available'
     return normal, specular, details

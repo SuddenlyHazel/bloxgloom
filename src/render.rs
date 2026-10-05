@@ -66,6 +66,7 @@ pub use mesh::mesh_chunk;
 #[cfg(test)]
 pub use mesh::mesh_chunk_lit_with_catalog;
 pub use mesh::{ChunkMesh, mesh_chunk_lit_with_neighbors};
+pub(crate) use pipeline::{MaterialPreviewMode, create_material_preview_pipeline};
 pub(crate) use pipeline::{create_custom_voxel_pipeline, create_voxel_pipeline};
 pub(crate) use pipeline::{create_sun_shadow_pipelines, create_voxel_pipeline_with_catalog};
 pub(crate) use sky::{create_sky_pipeline, sky_camera_data};

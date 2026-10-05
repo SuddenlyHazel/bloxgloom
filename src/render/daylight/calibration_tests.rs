@@ -5,6 +5,16 @@ use wgpu::util::DeviceExt;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {
+    if id.x >= 18u {
+        var ray = vec3f(0.0,-1.0,0.0);
+        if id.x == 19u { ray = vec3f(1.0,-0.081,0.0); }
+        if id.x == 20u { ray = vec3f(1.0,-0.04,0.0); }
+        if id.x == 21u { ray = vec3f(1.0,0.0,0.0); }
+        if id.x >= 22u { ray = vec3f(0.0,1.0,0.0); }
+        if id.x == 23u { camera.sky_zenith.w = 0.0; }
+        result[id.x] = vec4f(bg_environment_radiance(ray),1.0);
+        return;
+    }
     if id.x >= 12u {
         let radiance = vec3f(0.16,0.04,0.25);
         var direction = vec3f(1.0,0.0,0.0);
@@ -81,12 +91,12 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
     });
     let output = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: &[0; 18 * 16],
+        contents: &[0; 24 * 16],
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 18 * 16,
+        size: 24 * 16,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -103,9 +113,9 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(18, 1, 1);
+        pass.dispatch_workgroups(24, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 18 * 16);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 24 * 16);
     queue.submit([encoder.finish()]);
     let slice = readback.slice(..);
     slice.map_async(wgpu::MapMode::Read, |result| result.unwrap());
@@ -113,6 +123,24 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
     let bytes = slice.get_mapped_range().unwrap();
     let rows: &[[f32; 4]] = bytemuck::cast_slice(&bytes);
     let light: Vec<_> = rows.iter().map(|v| Vec3::new(v[0], v[1], v[2])).collect();
+
+    assert_eq!(
+        light[18],
+        Vec3::ZERO,
+        "ground-facing rays cannot reflect the sky"
+    );
+    assert_eq!(light[19], Vec3::ZERO);
+    assert!(light[20].min_element() > 0.0);
+    assert!(
+        (light[21] - light[20]).min_element() > 0.0,
+        "horizon fade must be continuous"
+    );
+    assert!(light[22].distance(Vec3::new(0.20, 0.45, 0.75)) < 1e-6);
+    assert_eq!(
+        light[23],
+        Vec3::ZERO,
+        "environment intensity still gates sky reflections"
+    );
 
     // A shaded neutral surface is only mildly cool. The old blue fill almost
     // cancelled the warm skin palette (red/blue ratio was approximately 1.08).

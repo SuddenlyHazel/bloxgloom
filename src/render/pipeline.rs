@@ -14,6 +14,25 @@ pub(crate) type VoxelPipelines = (
 
 const VERTEX_STRIDE: u64 = VERTEX_FLOATS as u64 * 4;
 
+/// Headless material ablation; gameplay always uses Full.
+#[derive(Clone, Copy)]
+pub(crate) enum MaterialPreviewMode {
+    Albedo,
+    Normals,
+    Full,
+}
+
+impl MaterialPreviewMode {
+    fn flags(self, flags: u32) -> u32 {
+        flags
+            & match self {
+                Self::Albedo => !3,
+                Self::Normals => !2,
+                Self::Full => u32::MAX,
+            }
+    }
+}
+
 pub(crate) fn create_voxel_pipeline(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -35,6 +54,16 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
     format: wgpu::TextureFormat,
     catalog: &Catalog,
 ) -> Result<VoxelPipelines, String> {
+    create_material_preview_pipeline(device, queue, format, catalog, MaterialPreviewMode::Full)
+}
+
+pub(crate) fn create_material_preview_pipeline(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    format: wgpu::TextureFormat,
+    catalog: &Catalog,
+    mode: MaterialPreviewMode,
+) -> Result<VoxelPipelines, String> {
     let usage = material::resources::validate(
         material::texture_layers_for(catalog) as usize,
         device.limits().max_texture_array_layers,
@@ -50,7 +79,7 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
         custom::TYPES
     );
     Ok(create_voxel_pipeline_source(
-        device, queue, format, catalog, &source, None,
+        device, queue, format, catalog, &source, None, mode,
     ))
 }
 
@@ -96,6 +125,7 @@ pub(crate) fn create_custom_voxel_pipeline(
                     catalog,
                     &source,
                     Some(&gpu.layout),
+                    MaterialPreviewMode::Full,
                 );
                 if let Some(error) = pollster::block_on(error_scope.pop()) {
                     Err(format!("{owners}: material GPU preparation: {error}"))
@@ -115,6 +145,7 @@ fn create_voxel_pipeline_source(
     catalog: &Catalog,
     source: &str,
     visual_layout: Option<&wgpu::BindGroupLayout>,
+    mode: MaterialPreviewMode,
 ) -> (
     wgpu::RenderPipeline,
     wgpu::RenderPipeline,
@@ -227,7 +258,7 @@ fn create_voxel_pipeline_source(
         .iter()
         .zip(&companions.layers)
         .zip(&companions.auxiliary_flags)
-        .map(|((&flags, &layer), &auxiliary)| [flags | auxiliary, layer])
+        .map(|((&flags, &layer), &auxiliary)| [mode.flags(flags) | auxiliary, layer])
         .collect();
     let map_flags = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("frozen material companion flags"),

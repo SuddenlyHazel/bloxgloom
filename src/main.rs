@@ -85,9 +85,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v30-fixture"
+        "world-v31-fixture"
     } else {
-        "world-v30"
+        "world-v31"
     };
     match args.next().as_deref() {
         Some("water-preview") => {
@@ -569,6 +569,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err(usage.into());
             }
             preview::render_block_preview(&key, std::path::Path::new(&path))?;
+        }
+        Some("material-preview") => {
+            let usage = "usage: material-preview <state-key> <directory>";
+            let key = args.next().ok_or(usage)?;
+            let path = args.next().ok_or(usage)?;
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            preview::render_material_previews(&key, std::path::Path::new(&path))?;
         }
         Some("creature-preview") => {
             let usage = "usage: creature-preview <entity-key> <output.png> [package-root] [r,g,b]";

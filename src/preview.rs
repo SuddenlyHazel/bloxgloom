@@ -23,6 +23,8 @@ pub use daylight::render_daylight_previews;
 pub(crate) use water::render_water_previews;
 pub use weather::render_weather_previews;
 mod block;
+mod material;
+pub use material::render_material_previews;
 mod visuals;
 pub use visuals::render_visual_previews;
 mod egui_ui;
@@ -560,6 +562,7 @@ enum DropPhase {
 #[derive(Clone, Copy)]
 enum PreviewScene {
     Block(crate::content::BlockStateId),
+    Material(crate::content::BlockStateId, render::MaterialPreviewMode),
     Inventory(crate::content::EntityTypeId),
     Chests,
     Kilns,
@@ -679,7 +682,17 @@ async fn render_previews_weather(
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
     let (mut pipeline, mut cutout_pipeline, camera_buffer, _camera_group, texture_group) =
-        render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+        if let PreviewScene::Material(_, mode) = scene {
+            render::create_material_preview_pipeline(
+                &device,
+                &queue,
+                render::post::HDR_FORMAT,
+                crate::content::catalog(),
+                mode,
+            )?
+        } else {
+            render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT)
+        };
     let water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut rain_renderer = render::fire::FireRenderer::with_capacity(
@@ -791,6 +804,7 @@ async fn render_previews_weather(
         surface_height(target_xz.0, target_xz.1)
     };
     let (camera_position, target) = match scene {
+        PreviewScene::Material(..) => (Vec3::new(2.5, 35.0, 3.0), Vec3::new(0.5, 33.5, 0.5)),
         PreviewScene::Water { x, z, level } => {
             let target = Vec3::new(x as f32 + 0.5, level as f32 + 1.0, z as f32 + 0.5);
             (
@@ -917,7 +931,12 @@ async fn render_previews_weather(
                     y,
                     z: center_chunk.1 + z,
                 };
-                chunks.insert(key, Arc::new(world::generate_chunk(key, SEED)));
+                let chunk = if matches!(scene, PreviewScene::Material(..)) {
+                    world::Chunk::from_blocks(key, 0, vec![world::AIR; world::CHUNK_VOLUME])
+                } else {
+                    world::generate_chunk(key, SEED)
+                };
+                chunks.insert(key, Arc::new(chunk));
             }
         }
     }
@@ -950,6 +969,9 @@ async fn render_previews_weather(
         }
     }
     let mut shadow_avatars = Vec::new();
+    if let PreviewScene::Material(state, _) = scene {
+        camera_template = material::prepare(state, &mut chunks);
+    }
     if let PreviewScene::Calibration(calibration) = scene {
         camera_template = calibration::prepare(calibration, &mut chunks);
         avatar_renderer.preview_character_clip("idle", 0.35);
@@ -1757,6 +1779,7 @@ async fn render_previews_weather(
         if !matches!(
             scene,
             PreviewScene::SurfaceBare
+                | PreviewScene::Material(..)
                 | PreviewScene::Calibration(_)
                 | PreviewScene::Sandbox(_)
                 | PreviewScene::Outdoor(_)
@@ -1999,6 +2022,7 @@ async fn render_previews_weather(
         if !matches!(
             scene,
             PreviewScene::SurfaceBare
+                | PreviewScene::Material(..)
                 | PreviewScene::Calibration(_)
                 | PreviewScene::Sandbox(_)
                 | PreviewScene::Outdoor(_)

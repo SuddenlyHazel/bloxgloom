@@ -301,6 +301,8 @@ Run `cargo run --release -- daylight-preview daylight-previews` for sunrise, noo
 
 Run `cargo run --release -- calibration-preview calibration-previews` for matched 1280×800 lighting references: six fixed articulated characters covering light/dark skin, both bodies, and black/blond/pastel hair alongside stone, sand, wood, dirt, moss and leaves. It captures noon, open-sided shade, a cave entrance, a sealed cave, an emissive cave and night through production HDR/postprocessing at exposure 1.0. Camera, idle pose and materials stay fixed; player light is sampled from the scene exactly as in gameplay. The output includes capture settings and omits HUD overlays.
 
+Run `cargo run --release -- material-preview 'bloxgloom:cherry_log[axis=y]' material-previews` for a close, unobstructed block inspection. It produces matched morning/noon captures with albedo only, normal/AO/height detail, and full PBR. All variants use the production light, mesh, shadow, HDR and postprocessing paths at exposure 1.0; only companion-map presence flags change. The scene has a flat stone floor and no HUD or tree shadows. Log keys must specify an axis. Gameplay always uses full materials.
+
 Run `cargo run -- vegetation-preview vegetation-preview.png` to inspect trees and plant cutouts through the production GPU path without opening a window.
 
 Run `cargo run -- drop-preview drops.png` to render a few textured world drops through the production GPU pipeline without opening a game window.

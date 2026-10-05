@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 
 import pbr
+import color
 
 
 class ConversionTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class ConversionTests(unittest.TestCase):
             mer = np.array([[[0, 0, 120, 255], [byte, 0, 120, 255]]], dtype=np.uint8)
             result = np.array(pbr.encode_material(mer, name, original, False))
             self.assertEqual(result[0, :, 1].tolist(), [10, target])
-            self.assertEqual(result[0, :, 0].tolist(), [177, 177], 'stage 1 preserves smoothness')
+            self.assertEqual(result[0, :, 0].tolist(), [135, 135], 'perceptual smoothness inverts MER roughness once')
             self.assertTrue(np.all(result[:, :, 3] == 255))
 
     def test_subsurface_and_emission_have_distinct_sentinels(self):
@@ -29,6 +30,24 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result[0, :, 3].tolist(), [0, 254])
         result = np.array(pbr.encode_material(mer, 'stone', original, False))
         self.assertEqual(result[0, :, 2].tolist(), [12, 12])
+
+    def test_roughness_endpoints_and_middle_values(self):
+        roughness = [0, 64, 128, 192, 255]
+        mer = np.array([[[0, 0, value, 255] for value in roughness]], dtype=np.uint8)
+        result = np.array(pbr.encode_material(mer, 'stone', Image.new('RGBA', (5, 1)), False))
+        self.assertEqual(result[0, :, 0].tolist(), [255, 191, 127, 63, 0])
+
+    def test_albedo_resize_and_composite_average_linear_light(self):
+        image = Image.fromarray(np.array([[[0, 0, 0, 255], [255, 255, 255, 255]]], dtype=np.uint8))
+        self.assertEqual(color.resize(image, (1, 1)).getpixel((0, 0)), (188, 188, 188, 255))
+        overlay = Image.new('RGBA', (1, 1), (255, 255, 255, 128))
+        self.assertEqual(color.composite(Image.new('RGBA', (1, 1), (0, 0, 0, 255)), overlay).getpixel((0, 0)), (188, 188, 188, 255))
+
+    def test_albedo_resize_weights_alpha_and_preserves_constant_color(self):
+        image = Image.fromarray(np.array([[[200, 80, 30, 255], [0, 0, 255, 0]]], dtype=np.uint8))
+        self.assertEqual(color.resize(image, (1, 1)).getpixel((0, 0)), (200, 80, 30, 128))
+        transparent = Image.new('RGBA', (2, 2), (255, 0, 255, 0))
+        self.assertEqual(color.resize(transparent, (1, 1)).getpixel((0, 0)), (0, 0, 0, 0))
 
     def test_data_resize_does_not_premultiply_by_height(self):
         with tempfile.TemporaryDirectory() as directory:

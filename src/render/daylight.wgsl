@@ -11,8 +11,11 @@ fn bg_local_light(normal: vec3f, radiance: vec3f, direction: vec3f) -> vec3f {
 // All consumers use this linear-light basis, with no automatic exposure.
 fn bg_sun_radiance() -> vec3f { return camera.sun_radiance.xyz; }
 fn bg_environment_radiance(direction: vec3f) -> vec3f {
+    // This is an analytic sky, not a ground/scene reflection. Downward rays
+    // must not return blue horizon light; local transport is supplied separately.
+    let sky = smoothstep(-0.08, 0.0, direction.y);
     return mix(camera.horizon.xyz, camera.sky_zenith.xyz,
-        smoothstep(-0.08, 0.86, direction.y)) * camera.sky_zenith.w;
+        smoothstep(-0.08, 0.86, direction.y)) * camera.sky_zenith.w * sky;
 }
 fn bg_direct_light(normal: vec3f, sun: vec4f, sky: f32) -> vec3f {
     return sky * max(dot(normal, normalize(sun.xyz)), 0.0) * bg_sun_radiance();

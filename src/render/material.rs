@@ -1,5 +1,6 @@
 use std::io::Cursor;
 
+mod color;
 pub(super) mod companions;
 pub(super) mod layers;
 pub(super) mod resources;
@@ -142,11 +143,9 @@ fn stitch_material_edges(pixels: &mut [u8], stitch_vertical: bool) {
 
 fn blend_opposite_pixels(pixels: &mut [u8], a: usize, b: usize, weight: usize, total: usize) {
     for channel in 0..3 {
-        let first = usize::from(pixels[a + channel]);
-        let second = usize::from(pixels[b + channel]);
-        let shared = (first + second) / 2;
-        pixels[a + channel] = ((first * (total - weight) + shared * weight) / total) as u8;
-        pixels[b + channel] = ((second * (total - weight) + shared * weight) / total) as u8;
+        let (first, second) = color::blend(pixels[a + channel], pixels[b + channel], weight, total);
+        pixels[a + channel] = first;
+        pixels[b + channel] = second;
     }
 }
 
@@ -174,15 +173,7 @@ pub(super) fn material_mips_for(catalog: &content::Catalog) -> Vec<Vec<u8>> {
                             + ((((y * 2 + dy) * previous_size + x * 2 + dx) * 4) as usize);
                         &previous[index..index + 4]
                     });
-                    let alpha = samples.iter().map(|pixel| u32::from(pixel[3])).sum::<u32>();
-                    for channel in 0..3 {
-                        let weighted = samples
-                            .iter()
-                            .map(|pixel| u32::from(pixel[channel]) * u32::from(pixel[3]))
-                            .sum::<u32>();
-                        pixels.push(weighted.checked_div(alpha).unwrap_or(0) as u8);
-                    }
-                    pixels.push((alpha / 4) as u8);
+                    pixels.extend_from_slice(&color::downsample(samples));
                 }
             }
         }

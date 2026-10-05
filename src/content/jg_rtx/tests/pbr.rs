@@ -69,3 +69,22 @@ fn imported_normal_slopes_match_canonical_source_pixels() {
         );
     }
 }
+
+#[test]
+fn imported_smoothness_matches_perceptual_mer_source_pixels() {
+    let catalog = Catalog::builtins();
+    // Canonical MER blue at (19,23): 76, 203, and 183 respectively.
+    // Includes a Bedrock fallback and a Java export with the legacy curve.
+    for (key, expected) in [
+        ("jg_amethyst_cluster_s", 179),
+        ("jg_pale_oak_log_s", 52),
+        ("jg_deepslate_iron_ore_s", 72),
+    ] {
+        let bytes = pixels(&catalog, key);
+        assert_eq!(
+            bytes[(23 * 256 + 19) * 4],
+            expected,
+            "{key} perceptual smoothness"
+        );
+    }
+}

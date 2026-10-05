@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 import pbr
+import color as albedo
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_SIZE = 256
@@ -24,7 +25,8 @@ def frame(path):
     if im.height > im.width and im.height % im.width == 0:
         im = im.crop((0, 0, im.width, im.width))
     if max(im.size) > MAX_SIZE:
-        im.thumbnail((MAX_SIZE, MAX_SIZE), Image.Resampling.LANCZOS)
+        scale = MAX_SIZE / max(im.size)
+        im = albedo.resize(im, (round(im.width * scale), round(im.height * scale)))
     return im
 
 
@@ -73,30 +75,29 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
     for suffix in ['n', 's']:
         src = n_path if suffix == 'n' else s_path
         if edition == 'java' and src.exists():
-            im = frame(src)
+            im = pbr.data_image(src, color.size)
         elif suffix == 'n':
             im = Image.new('RGBA', color.size, (128, 128, 255, 255))
             if src.exists():
-                a = np.array(frame(src).resize(color.size))
+                a = np.array(pbr.data_image(src, color.size))
                 a[:,:,2] = 255  # No source AO: full ambient visibility.
                 a[:,:,3] = 255  # Bedrock XY already uses renderer DirectX convention.
                 h = path.with_name(path.stem + '_heightmap.png')
                 if h.exists():
-                    a[:,:,3] = np.array(frame(h).resize(color.size))[:,:,0]
+                    a[:,:,3] = np.array(pbr.data_image(h, color.size))[:,:,0]
                 im = Image.fromarray(a)
         else:
             im = Image.new('RGBA', color.size, (0, 10, 0, 255))
             if src.exists():
-                mer = np.array(frame(src).resize(color.size)).astype(float) / 255
+                mer = np.array(pbr.data_image(src, color.size)).astype(float) / 255
                 a = np.zeros((*mer.shape[:2], 4), dtype=np.uint8)
-                a[:,:,0] = np.rint((1 - np.sqrt(mer[:,:,2])) * 255).astype(np.uint8)
+                a[:,:,0] = np.rint((1 - mer[:,:,2]) * 255).astype(np.uint8)
                 a[:,:,1] = np.where(mer[:,:,0] >= .5, 255, 10)
                 if '_mers' in src.stem:
                     a[:,:,2] = np.where(mer[:,:,3] > 0, 65 + np.rint(mer[:,:,3]*190), 0).astype(np.uint8)
                 # 255 means no emission in labPBR; 0..254 is emissive intensity.
                 a[:,:,3] = np.where(mer[:,:,1] > 0, np.rint(mer[:,:,1]*254), 255).astype(np.uint8)
                 im = Image.fromarray(a)
-        im = im.resize(color.size, Image.Resampling.LANCZOS)
         maps[suffix] = im
     maps['n'], maps['s'], conversion = pbr.repair_companions(
         BEDROCK, path.stem, maps['n'], maps['s'],
@@ -125,6 +126,11 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
     for field in ['normal_source', 'material_source']:
         if field in conversion:
             record[field] = str(conversion[field].relative_to(SOURCE))
+    if 'material_source' in conversion:
+        record['smoothness_source'] = record['material_source']
+    elif 'material_scalar' in conversion:
+        record['smoothness_source'] = None
+    record['albedo_processing'] = 'sRGB color; linear-light alpha-weighted resizing and compositing'
     java_candidate = JAVA / area / (stem + '.png')
     if edition == 'bedrock' and java_candidate.exists():
         PROVENANCE[-1]['selection_note'] = f'Java {stem}.png is wholly transparent; selected visible Bedrock {path.suffix[1:].upper()}.'
@@ -271,7 +277,7 @@ def replacements():
             overlay=frame(JAVA/'block/grass_block_side_overlay.png')
             a=np.array(overlay); a[:,:,:3]=np.rint(a[:,:,:3].astype(float)*np.array([115,168,68])/255).astype(np.uint8)
             color=Image.open(ROOT/TEXTURES[key]['path']).convert('RGBA')
-            color.alpha_composite(Image.fromarray(a))
+            color = albedo.composite(color, Image.fromarray(a))
             color.putalpha(255); color.save(ROOT/TEXTURES[key]['path'],optimize=True)
 
 
@@ -283,18 +289,18 @@ def compose_sunflower():
     front_path = ROOT / TEXTURES[front]['path']
     width = Image.open(top_path).width
     head_size = round(width * .6)
-    head = Image.open(front_path).convert('RGBA').resize((head_size, head_size), Image.Resampling.LANCZOS)
+    head = albedo.resize(Image.open(front_path), (head_size, head_size))
     mask = head.getchannel('A')
     for suffix in ['', '_n', '_s']:
         dest = top_path.with_stem(top_path.stem + suffix)
         src = front_path.with_stem(front_path.stem + suffix)
         base = Image.open(dest).convert('RGBA')
         piece = (pbr.data_image(src, (head_size, head_size)) if suffix else
-                 Image.open(src).convert('RGBA').resize((head_size, head_size), Image.Resampling.LANCZOS))
+                 albedo.resize(Image.open(src), (head_size, head_size)))
         if suffix:
             base.paste(piece, ((width-head_size)//2, 0), mask)
         else:
-            base.alpha_composite(piece, ((width-head_size)//2, 0))
+            base = albedo.composite(base, piece, ((width-head_size)//2, 0))
         base.save(dest, optimize=True)
     next(p for p in PROVENANCE if p['destination'] == str(top_path.relative_to(ROOT)))['composite'] = 'sunflower_front head at 60% tile width, centered at top'
 
