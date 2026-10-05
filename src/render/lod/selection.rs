@@ -27,10 +27,11 @@ pub(crate) fn desired_tiles(
             (center.x - radius, center.z - radius, 2 * radius + 1)
         } else {
             // Keep complete sibling families, including at negative coordinates.
-            // Extend the finest ring beyond the normal near-chunk band so trees
+            // Extend the two-block ring beyond the normal near-chunk band so trees
             // and cliffs do not immediately jump to broad coarse cells.
+            // Detailed adds one-block cells without shrinking this ring.
             // The 1,024-block skyline uses the spare residency budget itself.
-            let count = if horizon <= 512 && quality == 1 && level == 1 {
+            let count = if horizon <= 512 && quality >= 1 && level == 1 {
                 6
             } else {
                 4

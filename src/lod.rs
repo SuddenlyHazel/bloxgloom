@@ -8,6 +8,7 @@ pub(crate) mod skylight;
 #[cfg(test)]
 mod tests;
 pub use extract::extract;
+pub(crate) use reduce::merge as merge_columns;
 pub use reduce::reduce_parent;
 
 pub const TILE_SIZE: usize = 32;

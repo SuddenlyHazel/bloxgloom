@@ -1,0 +1,22 @@
+RUST_TEST_THREADS=4 cargo test
+test result: ok. 1855 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 222.39s
+
+RUST_TEST_THREADS=4 cargo test lod (after coverage ownership adjustment)
+test result: ok. 49 passed; 0 failed; 1 ignored; 0 measured; 1818 filtered out; finished in 8.07s
+
+cargo fmt --all -- --check
+Passed (no output)
+
+cargo clippy --all-targets --all-features -- -D warnings
+    Checking bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 26.43s
+
+cargo build --release
+   Compiling bloxgloom v0.1.0 (/Users/hazel/src/bloxgloom)
+    Finished `release` profile [optimized] target(s) in 48.17s
+
+graphify update .
+[graphify watch] Rebuilt: 19507 nodes, 43548 edges, 1065 communities
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Tip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.

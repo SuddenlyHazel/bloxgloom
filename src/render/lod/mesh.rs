@@ -1,4 +1,4 @@
-use super::FaceColors;
+use super::{FaceColors, vertex::Vertex};
 use crate::{
     content::Catalog,
     lod::{Column, LodTile, TileKey},
@@ -7,13 +7,21 @@ use crate::{
 pub(crate) struct Mesh {
     pub key: TileKey,
     pub revision: u64,
-    pub vertices: Vec<f32>,
+    pub(super) vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    pub(super) coverage: super::coverage::Coverage,
+    pub(super) bounds: Option<[glam::Vec3; 2]>,
+    pub(super) coverage: Box<super::coverage::Coverage>,
 }
 impl Mesh {
+    pub(super) fn bounds(&self) -> Option<[glam::Vec3; 2]> {
+        let first = glam::Vec3::from(self.vertices.first()?.position);
+        Some(self.vertices.iter().fold([first, first], |[min, max], v| {
+            let p = glam::Vec3::from(v.position);
+            [min.min(p), max.max(p)]
+        }))
+    }
     pub(crate) fn byte_len(&self) -> usize {
-        (self.vertices.len() + self.indices.len()) * 4
+        self.vertices.len() * std::mem::size_of::<Vertex>() + self.indices.len() * 4
     }
 }
 /// Exact retained span surfaces. Side boundaries are split into unit strips:
@@ -30,7 +38,8 @@ pub(crate) fn mesh(
         revision: tile.revision,
         vertices: vec![],
         indices: vec![],
-        coverage: super::coverage::Coverage::from_tile(tile),
+        bounds: None,
+        coverage: Box::new(super::coverage::Coverage::from_tile(tile)),
     };
     let Some([ox, oz, _, _]) = tile.key.bounds() else {
         return Err("unsupported LOD mesh bounds or level".into());
@@ -215,6 +224,7 @@ pub(crate) fn mesh(
             }
         }
     }
+    m.bounds = m.bounds();
     Ok(m)
 }
 // The outside column's top occluder divides outdoor cliff walls from faces
@@ -303,23 +313,24 @@ fn quad(
     sky: u8,
     glow: u8,
 ) -> Result<(), String> {
-    if mesh.byte_len() + 200 > 8 * 1024 * 1024 {
+    if mesh.byte_len() + 4 * std::mem::size_of::<Vertex>() + 6 * 4 > 8 * 1024 * 1024 {
         return Err("LOD mesh exceeds 8 MiB geometry budget".into());
     }
     let u = (axis + 1) % 3;
     let v = (axis + 2) % 3;
-    let base = (mesh.vertices.len() / 11) as u32;
+    let base = mesh.vertices.len() as u32;
     for (a, b) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
         let mut pos = p.map(i64::from);
         pos[u] += a * size[u];
         pos[v] += b * size[v];
-        let mut n = [0.0; 3];
-        n[axis] = side as f32;
-        mesh.vertices.extend(pos.map(|x| x as f32));
-        mesh.vertices.extend(n);
-        mesh.vertices.extend(color);
-        mesh.vertices
-            .extend([f32::from(sky) / 15.0, f32::from(glow) / 15.0]);
+        mesh.vertices.push(Vertex::new(
+            pos.map(|x| x as f32),
+            axis,
+            side,
+            color,
+            sky,
+            glow,
+        ));
     }
     mesh.indices.extend(if side > 0 {
         [base, base + 1, base + 2, base, base + 2, base + 3]

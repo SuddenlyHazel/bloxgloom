@@ -28,8 +28,10 @@ contributor worlds clamp the horizon to 512 blocks and the maximum level to 3.
 Builtin worlds support 1,024 blocks and level 4. A public coarse contributor
 contract is deferred.
 
-Builtin coarse tiles sample representative center columns and can miss narrow
-natural features. Saved edit differences anywhere in a coarse cell are
+Builtin two-block transition cells union all four underlying fine columns,
+using the same material voting and gap preservation as parent reduction. This
+retains off-centre canopies and cliff edges. Wider cells sample representative
+centre columns and can still miss narrow natural features. Saved edit differences anywhere in a coarse cell are
 preserved conservatively and can widen a thin structure. These are visual
 approximations; only nearby full voxels represent exact occupied geometry.
 
@@ -48,6 +50,21 @@ children retain their parent. GPU-ready near chunks, including known-empty
 chunks, mask LOD in three dimensions; receipt alone cannot hide terrain.
 Exterior boundary walls remain drawable until neighbor selection is known, and
 mixed-level boundaries split faces without filling bridges or cave openings.
+
+Detailed retains Balanced's surrounding two-block ring and adds one-block cells;
+higher quality never shrinks an existing refinement ring. Hierarchy selection is
+cached until GPU tile membership or revision changes. Visibility is evaluated
+separately each frame against tight, worker-computed geometry bounds, using the
+same conservative clip-plane test as near chunks. Culled and known-empty tiles
+still participate in coverage proofs; camera visibility cannot retire a parent.
+Far, fully fogged tiles remain eligible because sheltered fog can be darker than
+the sky background. Near-ready coverage storage is reused and uploaded only when
+chunk membership changes, including removals and known-empty chunks.
+
+LOD vertices use 20 bytes instead of 44: positions remain full precision, cardinal
+normals and four-bit sky/glow values are exact, and linear texture-average colors
+use eight-bit channels (maximum rounding error 0.5/255). Packing and bounds run
+on the mesh worker; uploads retain the existing per-frame admission limit.
 
 Daylight, emission, weather, and shelter affect distant shading. Clear-weather
 fog ends at the negotiated horizon. Opaque terrain and static leaf canopies use
@@ -85,7 +102,7 @@ No authoritative world-format conversion was added.
 ## Reproduce verification
 
 ```sh
-cargo test
+RUST_TEST_THREADS=4 cargo test
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo run --release -- perf 300 6
@@ -105,6 +122,14 @@ upload ramp, and steady CPU/GPU timings separately. It excludes presentation,
 networking, server simulation, and live gameplay. Debug client telemetry reports
 cached/drawn LOD tiles and GPU bytes; server completions report generation and
 queue time.
+
+Set `BLOXGLOOM_LOD_QUALITY=0`, `1`, or `2` when running `lod-perf` or
+`lod-preview` to compare Coarse, Balanced (default), and Detailed using the same
+scene. For example:
+
+```sh
+BLOXGLOOM_LOD_QUALITY=2 cargo run --release -- lod-preview /tmp/bloxgloom-lod-detailed 512
+```
 
 The optional `BLOXGLOOM_PERF_IMAGE` captures the integrated benchmark's final
 frame after all measured samples and timestamp readbacks. PNG capture time is
@@ -220,3 +245,76 @@ formatting, all-target/all-feature Clippy with warnings denied, release build,
 and AST graph refresh passed. The exploration stress and GPU storm-fog tests
 were also run explicitly and passed; the GPU edit fixture passed with its
 opt-in capture enabled.
+
+
+## Improvement pass, 2026-10-05
+
+Fixed a reproducible refinement regression: at `(0.5, 80, -24)`, Balanced used
+2-block cells near `(160, 0)` and `(0, -160)`, while Detailed used 4-block cells
+there because it shrank the surrounding ring. Detailed now adds finer cells
+while preserving every requested Balanced tile. Positive/negative boundary,
+complete-sibling, and selected-detail regression tests cover this behavior.
+
+The same Apple M1 Pro/Metal 1,280×720 scene, seed, near radius 6 and 300 steady
+frames were measured in the same investigation before and after this pass. TAA was off;
+medium sun shadows were enabled. Near geometry stayed at 21,536,856 bytes and
+89,974 submitted triangles. These are offscreen results, not live gameplay FPS.
+
+| Scene | CPU steady p50 / p95 (ms) | GPU steady p50 / p95 (ms) | LOD geometry (MiB) | Submitted triangles, including near terrain |
+| --- | --- | --- | --- | --- |
+| Near only, before | 2.240 / 4.243 | 3.711 / 4.661 | 0 | 89,974 |
+| Near only, after | 2.563 / 8.465 | 3.667 / 7.899 | 0 | 89,974 |
+| Balanced 512, before | 2.992 / 5.919 | 4.557 / 4.631 | 109.4 | 930,550 |
+| Balanced 512, after | 3.852 / 4.566 | 4.160 / 4.786 | 55.9 | 470,044 |
+| Balanced 1,024, before | 2.843 / 6.553 | 4.958 / 6.156 | 113.5 | 1,055,050 |
+| Balanced 1,024, after | 3.874 / 4.595 | 4.262 / 4.916 | 58.6 | 557,634 |
+| Detailed 512, after | 3.899 / 4.647 | 4.220 / 4.859 | 62.5 | 503,322 |
+
+At 512 blocks, geometry residency fell 49% and submitted triangles fell 49%.
+The renderer submitted 28 tiles instead of 60, while retaining all 77 resident
+tiles for quick camera turns and parent coverage. At 1,024 blocks, 31 tiles
+were submitted instead of 61, with all 73 resident tiles retained. Packing
+reduces geometry bytes per quad from 200 to 104; visibility culling reduces
+submitted work independently of residency.
+
+CPU submit-side medians did **not** improve in these unpaced runs. A separate
+1,200-frame [profiled run](verification/2026-10-05/profile-perf.txt) measured
+4.105 ms CPU / 4.161 ms GPU p50. A one-second
+[main-thread sample](verification/2026-10-05/profile-excerpt.txt) showed many
+samples blocked in Metal command-buffer semaphore waits inside encoder finish.
+These CPU timings include driver backpressure; they do not isolate LOD selection
+cost. No CPU frame-time or live FPS improvement is claimed from this pass.
+
+| Balanced horizon | Cold summaries, before → after | Meshing, before → after | Eligible reduction, before → after |
+| --- | --- | --- | --- |
+| 512 | 467.27 → 971.64 ms | 309.77 → 305.03 ms | 22.17 → 22.14 ms (17 parents) |
+| 1,024 | 601.85 → 819.52 ms | 331.15 → 313.91 ms | 16.94 → 16.53 ms (12 parents) |
+
+Four-column transition sampling increases cold worker-side generation cost.
+It runs independently of window rendering and retains the existing work limits.
+All Balanced summaries were available. Detailed's 512 and 1,024 previews had
+three one-block summaries exceed the existing payload cap; their two-block
+parents remained drawable. No budget was raised or vertical air gap filled to
+force admission. Detailed 1,024 retained 65.2 MiB of geometry.
+
+Generated preview suites cover both qualities/horizons. Inspected production
+GPU output includes noon, night, storm, negative coordinates, bridges, cave
+darkness, ready-near 3D masking, and Detailed terrain at both horizons.
+The final real two-client edit-to-GPU fixture passed and changed 15,205 pixels:
+[edit log](verification/2026-10-05/edit-gpu.txt). The random black-square report
+still needs a live reproduction; retained dark cave openings remain intentional.
+
+[Integrated 512 frame](verification/2026-10-05/near-and-lod-512.png),
+[Detailed terrain](verification/2026-10-05/detailed-terrain-noon.png),
+[3D ready masking](verification/2026-10-05/bridge-cave-ready-3d.png), and
+[night bridge/cave](verification/2026-10-05/bridge-cave-night.png) record the
+inspected output. Paired logs:
+[512 before](verification/2026-10-05/lod-512-before.txt),
+[512 after](verification/2026-10-05/lod-512-after.txt),
+[1,024 before](verification/2026-10-05/lod-1024-before.txt),
+[1,024 after](verification/2026-10-05/lod-1024-after.txt).
+
+[Checks](verification/2026-10-05/checks.txt): 1,855 full-suite tests passed,
+13 ignored; 49 focused LOD tests passed after the final coverage ownership
+adjustment, one ignored. Formatting, strict all-target/all-feature Clippy,
+release build, GPU edit fixture, and AST graph refresh passed.

@@ -4,7 +4,7 @@ use super::{Column, Interval, LodTile, Span, TILE_COLUMNS, TILE_SIZE, TileKey};
 use crate::content::Catalog;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn merge(columns: &[&Column]) -> Column {
+pub(crate) fn merge(columns: &[&Column]) -> Column {
     let Some(first) = columns.first() else {
         return Column::default();
     };

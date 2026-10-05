@@ -9,7 +9,16 @@ pub(super) fn terrain_meshes(
 ) -> Result<(Vec<Mesh>, usize), Box<dyn Error>> {
     let started = Instant::now();
     let catalog = crate::content::catalog();
-    let keys = render::lod::desired_tiles(camera.position, horizon, 1, 4);
+    let quality = match std::env::var("BLOXGLOOM_LOD_QUALITY") {
+        Ok(value) => value
+            .parse::<u8>()
+            .ok()
+            .filter(|v| *v <= 2)
+            .ok_or("BLOXGLOOM_LOD_QUALITY must be 0, 1 or 2")?,
+        Err(std::env::VarError::NotPresent) => 1,
+        Err(error) => return Err(error.into()),
+    };
+    let keys = render::lod::desired_tiles(camera.position, horizon, quality, 4);
     let mut tiles = vec![];
     let mut unavailable = 0;
     for key in keys {
@@ -64,7 +73,7 @@ pub(super) fn terrain_meshes(
         })
         .collect::<Result<Vec<_>, _>>()?;
     eprintln!(
-        "LOD scene: horizon={horizon} tiles={} unavailable={unavailable} summary={summary_ms:.2}ms summary_bytes={summary_bytes} reduction={reduction_ms:.2}ms reduction_parents={reduction_parents} reduction_unavailable={reduction_unavailable} meshing={:.2}ms mesh_bytes={} triangles={}",
+        "LOD scene: horizon={horizon} quality={quality} tiles={} unavailable={unavailable} summary={summary_ms:.2}ms summary_bytes={summary_bytes} reduction={reduction_ms:.2}ms reduction_parents={reduction_parents} reduction_unavailable={reduction_unavailable} meshing={:.2}ms mesh_bytes={} triangles={}",
         tiles.len(),
         started.elapsed().as_secs_f64() * 1000.0,
         meshes.iter().map(Mesh::byte_len).sum::<usize>(),

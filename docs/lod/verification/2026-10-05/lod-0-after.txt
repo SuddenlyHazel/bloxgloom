@@ -1,0 +1,17 @@
+    Blocking waiting for file lock on artifact directory
+    Finished `release` profile [optimized] target(s) in 23.87s
+     Running `target/release/bloxgloom perf 300 6`
+temporal AA: off
+sun shadows: medium (2048px, 40m); GPU timestamps include shadow pass
+CPU frame (n=463): p50=1.764 ms, p95=7.071 ms, p99=11.424 ms
+CPU upload-ramp frame (n=163): p50=1.465 ms, p95=1.962 ms, p99=2.404 ms
+CPU steady frame (n=300): p50=2.563 ms, p95=8.465 ms, p99=12.391 ms
+GPU render passes (n=463): p50=3.642 ms, p95=7.004 ms, p99=12.132 ms
+GPU upload-ramp passes (n=163): p50=3.589 ms, p95=4.406 ms, p99=7.220 ms
+GPU steady passes (n=300): p50=3.667 ms, p95=7.899 ms, p99=15.798 ms
+LOD benchmark: horizon=0 summary-bytes=0 mesh-bytes=0 gpu-tiles=0 selected-tiles=0 gpu-bytes=0
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=324, gpu-resident=324 (324 uploaded), final-visible=175 / max-visible=175, final-triangles=89974 / max-triangles=89974, mesh-bytes=21536856, upload-bytes=21536856, max-upload/frame=2 chunks / 300432 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 326316 mesh vertices (57512 cutout), 489474 indices (86268 cutout), generated in 2657.2 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 163 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback
+final-frame image: /tmp/bloxgloom-lod-improvement/lod-0.png

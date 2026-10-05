@@ -1,0 +1,7 @@
+
+running 1 test
+LOD accepted edit -> first client GPU-drawn: 269.691ms; changed=15205 pixels; production CPU meshing on scoped worker; offscreen GPU completion, excludes image readback/PNG; images=/tmp/bloxgloom-lod-improvement/edit
+LOD committed edit to two refreshed clients: 363ms
+test server::net::tests::lod::committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1867 filtered out; finished in 1.61s

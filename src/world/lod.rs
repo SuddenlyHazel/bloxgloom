@@ -1,14 +1,16 @@
 //! Server-only builtin coarse sampling. Registered contributors use snapshot extraction.
-//! A coarse cell represents its center column; saved deltas anywhere in that cell
-//! override the approximation. Coverage describes the authoritative builtin domain,
+//! Two-block transition cells union all four fine columns; wider cells sample
+//! their center. Saved deltas anywhere in a cell override the approximation.
+//! Coverage describes the authoritative builtin domain,
 //! not a claim that every fine voxel was enumerated.
+mod sampling;
 mod snapshots;
 
 use super::terrain::LodSampler;
 use crate::{
-    content::{CUTOUT, Catalog, OPAQUE, PLANT},
-    lod::{Column, Interval, LodTile, Span, TILE_COLUMNS, TILE_SIZE, TileKey},
-    world::{AIR, BEDROCK_Y, BlockId, CHUNK_SIZE, Chunk, MAX_GENERATED_HEIGHT, World},
+    content::Catalog,
+    lod::{Interval, LodTile, TILE_COLUMNS, TILE_SIZE, TileKey},
+    world::{BEDROCK_Y, BlockId, CHUNK_SIZE, Chunk, MAX_GENERATED_HEIGHT, World},
 };
 use std::collections::BTreeMap;
 
@@ -54,13 +56,15 @@ fn build(
     let mut coverages = vec![vec![Interval { bottom, top }]; TILE_COLUMNS];
     for z in 0..TILE_SIZE {
         for x in 0..TILE_SIZE {
-            let wx = minx + x as i32 * width + width / 2;
-            let wz = minz + z as i32 * width + width / 2;
-            cells.push(
-                (bottom..top)
-                    .zip(sampler.column(i64::from(wx), i64::from(wz), bottom, top))
-                    .collect(),
-            );
+            cells.push(sampling::cell(
+                &mut sampler,
+                minx + x as i32 * width,
+                minz + z as i32 * width,
+                width,
+                bottom,
+                top,
+                catalog,
+            )?);
         }
     }
     let mut overlays: Vec<_> = overlays.iter().collect();
@@ -134,40 +138,14 @@ fn build(
                 joined.push(c);
             }
         }
-        let mut spans: Vec<Span> = Vec::new();
-        for (y, id) in states {
-            let state = catalog.state(id).ok_or("unknown builtin state")?;
-            if id == AIR || state.flags & (OPAQUE | CUTOUT) == 0 || state.flags & PLANT != 0 {
-                continue;
-            }
-            if let Some(last) = spans.last_mut()
-                && last.top == y
-                && last.state == id
-                && last.glow == state.emission
-            {
-                last.top = y + 1;
-            } else {
-                spans.push(Span {
-                    bottom: y,
-                    top: y + 1,
-                    state: id,
-                    sky: 0,
-                    glow: state.emission,
-                });
-            }
-        }
-        let mut column = Column {
-            coverage: joined,
-            spans,
-        };
-        crate::lod::skylight::assign(&mut column, catalog);
+        let column = sampling::column(states, joined, catalog)?;
         columns.push(column);
     }
     let tile = LodTile {
         key,
         revision,
         columns,
-        // Center sampling can miss a cliff or an underground void. Horizontal
+        // Coarse sampling can miss a cliff or an underground void. Horizontal
         // sample spacing alone is not a bound on that vertical displacement;
         // use the full finite builtin coverage height until tighter generator
         // error bounds are measured. Level zero samples every column exactly.

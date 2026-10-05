@@ -1,0 +1,18 @@
+temporal AA: off
+sun shadows: medium (2048px, 40m); GPU timestamps include shadow pass
+2026-10-05T12:53:56.708343Z  WARN main bloxgloom::preview::lod: preview summary unavailable key=TileKey { level: 0, x: 0, z: -1 } error=LOD tile exceeds payload budget
+2026-10-05T12:53:56.729256Z  WARN main bloxgloom::preview::lod: preview summary unavailable key=TileKey { level: 0, x: 0, z: 0 } error=LOD tile exceeds payload budget
+2026-10-05T12:53:56.758464Z  WARN main bloxgloom::preview::lod: preview summary unavailable key=TileKey { level: 0, x: 1, z: 0 } error=LOD tile exceeds payload budget
+LOD scene: horizon=512 quality=2 tiles=90 unavailable=3 summary=1030.08ms summary_bytes=3918124 reduction=23.57ms reduction_parents=19 reduction_unavailable=0 meshing=339.89ms mesh_bytes=65550368 triangles=1260584
+CPU frame (n=552): p50=2.085 ms, p95=4.491 ms, p99=5.312 ms
+CPU upload-ramp frame (n=252): p50=1.671 ms, p95=2.494 ms, p99=3.128 ms
+CPU steady frame (n=300): p50=3.899 ms, p95=4.647 ms, p99=5.502 ms
+GPU render passes (n=552): p50=4.176 ms, p95=4.734 ms, p99=5.068 ms
+GPU upload-ramp passes (n=252): p50=3.672 ms, p95=4.483 ms, p99=4.766 ms
+GPU steady passes (n=300): p50=4.220 ms, p95=4.859 ms, p99=5.080 ms
+LOD benchmark: horizon=512 summary-bytes=3918124 mesh-bytes=65550368 gpu-tiles=90 selected-tiles=32 gpu-bytes=65550368
+headless scene: seed=0x00000000b10c6100, radius=6, requested=507, nonempty=324, gpu-resident=324 (324 uploaded), final-visible=175 / max-visible=175, final-triangles=503322 / max-triangles=503322, mesh-bytes=21536856, upload-bytes=21536856, max-upload/frame=2 chunks / 300432 bytes (budget 1048576 bytes), peak-queued=314
+adapter: Apple M1 Pro (Metal, IntegratedGpu), driver= , timestamps=supported, period=1.000 ns/tick
+scene setup: 326316 mesh vertices (57512 cutout), 489474 indices (86268 cutout), generated in 2660.5 ms (excluded from frame samples)
+measurement: offscreen 1280x720, 252 upload-ramp + 300 steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback
+final-frame image: /tmp/bloxgloom-lod-improvement/lod-detailed-512.png

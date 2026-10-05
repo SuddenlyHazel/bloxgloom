@@ -1,0 +1,4 @@
+2026-10-05T12:54:04.234651Z  WARN main bloxgloom::preview::lod: preview summary unavailable key=TileKey { level: 0, x: 0, z: -1 } error=LOD tile exceeds payload budget
+2026-10-05T12:54:04.251104Z  WARN main bloxgloom::preview::lod: preview summary unavailable key=TileKey { level: 0, x: 0, z: 0 } error=LOD tile exceeds payload budget
+2026-10-05T12:54:04.280059Z  WARN main bloxgloom::preview::lod: preview summary unavailable key=TileKey { level: 0, x: 1, z: 0 } error=LOD tile exceeds payload budget
+LOD scene: horizon=1024 quality=2 tiles=86 unavailable=3 summary=883.22ms summary_bytes=3730286 reduction=18.46ms reduction_parents=14 reduction_unavailable=0 meshing=349.83ms mesh_bytes=68323424 triangles=1313912

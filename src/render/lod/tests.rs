@@ -68,18 +68,28 @@ fn bridge_keeps_both_gap_faces_and_sides() {
     assert_eq!(mesh.indices.len() / 6, 12);
     let heights: Vec<_> = mesh
         .vertices
-        .chunks_exact(11)
+        .iter()
+        .copied()
+        .map(super::vertex::Vertex::unpack)
         .filter(|v| v[4] != 0.0)
         .map(|v| v[1] as i32)
         .collect();
     for y in [0, 4, 10, 11] {
         assert!(heights.contains(&y));
     }
-    assert!(mesh.vertices.chunks_exact(11).all(|v| v[9] == 0.0));
+    assert!(
+        mesh.vertices
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
+            .all(|v| v[9] == 0.0)
+    );
     // Local coordinates retain small magnitudes even for negative world origins.
     assert!(
         mesh.vertices
-            .chunks_exact(11)
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
             .all(|v| v[0] >= 0.0 && v[0] <= 1.0)
     );
 }
@@ -103,7 +113,9 @@ fn coarse_boundary_splits_only_where_fine_spans_differ() {
     let mesh = mesh(&tile, &[&neighbor], catalog, &colors).unwrap();
     let side: Vec<_> = mesh
         .vertices
-        .chunks_exact(11)
+        .iter()
+        .copied()
+        .map(super::vertex::Vertex::unpack)
         .filter(|v| v[3] == 1.0)
         .collect();
     assert!(side.len() >= 8);
@@ -147,7 +159,9 @@ fn flat_roof_caps_merge_without_filling_openings() {
     let flat = mesh(&tile, &[], catalog, &colors).unwrap();
     assert_eq!(
         flat.vertices
-            .chunks_exact(11)
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
             .filter(|v| v[4] != 0.0)
             .count(),
         8
@@ -157,24 +171,32 @@ fn flat_roof_caps_merge_without_filling_openings() {
     let opening = mesh(&tile, &[], catalog, &colors).unwrap();
     let caps: Vec<_> = opening
         .vertices
-        .chunks_exact(44)
-        .filter(|v| v[4] != 0.0)
+        .chunks_exact(4)
+        .filter(|v| v[0].unpack()[4] != 0.0)
         .collect();
     for quad in caps {
         let minx = quad
-            .chunks_exact(11)
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
             .map(|v| v[0])
             .fold(f32::INFINITY, f32::min);
         let maxx = quad
-            .chunks_exact(11)
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
             .map(|v| v[0])
             .fold(f32::NEG_INFINITY, f32::max);
         let minz = quad
-            .chunks_exact(11)
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
             .map(|v| v[2])
             .fold(f32::INFINITY, f32::min);
         let maxz = quad
-            .chunks_exact(11)
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
             .map(|v| v[2])
             .fold(f32::NEG_INFINITY, f32::max);
         assert!(!(minx < 136.0 && maxx > 128.0 && minz < 136.0 && maxz > 128.0));
@@ -221,14 +243,18 @@ fn sky_lit_roof_does_not_light_its_retained_cavity() {
     let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
     let wall: Vec<_> = mesh
         .vertices
-        .chunks_exact(11)
+        .iter()
+        .copied()
+        .map(super::vertex::Vertex::unpack)
         .filter(|v| v[0] == 1.0 && v[3] == 1.0)
         .collect();
     assert!(!wall.is_empty());
     assert!(wall.iter().all(|v| v[9] == 0.0));
     let ceiling: Vec<_> = mesh
         .vertices
-        .chunks_exact(11)
+        .iter()
+        .copied()
+        .map(super::vertex::Vertex::unpack)
         .filter(|v| v[1] == 10.0 && v[4] == -1.0)
         .collect();
     assert!(!ceiling.is_empty());
@@ -253,14 +279,18 @@ fn foliage_undersides_and_adjacent_outdoor_walls_receive_sky() {
     let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
     let wall: Vec<_> = mesh
         .vertices
-        .chunks_exact(11)
+        .iter()
+        .copied()
+        .map(super::vertex::Vertex::unpack)
         .filter(|v| v[0] == 1.0 && v[3] == 1.0 && v[1] >= 4.0)
         .collect();
     assert!(!wall.is_empty());
     assert!(wall.iter().all(|v| v[9] > 0.0));
     let underside: Vec<_> = mesh
         .vertices
-        .chunks_exact(11)
+        .iter()
+        .copied()
+        .map(super::vertex::Vertex::unpack)
         .filter(|v| v[1] == 10.0 && v[4] == -1.0)
         .collect();
     assert!(!underside.is_empty());
@@ -353,7 +383,98 @@ fn coordinate_and_vertical_extremes_mesh_without_wrapping() {
     });
     let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
     assert_eq!(mesh.indices.len(), 72);
-    assert!(mesh.vertices.iter().all(|value| value.is_finite()));
-    assert!(mesh.vertices.chunks_exact(11).any(|v| v[1] > 0.0));
-    assert!(mesh.vertices.chunks_exact(11).any(|v| v[1] < 0.0));
+    assert!(
+        mesh.vertices
+            .iter()
+            .all(|v| v.position.iter().all(|value| value.is_finite()))
+    );
+    assert!(
+        mesh.vertices
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
+            .any(|v| v[1] > 0.0)
+    );
+    assert!(
+        mesh.vertices
+            .iter()
+            .copied()
+            .map(super::vertex::Vertex::unpack)
+            .any(|v| v[1] < 0.0)
+    );
+}
+
+#[test]
+fn increasing_quality_never_shrinks_an_existing_refinement_ring() {
+    for position in [
+        glam::Vec3::new(0.5, 80.0, -24.0),
+        glam::Vec3::new(-97.0, 80.0, -129.0),
+        glam::Vec3::new(511.9, 80.0, 32.1),
+    ] {
+        for max_level in [3, 4] {
+            for horizon in [512, 1024] {
+                for quality in 0..2 {
+                    let before = desired_tiles(position, horizon, quality, max_level);
+                    let after = desired_tiles(position, horizon, quality + 1, max_level);
+                    assert!(before.iter().all(|k| after.contains(k)));
+                    let old = super::gpu::select_ready(before.into_iter().collect(), |_, _| true);
+                    let new = super::gpu::select_ready(after.into_iter().collect(), |_, _| true);
+                    for key in old {
+                        let [x, z, _, _] = key.bounds().unwrap();
+                        let covering = new
+                            .iter()
+                            .find(|k| {
+                                let [minx, minz, maxx, maxz] = k.bounds().unwrap();
+                                x >= minx && x < maxx && z >= minz && z < maxz
+                            })
+                            .unwrap();
+                        assert!(covering.level <= key.level);
+                    }
+                }
+            }
+        }
+    }
+}
+#[test]
+fn culling_keeps_crossing_bounds_and_empty_tiles_keep_ready_coverage() {
+    use glam::Vec3;
+    let camera = super::super::Camera {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_y_radians: 70.0f32.to_radians(),
+    };
+    let matrix = super::super::visibility::view_projection(camera, 1000, 600);
+    let visible = super::super::visibility::bounds_visible;
+    assert!(visible(
+        matrix,
+        Vec3::new(80.0, -4.0, -4.0),
+        Vec3::new(96.0, 4.0, 4.0)
+    ));
+    assert!(!visible(
+        matrix,
+        Vec3::new(-96.0, -4.0, -4.0),
+        Vec3::new(-80.0, 4.0, 4.0)
+    ));
+    assert!(!visible(
+        matrix,
+        Vec3::new(80.0, 1000.0, -4.0),
+        Vec3::new(96.0, 1016.0, 4.0)
+    ));
+    assert!(visible(matrix, Vec3::splat(-20.0), Vec3::splat(20.0)));
+    let catalog = crate::content::catalog();
+    let mut tile = fixture(TileKey {
+        level: 0,
+        x: -1,
+        z: 0,
+    });
+    tile.columns.fill(column(&[]));
+    let m = mesh(&tile, &[], catalog, &FaceColors::new(catalog)).unwrap();
+    assert!(m.bounds.is_none());
+    let mut parent = fixture(tile.key.parent().unwrap());
+    parent.columns.fill(column(&[(0, 1)]));
+    assert!(super::coverage::can_refine(
+        &super::coverage::Coverage::from_tile(&parent),
+        [&m.coverage; 4]
+    ));
 }

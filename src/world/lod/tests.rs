@@ -1,5 +1,6 @@
 use super::*;
-use crate::world::{ChunkKey, STONE, WOOD};
+use crate::content::OPAQUE;
+use crate::world::{AIR, ChunkKey, STONE, WOOD};
 
 #[test]
 fn sampler_matches_authoritative_chunks_including_negative_coordinates() {
@@ -98,4 +99,69 @@ fn routine_distant_skyline_tiles_fit_payload_budget() {
             assert!(tile.geometric_error >= 144);
         }
     }
+}
+
+#[test]
+fn transition_sampling_retains_off_center_canopies_and_shared_vertical_air() {
+    let catalog = Catalog::builtins();
+    let mut sampler = LodSampler::new(17);
+    let occupied = |id| {
+        catalog.state(id).is_some_and(|s| {
+            id != AIR
+                && s.flags & (crate::content::OPAQUE | crate::content::CUTOUT) != 0
+                && s.flags & crate::content::PLANT == 0
+        })
+    };
+    let tree = (-16..16)
+        .flat_map(|z| (-16..16).map(move |x| (x, z)))
+        .find_map(|(x, z)| crate::world::terrain::tree_anchor(x, z, 17))
+        .expect("tree fixture");
+    let mut found = false;
+    for z in ((tree.z - 4).div_euclid(2) * 2..=tree.z + 4).step_by(2) {
+        for x in ((tree.x - 4).div_euclid(2) * 2..=tree.x + 4).step_by(2) {
+            let fine = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                .map(|(dx, dz)| sampler.column(x + dx, z + dz, -64, 80));
+            if !(0..144)
+                .any(|y| fine[3][y] == AIR && fine.iter().any(|c| c[y] == crate::world::LEAVES))
+            {
+                continue;
+            }
+            let merged =
+                sampling::cell(&mut sampler, x as i32, z as i32, 2, -64, 80, &catalog).unwrap();
+            for y in -64..80 {
+                let expected = fine.iter().any(|c| occupied(c[(y + 64) as usize]));
+                assert_eq!(
+                    merged.get(&y).is_some_and(|id| occupied(*id)),
+                    expected,
+                    "at {x},{y},{z}"
+                );
+            }
+            let c = sampling::column(
+                merged,
+                vec![Interval {
+                    bottom: -64,
+                    top: 80,
+                }],
+                &catalog,
+            )
+            .unwrap();
+            for (i, s) in c.spans.iter().enumerate() {
+                if c.spans[i + 1..]
+                    .iter()
+                    .any(|roof| catalog.state(roof.state).unwrap().flags & OPAQUE != 0)
+                {
+                    assert_eq!(s.sky, 0);
+                }
+            }
+            found = true;
+            break;
+        }
+        if found {
+            break;
+        }
+    }
+    assert!(
+        found,
+        "fixture must include a canopy missed by center sampling"
+    );
 }

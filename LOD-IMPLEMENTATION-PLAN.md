@@ -5,6 +5,12 @@ Status: Implemented. The five phases below are complete. See
 verification commands, measurements, and screenshots. This document retains
 the original implementation sequence and explicitly deferred follow-up work.
 
+The October 5 improvement pass preserves Balanced's detail ring when selecting
+Detailed, samples every fine column in two-block transition cells, packs LOD
+vertices to 20 bytes, culls against worker-computed geometry bounds, and caches
+unchanged ready coverage and refinement selection. See the linked architecture
+and measurements for verification and remaining approximation limits.
+
 Add a server-supplied distant terrain layer that extends the visible landscape
 without extending full voxel simulation and replication to the same radius.
 Keep existing chunks, lighting, and gameplay authority for the nearby world.

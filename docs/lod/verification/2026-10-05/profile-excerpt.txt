@@ -1,0 +1,48 @@
+Analysis of sampling bloxgloom (pid 89241) every 1 millisecond
+Process:         bloxgloom [89241]
+Path:            /Users/USER/*/bloxgloom
+Load Address:    0x100bd0000
+Identifier:      bloxgloom
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  zsh [89240]
+Target Type:     live task
+
+Date/Time:       2026-10-05 08:55:40.587 -0400
+Launch Time:     2026-10-05 08:55:35.843 -0400
+OS Version:      macOS 26.5.2 (25F84)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         5.2G
+Physical footprint (peak):  5.2G
+Idle exit:                  untracked
+----
+
+Call graph:
+    544 Thread_30631607   DispatchQueue_1: com.apple.main-thread  (serial)
+    + 544 start  (in dyld) + 6992  [0x1881efe00]
+    +   544 main  (in bloxgloom) + 52  [0x100e1ecbc]
+    +     544 _RNvNtCsg55jX0GwzBC_3std2rt19lang_start_internal  (in bloxgloom) + 952  [0x101e085f8]
+    +       544 std::rt::lang_start::_$u7b$$u7b$closure$u7d$$u7d$::h777defbafa38f07c  (in bloxgloom) + 16  [0x10106aae0]
+    +         544 std::sys::backtrace::__rust_begin_short_backtrace::h94827d1024812c25  (in bloxgloom) + 12  [0x100d940c4]
+    +           544 bloxgloom::main::h5d659d75b882dd5e  (in bloxgloom) + 160  [0x100dee45c]
+    +             544 bloxgloom::run::hbc68f2ed4e8d2e1f  (in bloxgloom) + 17212  [0x100dea1e4]
+    +               544 pollster::block_on::hc77906b3b64e477f  (in bloxgloom) + 92  [0x100e5d228]
+    +                 403 bloxgloom::preview::perf::run_perf_benchmark_async::_$u7b$$u7b$closure$u7d$$u7d$::h8edd7a1c72219fb2  (in bloxgloom) + 13392  [0x100e9d9b4]
+    +                 ! 403 wgpu::api::command_encoder::CommandEncoder::finish::hdb28691b7948d046  (in bloxgloom) + 40  [0x1019698dc]
+    +                 !   403 _$LT$wgpu..backend..wgpu_core..CoreCommandEncoder$u20$as$u20$wgpu..dispatch..CommandEncoderInterface$GT$::finish::hfcf4b28f1d80c005  (in bloxgloom) + 68  [0x101945628]
+    +                 !     403 wgpu_core::command::_$LT$impl$u20$wgpu_core..global..Global$GT$::command_encoder_finish::h35dc2918111484e5  (in bloxgloom) + 72  [0x1019dcd88]
+    +                 !       403 wgpu_core::command::CommandEncoder::finish::h0577e9097a4b0f32  (in bloxgloom) + 1688  [0x1019b68e8]
+    +                 !         219 wgpu_core::command::render::encode_render_pass::h106888f026aa0ef8  (in bloxgloom) + 204  [0x101a1db24]
+    +                 !         : 217 wgpu_hal::metal::command::_$LT$impl$u20$wgpu_hal..CommandEncoder$u20$for$u20$wgpu_hal..metal..CommandEncoder$GT$::begin_encoding::hf42fafd5e92b84e6  (in bloxgloom) + 280  [0x101a9f8bc]
+    +                 !         : | 217 -[AGXG13XFamilyCommandQueue commandBuffer]  (in AGXMetalG13X) + 44  [0x10e72b594]
+    +                 !         : |   217 -[AGXG13XFamilyCommandBuffer initWithQueue:retainedReferences:]  (in AGXMetalG13X) + 64  [0x10e727840]
+    +                 !         : |     212 -[IOGPUMetalCommandBuffer initWithQueue:retainedReferences:synchronousDebugMode:]  (in IOGPU) + 112  [0x1ad769df8]
+    +                 !         : |     + 211 -[_MTLCommandBuffer initWithQueue:retainedReferences:synchronousDebugMode:]  (in Metal) + 188  [0x194c31ae8]
+    +                 !         : |     + ! 211 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132  [0x1883f4b20]
+    +                 !         : |     + !   211 _dispatch_sema4_wait  (in libdispatch.dylib) + 28  [0x1883f4490]
+    +                 !         : |     + !     211 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8  [0x188569bb0]
+    +                 !         : |     + 1 -[_MTLCommandBuffer initWithQueue:retainedReferences:synchronousDebugMode:]  (in Metal) + 888  [0x194c31da4]
+    +                 !         : |     +   1 objc_msgSend  (in libobjc.A.dylib) + 8  [0x188151808]

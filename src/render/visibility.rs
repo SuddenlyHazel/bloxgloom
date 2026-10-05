@@ -46,6 +46,10 @@ pub(super) fn chunk_visible_padded(matrix: Mat4, key: ChunkKey, padding: f32) ->
     let min = Vec3::new(key.x as f32 * n, key.y as f32 * n, key.z as f32 * n);
     let max = min + Vec3::splat(n + padding);
     let min = min - Vec3::splat(padding);
+    bounds_visible(matrix, min, max)
+}
+
+pub(crate) fn bounds_visible(matrix: Mat4, min: Vec3, max: Vec3) -> bool {
     // Reject only when all corners lie outside one clip plane. This avoids any
     // dependence on matrix row/column extraction conventions.
     let corners = [

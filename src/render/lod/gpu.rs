@@ -6,11 +6,10 @@ use crate::{lod::TileKey, world::ChunkKey};
 use glam::Vec3;
 use std::collections::{HashMap, HashSet, VecDeque};
 use wgpu::util::DeviceExt;
-// Measured 512-block fixture retains ~57 MiB of cave/terrain surfaces.
 // Independent hard residency cap also accommodates the 1,024-block fixture.
 const MAX_BYTES: usize = 128 * 1024 * 1024;
 const MAX_PENDING: usize = 8;
-const COVERAGE_SLOTS: usize = 16384;
+const COVERAGE_SLOTS: usize = super::near_coverage::SLOTS;
 struct Tile {
     vertex: wgpu::Buffer,
     index: wgpu::Buffer,
@@ -19,7 +18,8 @@ struct Tile {
     revision: u64,
     uniform: wgpu::Buffer,
     group: wgpu::BindGroup,
-    coverage: super::coverage::Coverage,
+    coverage: Box<super::coverage::Coverage>,
+    bounds: Option<[Vec3; 2]>,
 }
 pub(crate) struct Gpu {
     pipeline: wgpu::RenderPipeline,
@@ -30,6 +30,9 @@ pub(crate) struct Gpu {
     tiles: HashMap<TileKey, Tile>,
     pending: VecDeque<Mesh>,
     selected: Vec<TileKey>,
+    visible: Vec<TileKey>,
+    selection_dirty: bool,
+    near: super::near_coverage::NearCoverage,
     horizon: u16,
     jitter: glam::Vec2,
 }
@@ -83,7 +86,7 @@ impl Gpu {
             bind_group_layouts: &[Some(&layout), Some(&tile_layout)],
             immediate_size: 0,
         });
-        let attrs = wgpu::vertex_attr_array![0=>Float32x3,1=>Float32x3,2=>Float32x3,3=>Float32x2];
+        let attrs = wgpu::vertex_attr_array![0=>Float32x3,1=>Unorm8x4,2=>Uint32];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("distant terrain"),
             layout: Some(&pipeline_layout),
@@ -92,7 +95,7 @@ impl Gpu {
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: 44,
+                    array_stride: std::mem::size_of::<super::vertex::Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
                 })],
@@ -127,6 +130,9 @@ impl Gpu {
             tiles: HashMap::new(),
             pending: VecDeque::new(),
             selected: vec![],
+            visible: vec![],
+            selection_dirty: true,
+            near: super::near_coverage::NearCoverage::default(),
             horizon: 512,
             jitter: glam::Vec2::ZERO,
         }
@@ -227,8 +233,10 @@ impl Gpu {
                 uniform,
                 group,
                 coverage: m.coverage,
+                bounds: m.bounds,
             },
         );
+        self.selection_dirty = true;
         1
     }
     pub(crate) fn set_horizon(&mut self, horizon: u16) {
@@ -239,19 +247,21 @@ impl Gpu {
             .retain(|m| m.key != key || m.revision >= minimum);
     }
     pub(crate) fn remove(&mut self, key: TileKey) {
-        self.tiles.remove(&key);
+        self.selection_dirty |= self.tiles.remove(&key).is_some();
         self.pending.retain(|m| m.key != key);
     }
     pub(crate) fn clear(&mut self) {
         self.tiles.clear();
         self.pending.clear();
         self.selected.clear();
+        self.visible.clear();
+        self.selection_dirty = true;
     }
     pub(crate) fn resident_bytes(&self) -> usize {
         self.tiles.values().map(|t| t.bytes).sum()
     }
     pub(crate) fn selected_count(&self) -> usize {
-        self.selected.len()
+        self.visible.len()
     }
     pub(crate) fn ready_keys(&self) -> impl Iterator<Item = TileKey> + '_ {
         self.tiles.keys().copied()
@@ -269,7 +279,7 @@ impl Gpu {
         near: impl Iterator<Item = ChunkKey>,
     ) {
         if self.horizon == 0 {
-            self.selected.clear();
+            self.visible.clear();
             return;
         }
         let relative = Camera {
@@ -284,43 +294,43 @@ impl Gpu {
             data[29] = f32::from(self.horizon);
         }
         queue.write_buffer(&self.camera, 0, bytemuck::cast_slice(&data));
-        let mut slots = vec![[0i32; 4]; COVERAGE_SLOTS];
-        for k in near {
-            let mut index = hash(k.x, k.y, k.z);
-            for _ in 0..COVERAGE_SLOTS {
-                if slots[index][3] == 0 {
-                    slots[index] = [k.x, k.y, k.z, 1];
-                    break;
-                }
-                index = (index + 1) & (COVERAGE_SLOTS - 1);
-            }
+        if let Some(slots) = self.near.update(near) {
+            queue.write_buffer(&self.coverage, 0, bytemuck::cast_slice(slots));
         }
-        queue.write_buffer(&self.coverage, 0, bytemuck::cast_slice(&slots));
-        self.selected = select_ready(self.tiles.keys().copied().collect(), |parent, children| {
-            super::coverage::can_refine(
-                &self.tiles[&parent].coverage,
-                children.map(|k| &self.tiles[&k].coverage),
-            )
-        });
-        if self.horizon == 0 {
-            self.selected.clear();
+        if self.selection_dirty {
+            self.selected =
+                select_ready(self.tiles.keys().copied().collect(), |parent, children| {
+                    super::coverage::can_refine(
+                        &self.tiles[&parent].coverage,
+                        children.map(|k| self.tiles[&k].coverage.as_ref()),
+                    )
+                });
+            self.selection_dirty = false;
         }
+        self.visible.clear();
         for key in &self.selected {
             let Some([x, z, _, _]) = key.bounds() else {
                 continue;
             };
             let origin = Vec3::new(x as f32, 0.0, z as f32) - camera.position;
-            let mut bytes = Vec::with_capacity(32);
-            bytes.extend_from_slice(bytemuck::cast_slice(&[origin.x, origin.y, origin.z, 0.0]));
-            bytes.extend_from_slice(bytemuck::cast_slice(&[x, 0, z, 0i32]));
-            queue.write_buffer(&self.tiles[key].uniform, 0, &bytes);
+            let tile = &self.tiles[key];
+            if !tile.bounds.is_some_and(|[min, max]| {
+                super::super::visibility::bounds_visible(vp, min + origin, max + origin)
+            }) {
+                continue;
+            }
+            self.visible.push(*key);
+            let mut bytes = [0u8; 32];
+            bytes[..16].copy_from_slice(bytemuck::cast_slice(&[origin.x, origin.y, origin.z, 0.0]));
+            bytes[16..].copy_from_slice(bytemuck::cast_slice(&[x, 0, z, 0i32]));
+            queue.write_buffer(&tile.uniform, 0, &bytes);
         }
     }
     pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
         let mut triangles = 0;
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.group, &[]);
-        for key in &self.selected {
+        for key in &self.visible {
             let tile = &self.tiles[key];
             pass.set_bind_group(1, &tile.group, &[]);
             pass.set_vertex_buffer(0, tile.vertex.slice(..));
@@ -342,12 +352,6 @@ fn entry(binding: u32, ty: wgpu::BufferBindingType) -> wgpu::BindGroupLayoutEntr
         },
         count: None,
     }
-}
-fn hash(x: i32, y: i32, z: i32) -> usize {
-    ((x as u32).wrapping_mul(73856093)
-        ^ (y as u32).wrapping_mul(19349663)
-        ^ (z as u32).wrapping_mul(83492791)) as usize
-        & (COVERAGE_SLOTS - 1)
 }
 /// A ready parent covers its entire footprint until all four children can draw.
 pub(super) fn select_ready(
