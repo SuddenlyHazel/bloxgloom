@@ -2326,11 +2326,12 @@
   },
   {
     "destination": "assets/textures/foliage/jg_amethyst_cluster.png",
-    "source": "java/pack/assets/minecraft/textures/block/amethyst_cluster.png",
-    "normal_source": "java/pack/assets/minecraft/textures/block/amethyst_cluster_n.png",
-    "material_source": "java/pack/assets/minecraft/textures/block/amethyst_cluster_s.png",
-    "edition": "java",
-    "tint": null
+    "source": "bedrock/pack/RP/textures/blocks/amethyst_cluster.tga",
+    "normal_source": "bedrock/pack/RP/textures/blocks/amethyst_cluster_normal.png",
+    "material_source": "bedrock/pack/RP/textures/blocks/amethyst_cluster_mer.png",
+    "edition": "bedrock",
+    "tint": null,
+    "selection_note": "Java amethyst_cluster.png is wholly transparent; selected visible Bedrock TGA."
   },
   {
     "destination": "assets/textures/blocks/jg_polished_blackstone.png",

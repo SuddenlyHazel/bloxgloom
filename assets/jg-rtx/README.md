@@ -16,6 +16,7 @@ The explicit append-only identities in `tools/jg_rtx/block_ids.json` must never 
 
 ## Adaptations
 
+- Wholly transparent source albedos are skipped in favor of a visible source. The Java amethyst cluster is blank, so its visible Bedrock TGA supplies the imported material.
 - PNG/TGA inputs become RGBA PNGs with matching companion dimensions, retaining source detail up to 256 pixels. Animated vertical strips use their first frame; animation is not imported.
 - Grayscale grass and selected leaves receive fixed natural color tints. Grass side overlays are composited over the opaque side. Cube faces are opaque; leaves and plants preserve source alpha.
 - Java labPBR normal XY uses the renderer's DirectX tangent convention: green is inverted, blue retains ambient occlusion, and alpha retains height. The renderer identifies these imported materials and reconstructs normal Z independently. Bedrock normal XY retains DirectX orientation, with full ambient visibility in blue and separate height maps used when present. Missing maps receive flat normals and rough dielectric material defaults.

@@ -28,14 +28,14 @@ def frame(path):
 
 def find(stem, area='block'):
     p = JAVA / area / (stem + '.png')
-    if p.exists():
+    if p.exists() and Image.open(p).convert('RGBA').getchannel('A').getextrema()[1] > 0:
         return p, 'java'
     aliases = {'pale_oak_log':'pale_oak_log_side', 'stripped_pale_oak_log':'stripped_pale_oak_log_side',
                'dry_grass':'short_dry_grass', 'dead_bush':'deadbush'}
     stem = aliases.get(stem, stem)
     for ext in ['.png', '.tga']:
         p = BEDROCK / (stem + ext)
-        if p.exists():
+        if p.exists() and Image.open(p).convert('RGBA').getchannel('A').getextrema()[1] > 0:
             return p, 'bedrock'
     raise FileNotFoundError(stem)
 
@@ -46,6 +46,8 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
         return key
     path, edition = find(stem, area)
     color = frame(path)
+    if color.getchannel('A').getextrema()[1] == 0:
+        raise ValueError(f'Imported frame is wholly transparent: {path}')
     if tint:
         arr = np.array(color)
         arr[:,:,:3] = np.rint(arr[:,:,:3].astype(float) * np.array(tint) / 255).astype(np.uint8)
@@ -109,6 +111,9 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
                        'normal_source':str(n_path.relative_to(SOURCE)) if n_path.exists() else None,
                        'material_source':str(s_path.relative_to(SOURCE)) if s_path.exists() else None,
                        'edition':edition, 'tint':tint})
+    java_candidate = JAVA / area / (stem + '.png')
+    if edition == 'bedrock' and java_candidate.exists():
+        PROVENANCE[-1]['selection_note'] = f'Java {stem}.png is wholly transparent; selected visible Bedrock {path.suffix[1:].upper()}.'
     return key
 
 
