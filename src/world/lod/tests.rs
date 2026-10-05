@@ -124,7 +124,7 @@ fn transition_sampling_retains_off_center_canopies_and_shared_vertical_air() {
             let fine = [(0, 0), (1, 0), (0, 1), (1, 1)]
                 .map(|(dx, dz)| sampler.column(x + dx, z + dz, -64, 80));
             if !(0..144)
-                .any(|y| fine[3][y] == AIR && fine.iter().any(|c| c[y] == crate::world::LEAVES))
+                .any(|y| fine[3][y] == AIR && fine.iter().any(|c| c[y] == tree.leaves))
             {
                 continue;
             }

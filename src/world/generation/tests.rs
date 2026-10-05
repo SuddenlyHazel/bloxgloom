@@ -182,17 +182,17 @@ fn unknown_builtin_generation_id_is_reported_without_panicking() {
 fn builtin_contributor_preserves_terrain_vegetation_and_negative_chunk_seams() {
     let catalog = Catalog::builtins();
     let seed = 73;
-    // Frozen fingerprints from the pre-contributor generator, including a
+    // Frozen fingerprints from generator version 6, including a
     // negative horizontal seam, a vertical seam, bedrock, plants and empty sky.
     for (key, fingerprint) in [
-        (ChunkKey { x: -2, y: 1, z: -1 }, 0xbcdc125b0b118626),
-        (ChunkKey { x: -1, y: 1, z: -1 }, 0x23ece1ce2000def6),
+        (ChunkKey { x: -2, y: 1, z: -1 }, 0x2eeb922e1b1a3f7a),
+        (ChunkKey { x: -1, y: 1, z: -1 }, 0x0d7122465dd1ed06),
         (ChunkKey { x: -1, y: 2, z: -1 }, 0x9c1bda7f8c872325),
-        (ChunkKey { x: 0, y: 1, z: -1 }, 0x7790562fc8fd1ca5),
+        (ChunkKey { x: 0, y: 1, z: -1 }, 0xb62ff1cb98428748),
         (ChunkKey { x: 0, y: 2, z: -1 }, 0x9c1bda7f8c872325),
-        (ChunkKey { x: -1, y: 1, z: 0 }, 0x6d2df6130ea01718),
+        (ChunkKey { x: -1, y: 1, z: 0 }, 0x178428e886829d2e),
         (ChunkKey { x: 0, y: -5, z: 0 }, 0x82c546d079aba325),
-        (ChunkKey { x: 0, y: -4, z: 0 }, 0x67b3a0af5e4df9b6),
+        (ChunkKey { x: 0, y: -4, z: 0 }, 0x440d30e377554c1c),
         (ChunkKey { x: 0, y: 8, z: 0 }, 0x9c1bda7f8c872325),
     ] {
         let expected = super::super::terrain::generate_blocks(key, seed);
@@ -245,7 +245,10 @@ fn builtin_contributor_preserves_tree_canopy_across_chunk_seam() {
     let tree = (-20..=20)
         .flat_map(|z| (-20..=20).map(move |x| (x, z)))
         .filter_map(|(x, z)| super::super::terrain::tree_anchor(x, z, seed))
-        .find(|tree| tree.x.rem_euclid(16) >= 13 || tree.z.rem_euclid(16) >= 13)
+        .find(|tree| {
+            tree.log == super::super::WOOD
+                && (tree.x.rem_euclid(16) >= 13 || tree.z.rem_euclid(16) >= 13)
+        })
         .unwrap();
     let (first, _) =
         super::super::world_to_chunk(tree.x as i32, tree.trunk_top as i32, tree.z as i32);
@@ -267,7 +270,7 @@ fn builtin_contributor_preserves_tree_canopy_across_chunk_seam() {
             generated
                 .blocks
                 .iter()
-                .any(|&block| block == super::super::LEAVES)
+                .any(|&block| block == tree.leaves)
         );
     }
 }
