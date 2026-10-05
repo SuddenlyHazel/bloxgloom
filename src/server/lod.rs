@@ -1,4 +1,6 @@
 //! Independent bounded distant interest, generation, revision fencing, and delivery.
+mod disk;
+mod sources;
 mod worker;
 use super::{ClientMessage, ServerMessage, State};
 use crate::lod::{LodTile, TileKey};
@@ -163,7 +165,7 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
 pub(super) fn poll(state: &mut State) {
     while let Ok(result) = state.lod.results.try_recv() {
         let valid = state.lod.finish(&result);
-        tracing::debug!(key=?result.key,generation_ms=result.elapsed.as_millis(),queue_ms=result.queue_age.as_millis(),"LOD terrain completion");
+        tracing::debug!(key=?result.key,generation_ms=result.elapsed.as_millis(),queue_ms=result.queue_age.as_millis(),cache_hit=result.cache_hit,"LOD terrain completion");
         if !valid {
             continue;
         }

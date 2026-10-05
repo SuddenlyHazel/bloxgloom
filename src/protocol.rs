@@ -22,7 +22,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 33;
+pub(crate) const WIRE_VERSION: u8 = 33;
 mod chat;
 #[path = "protocol/health.rs"]
 mod health_protocol;

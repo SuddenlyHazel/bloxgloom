@@ -23,6 +23,17 @@ pub(crate) fn builtin_lod_tile(
     build(key, revision, seed, catalog, &[])
 }
 impl World {
+    pub(crate) fn lod_cache_identity(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(b"bloxgloom-lod-summary-v2");
+        hash.update(self.seed.to_le_bytes());
+        hash.update(super::TERRAIN_GENERATOR_VERSION.to_le_bytes());
+        hash.update(self.catalog.fingerprint().to_le_bytes());
+        hash.update(crate::protocol::WIRE_VERSION.to_le_bytes());
+        hash.update(self.generator.identity());
+        hash.finalize().into()
+    }
     pub(crate) fn lod_max_level(&self) -> u8 {
         if self.generator.is_builtin() { 4 } else { 3 }
     }

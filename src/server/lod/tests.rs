@@ -1,4 +1,5 @@
 use super::*;
+mod persistent;
 fn temporary() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "bloxgloom-lod-{}-{}",
@@ -73,6 +74,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
         .results
         .recv_timeout(Duration::from_secs(20))
         .unwrap();
+    assert!(warm.cache_hit);
     assert_eq!(warm.tile.as_ref(), Some(&tile));
     eprintln!(
         "LOD cold={}ms warm={}ms bytes={}",
@@ -85,7 +87,7 @@ fn worker_captures_uncheckpointed_high_structure_without_gameplay_cache_growth()
         })
     );
     // A plausible state-bit corruption must rebuild rather than become terrain.
-    let cache_path = root.join("lod-cache").join("1_0_0_0.tile");
+    let cache_path = root.join("lod-cache").join("0_0_0.tile");
     let mut damaged = std::fs::read(&cache_path).unwrap();
     damaged[65] ^= 1;
     std::fs::write(&cache_path, damaged).unwrap();

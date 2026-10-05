@@ -22,6 +22,7 @@ pub(super) struct Completion {
     pub tile: Option<LodTile>,
     pub elapsed: Duration,
     pub queue_age: Duration,
+    pub cache_hit: bool,
 }
 
 pub(super) fn run(
@@ -30,50 +31,26 @@ pub(super) fn run(
     jobs: Receiver<Job>,
     results: SyncSender<Completion>,
 ) {
-    // All persisted summaries are disposable. A fresh service namespace makes a
-    // crash before invalidation harmless: old sessions are never read.
     let cache = root.join("lod-cache");
-    let _ = fs::remove_dir_all(&cache);
     let _ = fs::create_dir_all(&cache);
     while let Ok(job) = jobs.recv() {
         let started = Instant::now();
-        let path = cache.join(format!(
-            "{}_{}_{}_{}.tile",
-            job.revision, job.key.level, job.key.x, job.key.z
-        ));
-        let tile = if job.cancelled.load(Ordering::Relaxed) {
-            None
-        } else {
-            load_cached(&path, &world)
-                .filter(|tile| tile.key == job.key && tile.revision == job.revision)
-                .or_else(|| build(&world, &root, &job).ok())
-        };
+        let path = super::disk::path(&cache, job.key);
+        let sources = (!job.cancelled.load(Ordering::Relaxed))
+            .then(|| super::sources::Sources::capture(&world, &root, &job))
+            .and_then(Result::ok);
+        let cached = sources
+            .as_ref()
+            .and_then(|s| super::disk::load(&path, s.stamp, &world, &job));
+        let cache_hit = cached.is_some();
+        let tile = cached.or_else(|| sources.as_ref().and_then(|s| build(&world, &job, s).ok()));
         let tile = if job.cancelled.load(Ordering::Relaxed) {
             None
         } else {
             tile
         };
         if let Some(tile) = &tile {
-            let mut bytes = Vec::new();
-            if crate::protocol::write_server_with_catalog(
-                &mut bytes,
-                &ServerMessage::LodTile {
-                    session: 1,
-                    request: 1,
-                    tile: tile.clone(),
-                },
-                world.catalog(),
-            )
-            .is_ok()
-            {
-                let checksum = cache_checksum(&bytes);
-                bytes.extend(checksum.to_le_bytes());
-                let temp = path.with_extension("tmp");
-                if fs::write(&temp, &bytes).is_ok() {
-                    let _ = fs::rename(&temp, &path);
-                }
-                trim_cache(&cache);
-            }
+            super::disk::store(&path, sources.as_ref().unwrap().stamp, &world, tile);
         }
         if results
             .send(Completion {
@@ -82,6 +59,7 @@ pub(super) fn run(
                 tile,
                 elapsed: started.elapsed(),
                 queue_age: started.saturating_duration_since(job.requested_at),
+                cache_hit,
             })
             .is_err()
         {
@@ -89,44 +67,7 @@ pub(super) fn run(
         }
     }
 }
-fn load_cached(path: &std::path::Path, world: &World) -> Option<LodTile> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    fs::File::open(path)
-        .ok()?
-        .take((crate::protocol::MAX_FRAME + 13) as u64)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    let checksum_at = bytes.len().checked_sub(8)?;
-    let checksum = u64::from_le_bytes(bytes[checksum_at..].try_into().ok()?);
-    if cache_checksum(&bytes[..checksum_at]) != checksum {
-        return None;
-    }
-    match crate::protocol::read_server_with_catalog(&bytes[..checksum_at], world.catalog()).ok()? {
-        ServerMessage::LodTile { tile, .. } => Some(tile),
-        _ => None,
-    }
-}
-fn cache_checksum(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf29ce484222325, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-    })
-}
-fn trim_cache(path: &std::path::Path) {
-    let Ok(entries) = fs::read_dir(path) else {
-        return;
-    };
-    let mut entries: Vec<_> = entries
-        .filter_map(Result::ok)
-        .filter_map(|v| Some((v.metadata().ok()?.modified().ok()?, v.path())))
-        .collect();
-    entries.sort_by_key(|v| v.0);
-    let excess = entries.len().saturating_sub(128);
-    for (_, path) in entries.into_iter().take(excess) {
-        let _ = fs::remove_file(path);
-    }
-}
-fn build(world: &World, root: &std::path::Path, job: &Job) -> io::Result<LodTile> {
+fn build(world: &World, job: &Job, sources: &super::sources::Sources) -> io::Result<LodTile> {
     if let Some(children) = &job.children
         && let Ok(tile) = crate::lod::reduce_parent(
             job.key,
@@ -145,63 +86,30 @@ fn build(world: &World, root: &std::path::Path, job: &Job) -> io::Result<LodTile
     let maxx = (bounds[2] - 1).div_euclid(CHUNK_SIZE as i32);
     let minz = bounds[1].div_euclid(CHUNK_SIZE as i32);
     let maxz = (bounds[3] - 1).div_euclid(CHUNK_SIZE as i32);
-    let mut keys = BTreeSet::new();
-    // Saved high structures are included as disjoint known coverage. Extensions
-    // outside this inspected range remain explicitly unknown, never known air.
-    for (visited, entry) in fs::read_dir(root)?.enumerate() {
-        if visited > 100_000 {
-            return Err(io::Error::other("LOD save index budget exceeded"));
-        }
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
-        let Some(stem) = name.strip_suffix(".bged") else {
-            continue;
-        };
-        let coords: Vec<_> = stem.split('_').map(str::parse::<i32>).collect();
-        if let [Ok(x), Ok(y), Ok(z)] = coords.as_slice()
-            && (minx..=maxx).contains(x)
-            && (minz..=maxz).contains(z)
-        {
-            keys.insert(ChunkKey {
-                x: *x,
-                y: *y,
-                z: *z,
-            });
-        }
-    }
-    let resident: HashMap<_, _> = job
-        .resident
-        .iter()
-        // Frozen builtin sampling already handles untouched chunks.
-        .filter(|c| world.lod_max_level() != 4 || c.version != 0)
-        .map(|c| (c.key, c))
+    let keys: BTreeSet<_> = sources
+        .saved
+        .keys()
+        .chain(sources.resident.keys())
+        .copied()
         .collect();
-    keys.extend(resident.keys().copied());
-    for (key, _) in &job.overlays {
-        keys.insert(*key);
-    }
     if keys.len() > 4096 {
         return Err(io::Error::other("LOD source chunk budget exceeded"));
     }
-    let overlays: HashMap<_, _> = job
-        .overlays
-        .iter()
-        .map(|(key, data)| (*key, data))
-        .collect();
     let mut chunks = Vec::with_capacity(keys.len());
     for key in keys {
         if job.cancelled.load(Ordering::Relaxed) {
             return Err(io::Error::other("LOD cancelled"));
         }
-        if let Some(chunk) = resident.get(&key) {
-            chunks.push((***chunk).clone());
+        if let Some(chunk) = sources.resident.get(&key) {
+            chunks.push((**chunk).clone());
             continue;
         }
-        let chunk = match overlays.get(&key) {
-            Some(bytes) => world.load_chunk_snapshot_uncached(key, bytes)?,
-            None => world.load_chunk_uncached(key)?,
-        };
+        let bytes = sources
+            .saved
+            .get(&key)
+            .and_then(Option::as_deref)
+            .unwrap_or_default();
+        let chunk = world.load_chunk_snapshot_uncached(key, bytes)?;
         chunks.push(chunk.chunk);
     }
     // Builtin composition has a bounded direct coarse contract. Saved edits
