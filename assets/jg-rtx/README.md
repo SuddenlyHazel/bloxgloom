@@ -38,3 +38,25 @@ The catalog adds **266 block types and corresponding inventory items**: 162 ordi
 New builtin worlds generate regional granite, diorite, andesite, tuff, calcite and basalt strata, deep deepslate, small depth-dependent ore deposits, varied forest soils, eight named flowers, and nine named tree species alongside the existing generic tree. Spruce uses layered crowns, acacia uses broad flat crowns, and jungle trees grow taller. Chunk generation and distant summaries share the same material selection and absolute-coordinate tree anchors. Generator version 6 uses the fresh default save folder `world-v29/`.
 
 Tall plants place both halves in one authoritative transaction, consume one item, and harvest once. Named leaves participate in the existing support/decay rules and species sapling drops. Sapling growth and distinct biome ecology for every imported plant remain future work. Vines, lichen, lily pads, petals, and crystal buds currently use crossed sprites: attached, horizontal, waterlogged, and directional custom geometry are not implemented. The broader masonry, color, and fantasy palettes are available to build with; this generation pass does not add dedicated fantasy biomes.
+
+## Performance verification
+
+Release headless benchmarks on 2026-10-05 used an Apple M1 Pro/Metal adapter, 1280×720 output, seed `0xB10C6100`, radius 6, 300 steady frames, medium sun shadows (2048px, 40m), and temporal AA off. The baseline was captured before this import. Scene setup is separate from frame timing; these are single-run measurements of different generated scenes, rather than an isolated shader comparison. Frame percentiles vary with machine load.
+
+| Measurement | Before import | Imported, voxel lighting | Imported, bounced lighting |
+| --- | ---: | ---: | ---: |
+| Scene setup (ms) | 2880.2 | 3788.3 | 4152.7 |
+| Visible triangles | 83,616 | 92,028 | 96,340 |
+| Total mesh bytes | 20,754,456 | 22,891,800 | 23,842,728 |
+| CPU steady p50 / p95 (ms) | 2.408 / 4.017 | 2.657 / 8.952 | 2.223 / 4.717 |
+| GPU steady p50 / p95 (ms) | 3.648 / 4.143 | 3.800 / 7.330 | 3.802 / 4.981 |
+
+The expanded catalog has 1,053 texture entries packed into 351 full-resolution material layers, about 351 MiB across three complete 256px mip chains. The 512 MiB admission ceiling remains in place. Meshes retain logical catalog texture IDs; shaders and custom-material helpers resolve the packed layer through metadata.
+
+Reproduce with `cargo run --release -- perf 300 6` and `cargo run --release -- perf 300 6 bounced`. These benchmarks exclude presentation and live gameplay. Final visual acceptance is through the user's fresh-world play test.
+
+## Automated acceptance
+
+The final `cargo test --quiet -- --test-threads=4` run passed **1,893 tests**, with zero failures and 14 ignored tests. Coverage includes real nonblocking TCP joins/edits/recovery using isolated saves, catalog and manifest identities, paired-plant inventory conservation and support removal, imported inventory art, material/shadow GPU readbacks, generation fingerprints, and chunk/LOD canopy seams. Four test threads avoid contention with the existing script startup wall-time limits; those runtime limits were preserved.
+
+`cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings` passed. The source-art inventory thumbnails were inspected separately; gameplay visual acceptance remains the user's play test.

@@ -123,9 +123,7 @@ fn transition_sampling_retains_off_center_canopies_and_shared_vertical_air() {
         for x in ((tree.x - 4).div_euclid(2) * 2..=tree.x + 4).step_by(2) {
             let fine = [(0, 0), (1, 0), (0, 1), (1, 1)]
                 .map(|(dx, dz)| sampler.column(x + dx, z + dz, -64, 80));
-            if !(0..144)
-                .any(|y| fine[3][y] == AIR && fine.iter().any(|c| c[y] == tree.leaves))
-            {
+            if !(0..144).any(|y| fine[3][y] == AIR && fine.iter().any(|c| c[y] == tree.leaves)) {
                 continue;
             }
             let merged =

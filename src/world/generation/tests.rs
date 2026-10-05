@@ -266,12 +266,7 @@ fn builtin_contributor_preserves_tree_canopy_across_chunk_seam() {
             generated.blocks.iter().copied().collect::<Vec<_>>(),
             baseline
         );
-        assert!(
-            generated
-                .blocks
-                .iter()
-                .any(|&block| block == tree.leaves)
-        );
+        assert!(generated.blocks.iter().any(|&block| block == tree.leaves));
     }
 }
 
