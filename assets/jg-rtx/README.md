@@ -12,6 +12,12 @@ uv run --with pillow --with numpy tools/jg_rtx/import.py /path/to/jg-rtx
 
 The importer replaces matching existing artwork while preserving runtime texture and block identities. New opaque materials live in `assets/textures/blocks/`, cutout leaves and plants in `assets/textures/foliage/`, and the replacement sapling icon in `assets/textures/items/`. Existing stick and seed items have no matching upstream artwork and retain their previous sources. Machine faces use JG bricks, furnace, hopper, and barrel faces.
 
+Source-art inventory thumbnails are baked into `icons.json` using the existing bounded ItemIcon row/palette format. Cubes show three isometric albedo faces; plants preserve their silhouettes, and tall plants combine both halves. Icons use 24×24 pixels and at most 32 quantized colors. Thin sprite alpha coverage uses an adaptive cutoff to keep details such as lichen visible. These thumbnails are adaptations of the same licensed source art. Regenerate only the icons with:
+
+```sh
+uv run --with pillow --with numpy tools/jg_rtx/import.py --icons-only
+```
+
 The explicit append-only identities in `tools/jg_rtx/block_ids.json` must never be reused or renumbered. New selections receive the next unused index. `catalog.json` defines block material assignments and generated Rust embeddings live in `src/content/jg_rtx/assets.rs`.
 
 ## Adaptations

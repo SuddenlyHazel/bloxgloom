@@ -5,6 +5,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 import numpy as np
 from PIL import Image
@@ -287,8 +288,14 @@ def compose_sunflower():
 def main():
     global SOURCE,JAVA,BEDROCK
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source',type=Path)
+    parser.add_argument('source',type=Path,nargs='?')
+    parser.add_argument('--icons-only',action='store_true',help='Regenerate source-art inventory icons from existing imported assets')
     args=parser.parse_args()
+    if args.icons_only:
+        subprocess.run([sys.executable,str(Path(__file__).with_name('icons.py'))],check=True)
+        return
+    if args.source is None:
+        parser.error('source checkout is required unless --icons-only is used')
     SOURCE=args.source.resolve()
     ids_path = ROOT/'tools/jg_rtx/block_ids.json'
     if ids_path.exists():
@@ -320,6 +327,7 @@ def main():
     generated = ROOT/'src/content/jg_rtx/assets.rs'
     generated.write_text('\n'.join(lines)+'\n')
     subprocess.run(['rustfmt', str(generated)], check=True)
+    subprocess.run([sys.executable,str(Path(__file__).with_name('icons.py'))],check=True)
     print(f'Imported {len(BLOCKS)} block types; {len(textures)} appended texture layers; {len(PROVENANCE)} albedo sources.')
 
 if __name__=='__main__': main()
