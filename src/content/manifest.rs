@@ -331,6 +331,7 @@ impl ContentManifest {
         resolved.storage_lifecycles = local.storage_lifecycles.clone();
         resolved.textures = local.textures.clone();
         resolved.texture_fingerprints = local.texture_fingerprints.clone();
+        resolved.lab_pbr_textures = local.lab_pbr_textures.clone();
         resolved.texture_keys = local.texture_keys.clone();
         for entry in self.entries.iter().filter(|entry| entry.kind == b'B') {
             let source = local_by_key[&(b'B', entry.key.as_str())];

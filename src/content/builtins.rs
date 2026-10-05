@@ -1,8 +1,19 @@
 use super::*;
 use bloxgloom_host_api::content as api;
+#[cfg(test)]
+mod tests;
 
 impl Catalog {
     pub fn builtins() -> Self {
+        static TEMPLATE: OnceLock<Catalog> = OnceLock::new();
+        let mut catalog = TEMPLATE.get_or_init(Self::build_builtins).clone();
+        // This cache is connection-owned and mutable; only immutable definitions
+        // and borrowed texture bytes may be shared between startup catalogs.
+        catalog.item_visuals = Default::default();
+        catalog
+    }
+
+    fn build_builtins() -> Self {
         let mut catalog = Self::new();
         const PNGS: [(&str, &[u8], bool, bool, bool); 28] = [
             (
@@ -202,14 +213,15 @@ impl Catalog {
                 false,
             ),
         ];
-        for (name, png, stitch_edges, stitch_vertical, alpha_cutout) in PNGS.into_iter().take(27) {
+        for (name, png, _stitch_edges, _stitch_vertical, alpha_cutout) in PNGS.into_iter().take(27)
+        {
             // Embedded assets are exercised by the renderer's material tests; avoid decoding
             // them once here and again during GPU upload on every startup.
             let texture = api::Texture {
                 key: format!("bloxgloom:{name}"),
                 png: Cow::Borrowed(png),
-                stitch_edges,
-                stitch_vertical,
+                stitch_edges: false,
+                stitch_vertical: false,
                 alpha_cutout,
                 emission_strength: if name == "glowstone" { 3.5 } else { 0.0 },
                 foliage: if matches!(
@@ -648,6 +660,7 @@ impl Catalog {
                 std::sync::Arc::new(super::creatures::mossbun::definition()),
             )
             .expect("builtin creature");
+        super::jg_rtx::register(&mut catalog);
         catalog.builtin_inventory_screens();
         catalog.builtin_item_icons();
         catalog.builtin_machines();

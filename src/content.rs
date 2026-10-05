@@ -22,6 +22,7 @@ mod gameplay_entities;
 pub(crate) mod icons;
 mod ids;
 mod inventories;
+pub(crate) mod jg_rtx;
 pub(crate) mod machines;
 mod manifest;
 mod mobile;
@@ -285,6 +286,7 @@ pub struct Catalog {
     primary_block_items: Vec<Option<ItemId>>,
     textures: Vec<TextureDef>,
     texture_fingerprints: Vec<u64>,
+    lab_pbr_textures: HashSet<String>,
     block_keys: HashSet<String>,
     state_keys: HashSet<String>,
     state_by_key: HashMap<String, BlockStateId>,
@@ -353,6 +355,7 @@ impl Catalog {
             primary_block_items: Vec::new(),
             textures: Vec::new(),
             texture_fingerprints: Vec::new(),
+            lab_pbr_textures: HashSet::new(),
             block_keys: HashSet::new(),
             state_keys: HashSet::new(),
             state_by_key: HashMap::new(),
@@ -646,6 +649,10 @@ impl Catalog {
         self.states.get(id.0 as usize)?.as_ref()
     }
 
+    pub(crate) fn states(&self) -> impl Iterator<Item = &StateDef> {
+        self.states.iter().flatten()
+    }
+
     /// Resolves one legal property change without putting property maps in voxel loops.
     pub fn state_with_property(
         &self,
@@ -805,6 +812,27 @@ impl Catalog {
     /// Immutable player contract shared by every world and prediction consumer.
     pub fn player_rules(&self) -> bloxgloom_host_api::player::PlayerRules {
         self.player_rules
+    }
+
+    /// Imported labPBR encoding is frozen material metadata, distinct from
+    /// legacy/public packed-map channels.
+    pub(crate) fn mark_lab_pbr_texture(&mut self, texture: TextureId) {
+        let key = self
+            .texture(texture)
+            .expect("known base texture")
+            .key
+            .to_string();
+        if self.lab_pbr_textures.insert(key) {
+            hash_bytes(
+                &mut self.texture_fingerprints[texture.0 as usize],
+                b"lab-pbr/v1",
+            );
+        }
+    }
+
+    pub(crate) fn is_lab_pbr_texture(&self, texture: TextureId) -> bool {
+        self.texture(texture)
+            .is_some_and(|t| self.lab_pbr_textures.contains(t.key.as_ref()))
     }
 
     /// Assigned IDs and schema/behavior/material definitions used by a connection.

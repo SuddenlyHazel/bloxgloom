@@ -128,7 +128,11 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
 #[test]
 fn builtin_catalog_preserves_default_state_and_item_ids() {
     let catalog = Catalog::builtins();
-    assert_eq!(catalog.textures().len(), 52);
+    assert_eq!(
+        catalog.texture(TextureId(51)).unwrap().key,
+        "bloxgloom:water"
+    );
+    assert!(catalog.textures().len() > 52);
     for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
         let state = BlockStateId(id);
         assert!(catalog.block(state).is_some());
@@ -175,6 +179,7 @@ fn builtin_catalog_preserves_default_state_and_item_ids() {
 fn registration_rejects_collisions_and_invalid_state_schema() {
     let mut catalog = Catalog::builtins();
     let builtin_fingerprint = catalog.fingerprint();
+    let next_texture = TextureId(catalog.textures().len() as u32);
     let layer = catalog
         .register_texture(TextureDef {
             key: "example:marble".into(),
@@ -186,7 +191,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             foliage: Default::default(),
         })
         .unwrap();
-    assert_eq!(layer, TextureId(52));
+    assert_eq!(layer, next_texture);
     let marble = BlockDef {
         id: BlockTypeId(17),
         key: "example:marble".into(),

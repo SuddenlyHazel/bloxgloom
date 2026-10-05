@@ -18,6 +18,7 @@ pub(in crate::server) mod gameplay_tick;
 pub(in crate::server) mod invalidation;
 pub(in crate::server) mod machine;
 mod mobile_lifecycle;
+mod plant;
 mod registered;
 pub(in crate::server) mod storage_lifecycle;
 #[cfg(test)]
@@ -391,9 +392,8 @@ fn plan_block_edit(
         slot,
         ..
     } = command;
-    let coords = vec![(x, y, z, block)];
     let mut terrain_reads = TerrainReads::default();
-    let mut removed_plants = Vec::new();
+    let (coords, plant_removals) = plant::expand(state, &mut terrain_reads, [x, y, z], block)?;
     if block != AIR {
         if !has(previous, crate::content::REPLACEABLE) {
             return Err(io::Error::new(
@@ -461,14 +461,8 @@ fn plan_block_edit(
                 "selected stack empty",
             ));
         }
-        if has(previous, crate::content::PLANT) {
-            removed_plants.push((previous, [x, y, z]));
-        }
         ensure_no_unhandled_anchor(state, &coords)?;
-        let removals = removed_plants
-            .into_iter()
-            .map(|(id, at)| (id, at, RemovalCause::Replacement))
-            .collect::<Vec<_>>();
+        let removals = plant_removals;
         let plan = plan_gameplay_removals(
             state,
             &mut terrain_reads,
@@ -539,7 +533,11 @@ fn plan_block_edit(
         ));
     }
     ensure_no_unhandled_anchor(state, &coords)?;
-    let removals = vec![(previous, [x, y, z], RemovalCause::Break)];
+    let removals = if plant_removals.is_empty() {
+        vec![(previous, [x, y, z], RemovalCause::Break)]
+    } else {
+        plant_removals
+    };
     let plan = plan_gameplay_removals(
         state,
         &mut terrain_reads,

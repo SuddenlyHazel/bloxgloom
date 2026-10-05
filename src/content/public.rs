@@ -30,7 +30,7 @@ impl Catalog {
         self.textures.push(texture);
     }
 
-    fn texture_key(&self, key: &str) -> Result<TextureId, Error> {
+    pub(super) fn texture_key(&self, key: &str) -> Result<TextureId, Error> {
         self.textures
             .iter()
             .position(|t| t.key == key)

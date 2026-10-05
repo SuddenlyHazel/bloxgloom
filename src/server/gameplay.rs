@@ -1091,8 +1091,8 @@ pub(super) fn plan_with_lifecycles(
 }
 
 /// Run support and registered neighbor decisions on the same staged overlay,
-/// including edits created by another handler. Only the upward support path
-/// uses the fallback; targeted handlers observe any of the six adjacent cells.
+/// including edits created by another handler. Soil support and paired plant
+/// halves use vertical fallback checks; targeted handlers observe all six sides.
 fn dispatch_neighbors(
     catalog: &std::sync::Arc<Catalog>,
     context: &mut Context<'_>,
@@ -1170,7 +1170,14 @@ fn dispatch_neighbors(
                 }
             }
             let lost_support = previous.supports_plant && !current.supports_plant;
-            if !targeted && !lost_support {
+            let paired_lower_change = [&previous, &current]
+                .iter()
+                .any(|b| b.plant && b.state.ends_with("[half=lower]"));
+            let paired_upper_change = [&previous, &current]
+                .iter()
+                .any(|b| b.plant && b.state.ends_with("[half=upper]"));
+            let paired_plant_change = paired_lower_change || paired_upper_change;
+            if !targeted && !lost_support && !paired_plant_change {
                 continue;
             }
             for offset in [
@@ -1189,7 +1196,9 @@ fn dispatch_neighbors(
                 };
                 let cell: Cell = cell.try_into().expect("three axes");
                 let above = offset == [0, 1, 0] && lost_support;
-                if !targeted && !above {
+                let paired_neighbor = (paired_lower_change && offset == [0, 1, 0])
+                    || (paired_upper_change && offset == [0, -1, 0]);
+                if !targeted && !above && !paired_neighbor {
                     continue;
                 }
                 let neighbor = context.block(cell).map_err(error)?;
@@ -1201,7 +1210,7 @@ fn dispatch_neighbors(
                 else {
                     continue;
                 };
-                if handler.target.is_none() && !above {
+                if handler.target.is_none() && !above && !paired_neighbor {
                     continue;
                 }
                 let event = Event::NeighborChanged {

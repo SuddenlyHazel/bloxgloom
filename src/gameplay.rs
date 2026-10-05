@@ -40,12 +40,37 @@ impl bloxgloom_host_api::gameplay::Handler for PlantSupport {
         else {
             return Ok(());
         };
+        if cell[0] != changed[0]
+            || cell[2] != changed[2]
+            || !((previous.supports_plant && !current.supports_plant)
+                || (previous.plant && previous.state.contains("[half="))
+                || (current.plant && current.state.contains("[half=")))
+        {
+            return Ok(());
+        }
+        let this = context.block(*cell)?;
+        if this.plant && cell[0] == changed[0] && cell[2] == changed[2] {
+            if this.state.ends_with("[half=upper]")
+                && cell[1].checked_sub(1) == Some(changed[1])
+                && current.state != this.state.replace("[half=upper]", "[half=lower]")
+            {
+                context.set_block(*cell, "bloxgloom:air")?;
+                return Ok(());
+            }
+            if this.state.ends_with("[half=lower]")
+                && cell[1].checked_add(1) == Some(changed[1])
+                && current.state != this.state.replace("[half=lower]", "[half=upper]")
+            {
+                context.set_block(*cell, "bloxgloom:air")?;
+                return Ok(());
+            }
+        }
         if cell[0] == changed[0]
             && cell[1].checked_sub(1) == Some(changed[1])
             && cell[2] == changed[2]
             && previous.supports_plant
             && !current.supports_plant
-            && context.block(*cell)?.plant
+            && this.plant
         {
             context.set_block(*cell, "bloxgloom:air")?;
         }
@@ -86,6 +111,10 @@ pub(crate) fn harvest(
     cell: Cell,
     random: u64,
 ) -> Result<(), Error> {
+    // A two-cell plant owns one item; upper removal never creates a second.
+    if block.plant && block.state.ends_with("[half=upper]") {
+        return Ok(());
+    }
     let position = cell.map(|n| n as f32 + 0.5);
     let mut drop = |item: &str| context.spawn_drop(position, item, 1, 250);
     match block.block_type.as_str() {
@@ -104,6 +133,21 @@ pub(crate) fn harvest(
             }
             if (random >> 16).is_multiple_of(20) {
                 drop("bloxgloom:sapling")?;
+            }
+        }
+        key if key.ends_with("_leaves") => {
+            if random & 15 == 0
+                && let Some(item) = &block.primary_item
+            {
+                drop(item)?;
+            }
+            if (random >> 8).is_multiple_of(5) {
+                drop("bloxgloom:stick")?;
+            }
+            if (random >> 16).is_multiple_of(20)
+                && let Some(sapling) = crate::content::jg_rtx::sapling_for_leaf(key)
+            {
+                drop(&sapling)?;
             }
         }
         _ => {

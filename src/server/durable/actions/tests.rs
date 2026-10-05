@@ -17,6 +17,8 @@ mod machine_tests;
 mod mobile_tests;
 #[path = "mossbun_tests.rs"]
 mod mossbun_tests;
+#[path = "plant_tests.rs"]
+mod plant_tests;
 #[path = "registered_tests.rs"]
 mod registered_tests;
 #[path = "response_fairness_tests.rs"]
