@@ -164,8 +164,11 @@ impl super::ClientApp {
                         origin[1] + z as i32,
                         scan_ceiling(self.position.y, eye_y),
                         |x, y, z| {
-                            self.block_at(x, y, z)
-                                .map(|id| self.catalog.block_flags(id) & crate::content::SOLID != 0)
+                            self.block_at(x, y, z).map(|id| {
+                                self.catalog.block_flags(id)
+                                    & (crate::content::SOLID | crate::content::FLUID)
+                                    != 0
+                            })
                         },
                     );
                 }

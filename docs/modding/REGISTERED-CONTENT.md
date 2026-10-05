@@ -56,7 +56,12 @@ one-state cubes or crossed plants. Its optional table supports `flammable`,
 `sky_attenuation` (0–15 sky levels absorbed per voxel; default 0, opaque blocks always stop sky),
 `reflectance` (exactly three 0–255 channels), and `side`/`bottom` face texture
 keys. `geometry` selects `cube`, `crossed_plant` or `narrow_crossed_plant`;
-`material` selects `opaque` or `cutout`. A crossed plant requires cutout
+`material` selects `opaque`, `cutout` or `fluid`. Fluids require cube geometry
+and `solid=false`; `replaceable=true` allows construction to displace them.
+Fluid surfaces use the separate transparent water pass, and ordinary edit
+raycasts pass through them. They are walk-through and support light absorption, with
+`sky_attenuation` controlling absorption per voxel. Fluid terrain is static;
+placing or removing adjacent blocks does not simulate flow. A crossed plant requires cutout
 material and `solid=false`. `register_texture(key, asset, {alpha_cutout=true})`
 declares a cutout PNG; every cutout block face must use a cutout texture.
 Face textures must already be registered by the same package; the required

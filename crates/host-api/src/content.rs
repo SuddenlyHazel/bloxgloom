@@ -72,7 +72,12 @@ pub enum Material {
     Opaque,
     Cutout,
     Invisible,
+    /// Non-solid, light-transmitting water-style fluid rendered in a separate pass.
+    Fluid,
 }
+
+/// Default tint and opacity for water-style fluid materials.
+pub const DEFAULT_FLUID_SWATCH: [f32; 4] = [0.12, 0.40, 0.56, 0.62];
 
 #[derive(Clone, Debug)]
 pub struct Property {

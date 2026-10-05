@@ -108,7 +108,9 @@ fn transition_sampling_retains_off_center_canopies_and_shared_vertical_air() {
     let occupied = |id| {
         catalog.state(id).is_some_and(|s| {
             id != AIR
-                && s.flags & (crate::content::OPAQUE | crate::content::CUTOUT) != 0
+                && s.flags
+                    & (crate::content::OPAQUE | crate::content::CUTOUT | crate::content::FLUID)
+                    != 0
                 && s.flags & crate::content::PLANT == 0
         })
     };

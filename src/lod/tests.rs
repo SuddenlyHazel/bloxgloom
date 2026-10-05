@@ -419,3 +419,45 @@ fn render_budget_simplification_cannot_erase_invalid_data_or_air_gaps() {
     }
     assert!(tile.into_render_summary(&catalog).is_err());
 }
+
+#[test]
+fn budget_reduction_preserves_water_and_solid_boundaries() {
+    let catalog = Catalog::builtins();
+    let column = Column {
+        coverage: vec![Interval { bottom: 0, top: 16 }],
+        spans: [
+            (0, 1, STONE),
+            (1, 2, crate::world::DIRT),
+            (2, 3, crate::world::GRAVEL),
+            (3, 6, crate::world::WATER),
+        ]
+        .map(|(bottom, top, state)| Span {
+            bottom,
+            top,
+            state,
+            sky: 15,
+            glow: 0,
+        })
+        .to_vec(),
+    };
+    let tile = LodTile {
+        key: TileKey {
+            level: 0,
+            x: 0,
+            z: 0,
+        },
+        revision: 1,
+        columns: vec![column; TILE_COLUMNS],
+        geometric_error: 0,
+    }
+    .into_render_summary(&catalog)
+    .unwrap();
+    for c in tile.columns {
+        assert_eq!(c.spans.len(), 2);
+        assert_eq!(
+            (c.spans[1].bottom, c.spans[1].top, c.spans[1].state),
+            (3, 6, crate::world::WATER)
+        );
+        assert_eq!(c.spans[0].top, 3);
+    }
+}

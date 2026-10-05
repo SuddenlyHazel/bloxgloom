@@ -6,6 +6,7 @@ use super::VERTEX_FLOATS;
 use super::material::face_uv;
 
 mod sources;
+pub(crate) mod water;
 
 /// Interleaved position, normal, tiled UV, and texture layer. World-space
 /// coordinates avoid per-draw uniforms; one material bind group serves all chunks.
@@ -18,6 +19,8 @@ pub struct ChunkMesh {
     pub(crate) indices: Vec<u32>,
     pub(crate) cutout_vertices: Vec<f32>,
     pub(crate) cutout_indices: Vec<u32>,
+    pub(crate) water_vertices: Vec<f32>,
+    pub(crate) water_indices: Vec<u32>,
 }
 
 impl ChunkMesh {
@@ -25,14 +28,16 @@ impl ChunkMesh {
         (self.vertices.len()
             + self.indices.len()
             + self.cutout_vertices.len()
-            + self.cutout_indices.len())
+            + self.cutout_indices.len()
+            + self.water_vertices.len()
+            + self.water_indices.len())
             * 4
             + self.local_sources.len() * std::mem::size_of::<super::local_shadow::Source>()
     }
 
     #[cfg(test)]
     pub fn triangles(&self) -> usize {
-        (self.indices.len() + self.cutout_indices.len()) / 3
+        (self.indices.len() + self.cutout_indices.len() + self.water_indices.len()) / 3
     }
 }
 pub(super) struct GpuMesh {
@@ -40,6 +45,7 @@ pub(super) struct GpuMesh {
     pub(super) local_sources: Vec<super::local_shadow::Source>,
     pub(super) opaque: Option<GpuSubmesh>,
     pub(super) cutout: Option<GpuSubmesh>,
+    pub(super) water: Option<GpuSubmesh>,
 }
 
 pub(super) struct GpuSubmesh {
@@ -52,20 +58,33 @@ pub(super) struct GpuSubmesh {
 /// Uses the shared world model's x, z, y indexing; 0 is air.
 #[cfg(test)]
 pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
-    mesh_chunk_with_catalog(chunk, None, 0, content::catalog())
+    mesh_chunk_with_catalog(chunk, None, 0, content::catalog(), &Default::default())
 }
 
-pub fn mesh_chunk_lit(chunk: &Chunk, light: &LightField, lighting_revision: u64) -> ChunkMesh {
-    mesh_chunk_lit_with_catalog(chunk, light, lighting_revision, content::catalog())
-}
-
+#[cfg(test)]
 pub fn mesh_chunk_lit_with_catalog(
     chunk: &Chunk,
     light: &LightField,
     lighting_revision: u64,
     catalog: &Catalog,
 ) -> ChunkMesh {
-    mesh_chunk_with_catalog(chunk, Some(light), lighting_revision, catalog)
+    mesh_chunk_lit_with_neighbors(
+        chunk,
+        light,
+        lighting_revision,
+        catalog,
+        &Default::default(),
+    )
+}
+
+pub fn mesh_chunk_lit_with_neighbors(
+    chunk: &Chunk,
+    light: &LightField,
+    lighting_revision: u64,
+    catalog: &Catalog,
+    known: &std::collections::HashMap<ChunkKey, std::sync::Arc<Chunk>>,
+) -> ChunkMesh {
+    mesh_chunk_with_catalog(chunk, Some(light), lighting_revision, catalog, known)
 }
 
 fn mesh_chunk_with_catalog(
@@ -73,6 +92,7 @@ fn mesh_chunk_with_catalog(
     light: Option<&LightField>,
     lighting_revision: u64,
     catalog: &Catalog,
+    known: &std::collections::HashMap<ChunkKey, std::sync::Arc<Chunk>>,
 ) -> ChunkMesh {
     let n = CHUNK_SIZE;
     let mut out = ChunkMesh {
@@ -84,6 +104,8 @@ fn mesh_chunk_with_catalog(
         indices: Vec::new(),
         cutout_vertices: Vec::new(),
         cutout_indices: Vec::new(),
+        water_vertices: Vec::new(),
+        water_indices: Vec::new(),
     };
     if chunk.blocks.len() != n * n * n {
         return out;
@@ -274,6 +296,7 @@ fn mesh_chunk_with_catalog(
             }
         }
     }
+    water::append(&mut out, chunk, light, catalog, known);
     out
 }
 

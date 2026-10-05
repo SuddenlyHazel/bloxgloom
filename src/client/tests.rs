@@ -544,6 +544,8 @@ fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
             indices: Vec::new(),
             cutout_vertices: Vec::new(),
             cutout_indices: Vec::new(),
+            water_vertices: Vec::new(),
+            water_indices: Vec::new(),
         });
         app.accept(ServerMessage::Delta {
             key: left,

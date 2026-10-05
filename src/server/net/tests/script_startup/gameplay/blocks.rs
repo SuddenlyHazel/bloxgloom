@@ -575,3 +575,35 @@ fn package_cube_rejections_fail_before_world_open() {
     assert!(error.to_string().contains("content/v1"), "{error}");
     assert!(!fixture.0.join("save").exists());
 }
+
+#[test]
+fn package_fluid_material_negotiates_without_solidity_and_survives_restart() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:pool','Pool','demo:tile',{material='fluid',solid=false,replaceable=true,sky_attenuation=1}) end",
+    );
+    for _ in 0..2 {
+        let mut state = Box::new(fixture.open().unwrap());
+        let catalog = state.world.catalog_arc();
+        let fluid = catalog.state_by_key("demo:pool").unwrap();
+        assert_eq!(
+            catalog.block_flags(fluid)
+                & (crate::content::FLUID | crate::content::SOLID | crate::content::OPAQUE),
+            crate::content::FLUID
+        );
+        state.world.edit(0, 80, 0, fluid).unwrap();
+        let fingerprint = catalog.fingerprint();
+        serve(state, |address| {
+            let joined = crate::client::connect_catalog_probe(&address.to_string(), 0x52f).unwrap();
+            assert_eq!(joined.fingerprint(), fingerprint);
+            assert_eq!(joined.block_flags(fluid), catalog.block_flags(fluid));
+        });
+    }
+    let mut state = fixture.open().unwrap();
+    assert_eq!(
+        state.world.get_block(0, 80, 0).unwrap(),
+        state.world.catalog().state_by_key("demo:pool").unwrap()
+    );
+}

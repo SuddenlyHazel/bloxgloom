@@ -74,10 +74,11 @@ pub(crate) const PLANT: u8 = 8;
 pub(crate) const REPLACEABLE: u8 = 16;
 pub(crate) const SUPPORTS_PLANT: u8 = 32;
 pub(crate) const FLAMMABLE: u8 = 64;
+pub(crate) const FLUID: u8 = 128;
 
 /// One compact source of truth for hot-path builtin physics. Custom definitions use the same
 /// bits in the frozen catalog; builtin probes avoid an atomic registry lookup per voxel.
-const BUILTIN_FLAGS: [u8; 16] = [
+const BUILTIN_FLAGS: [u8; 17] = [
     REPLACEABLE,
     SOLID | OPAQUE | SUPPORTS_PLANT,
     SOLID | OPAQUE | SUPPORTS_PLANT,
@@ -94,9 +95,10 @@ const BUILTIN_FLAGS: [u8; 16] = [
     CUTOUT | PLANT | REPLACEABLE,
     CUTOUT | PLANT | REPLACEABLE,
     CUTOUT | PLANT | REPLACEABLE,
+    FLUID | REPLACEABLE,
 ];
-const BUILTIN_EMISSION: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0];
-const BUILTIN_REFLECTANCE: [[u8; 3]; 16] = [
+const BUILTIN_EMISSION: [u8; 17] = [0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0];
+const BUILTIN_REFLECTANCE: [[u8; 3]; 17] = [
     [115, 120, 128],
     [75, 170, 65],
     [140, 105, 72],
@@ -113,6 +115,7 @@ const BUILTIN_REFLECTANCE: [[u8; 3]; 16] = [
     [115, 120, 128],
     [115, 120, 128],
     [115, 120, 128],
+    [40, 105, 135],
 ];
 #[derive(Clone, Debug)]
 pub struct TextureDef {
@@ -142,6 +145,7 @@ pub struct BlockDef {
     pub solid: bool,
     pub opaque: bool,
     pub cutout: bool,
+    pub fluid: bool,
     pub plant: bool,
     pub replaceable: bool,
     pub supports_plant: bool,
@@ -396,6 +400,11 @@ impl Catalog {
     pub fn register_block(&mut self, definition: BlockDef) -> Result<(), RegistrationError> {
         if !valid_key(&definition.key) {
             return Err(RegistrationError::InvalidKey);
+        }
+        if definition.fluid
+            && (definition.solid || definition.opaque || definition.cutout || definition.plant)
+        {
+            return Err(RegistrationError::InvalidDefinition);
         }
         if definition.sky_attenuation > 15
             || definition.emission > 15
@@ -1208,6 +1217,9 @@ fn flags(definition: &BlockDef) -> u8 {
     }
     if definition.supports_plant {
         bits |= SUPPORTS_PLANT;
+    }
+    if definition.fluid {
+        bits |= FLUID;
     }
     if definition.flammable {
         bits |= FLAMMABLE;

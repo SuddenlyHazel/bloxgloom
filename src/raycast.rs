@@ -125,7 +125,10 @@ pub fn raycast_with_catalog(
     }
 
     let initial_block = sample(cell[0], cell[1], cell[2])?;
-    if initial_block != AIR && !is_plant(catalog, initial_block) {
+    if initial_block != AIR
+        && catalog.block_flags(initial_block) & crate::content::FLUID == 0
+        && !is_plant(catalog, initial_block)
+    {
         let face = initial_face.unwrap_or_else(|| nearest_face(origin, cell));
         return make_hit(cell, initial_block, 0.0, face);
     } else if is_plant(catalog, initial_block)
@@ -174,7 +177,10 @@ pub fn raycast_with_catalog(
             positive_face(axis)
         };
         let block_id = sample(cell[0], cell[1], cell[2])?;
-        if block_id != AIR && !is_plant(catalog, block_id) {
+        if block_id != AIR
+            && catalog.block_flags(block_id) & crate::content::FLUID == 0
+            && !is_plant(catalog, block_id)
+        {
             return make_hit(cell, block_id, distance, face);
         } else if is_plant(catalog, block_id)
             && let Some((plant_distance, plant_face)) =

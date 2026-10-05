@@ -25,6 +25,7 @@ pub use palette::{PaletteView, PalettedBlocks};
 #[cfg(test)]
 use terrain::generated_block;
 pub(crate) use terrain::terrain_height;
+pub(crate) use terrain::water_feature;
 #[cfg(test)]
 use terrain::{
     Biome, SURFACE_NEIGHBORS, TREE_RADIUS, collapse_surface, generated_block_in_column,
@@ -36,7 +37,7 @@ pub const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 pub const MAX_TERRAIN_HEIGHT: i32 = 64;
 pub const MAX_GENERATED_HEIGHT: i32 = MAX_TERRAIN_HEIGHT + 10;
 pub const BEDROCK_Y: i32 = -64;
-pub const TERRAIN_GENERATOR_VERSION: u16 = 4;
+pub const TERRAIN_GENERATOR_VERSION: u16 = 5;
 pub type BlockId = crate::content::BlockStateId;
 pub const AIR: BlockId = crate::content::BlockStateId(0);
 pub const GRASS: BlockId = crate::content::BlockStateId(1);
@@ -56,7 +57,8 @@ pub const FERN: BlockId = crate::content::BlockStateId(14);
 pub const TALL_GRASS: BlockId = crate::content::BlockStateId(15);
 pub const WOOD_X: BlockId = crate::content::BlockStateId(256);
 pub const WOOD_Z: BlockId = crate::content::BlockStateId(257);
-pub const MAX_BUILTIN_BLOCK: BlockId = TALL_GRASS;
+pub const WATER: BlockId = crate::content::BlockStateId(16);
+pub const MAX_BUILTIN_BLOCK: BlockId = WATER;
 
 #[inline]
 #[cfg(test)]

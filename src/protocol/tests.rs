@@ -177,7 +177,7 @@ fn catalog_with_many_states(count: usize) -> Catalog {
         .block_type(crate::content::BlockTypeId(3))
         .unwrap()
         .clone();
-    block.id = crate::content::BlockTypeId(16);
+    block.id = crate::content::BlockTypeId(17);
     block.key = "test:palette".into();
     block.properties = vec![crate::content::PropertyDef {
         name: "variant".into(),
@@ -190,7 +190,7 @@ fn catalog_with_many_states(count: usize) -> Catalog {
         catalog
             .register_state(
                 BlockStateId(100_000 + index as u32),
-                crate::content::BlockTypeId(16),
+                crate::content::BlockTypeId(17),
                 vec![("variant".into(), format!("v{index:03}"))],
                 None,
             )
@@ -639,7 +639,7 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
             .is_err()
         );
     }
-    for invalid_item in [0, 16, 127, 131, 255] {
+    for invalid_item in [0, 17, 127, 131, 255] {
         let drop = DroppedItem {
             id: 1,
             item: ItemId(invalid_item),

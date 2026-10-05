@@ -311,7 +311,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
         .unwrap();
     catalog
         .register_block(BlockDef {
-            id: BlockTypeId::new(16),
+            id: BlockTypeId::new(17),
             key: "example:marble".into(),
             name: "MARBLE".into(),
             swatch: [0.9, 0.9, 0.9, 1.0],
@@ -322,6 +322,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             },
             solid: true,
             opaque: true,
+            fluid: false,
             cutout: false,
             plant: false,
             replaceable: false,
@@ -335,8 +336,8 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
         .unwrap();
     catalog
         .register_state(
-            BlockStateId::new(16),
-            BlockTypeId::new(16),
+            BlockStateId::new(17),
+            BlockTypeId::new(17),
             Vec::new(),
             None,
         )
@@ -348,13 +349,13 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             name: "MARBLE".into(),
             swatch: [0.9, 0.9, 0.9, 1.0],
             texture: layer,
-            placeable: Some(BlockStateId::new(16)),
+            placeable: Some(BlockStateId::new(17)),
             sprite: false,
         })
         .unwrap();
     catalog
         .register_item(ItemDef {
-            id: ItemId::new(16),
+            id: ItemId::new(17),
             key: "example:token".into(),
             name: "TOKEN".into(),
             swatch: [0.8, 0.6, 0.2, 1.0],
@@ -364,19 +365,19 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
         })
         .unwrap();
     assert_eq!(
-        material::material_layer_for(&catalog, BlockStateId::new(16), 0, 1),
+        material::material_layer_for(&catalog, BlockStateId::new(17), 0, 1),
         layer.0
     );
     assert_eq!(
         catalog.item(ItemId::new(131)).unwrap().placeable,
-        Some(BlockStateId::new(16))
+        Some(BlockStateId::new(17))
     );
     assert_eq!(
         material::item_material_layer_for(&catalog, ItemId::new(131), 1, 1),
         layer.0
     );
     assert_eq!(
-        material::item_material_layer_for(&catalog, ItemId::new(16), 1, 1),
+        material::item_material_layer_for(&catalog, ItemId::new(17), 1, 1),
         17
     );
     assert_eq!(

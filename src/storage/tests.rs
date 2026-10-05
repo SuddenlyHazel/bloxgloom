@@ -35,7 +35,7 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
         .unwrap();
     catalog
         .register_block(BlockDef {
-            id: BlockTypeId(16),
+            id: BlockTypeId(17),
             key: key.to_owned().into(),
             name: "MARBLE".into(),
             swatch: [0.9, 0.9, 0.9, 1.0],
@@ -46,6 +46,7 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
             },
             solid: true,
             opaque: true,
+            fluid: false,
             cutout: false,
             plant: false,
             replaceable: false,
@@ -58,7 +59,7 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
         })
         .unwrap();
     catalog
-        .register_state(BlockStateId(state_id), BlockTypeId(16), Vec::new(), None)
+        .register_state(BlockStateId(state_id), BlockTypeId(17), Vec::new(), None)
         .unwrap();
     catalog
         .register_item(ItemDef {

@@ -163,6 +163,9 @@ impl LodTile {
                 for s in &column.spans {
                     if let Some(last) = spans.last_mut()
                         && last.top == s.bottom
+                        && (catalog.block_flags(last.state) ^ catalog.block_flags(s.state))
+                            & crate::content::FLUID
+                            == 0
                     {
                         last.top = s.top;
                         last.state = s.state;
@@ -201,7 +204,9 @@ impl LodTile {
                     || !c.known(s.bottom, s.top)
                     || s.sky > 15
                     || s.glow > 15
-                    || state.flags & (crate::content::OPAQUE | crate::content::CUTOUT) == 0
+                    || state.flags
+                        & (crate::content::OPAQUE | crate::content::CUTOUT | crate::content::FLUID)
+                        == 0
                     || state.flags & crate::content::PLANT != 0
                 {
                     return Err("invalid LOD span".into());

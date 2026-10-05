@@ -92,3 +92,16 @@ fn aiming_past_grass_edges_reaches_ground_but_center_hits_flower() {
     assert_eq!(flower.block, [1, 0, 1]);
     assert!(flower.distance > 0.5);
 }
+
+#[test]
+fn water_is_transparent_to_edit_targeting_from_above_and_underwater() {
+    let blocks = HashMap::from([
+        ([0, 2, 0], crate::world::WATER),
+        ([0, 1, 0], crate::world::WATER),
+        ([0, 0, 0], crate::world::STONE),
+    ]);
+    for y in [3.5, 1.5] {
+        let hit = raycast_blocks(Vec3::new(0.5, y, 0.5), -Vec3::Y, 8.0, &blocks).unwrap();
+        assert_eq!(hit.block, [0, 0, 0]);
+    }
+}

@@ -17,8 +17,10 @@ mod sun_shadow;
 pub use sandbox::{install_sandbox_materials, render_sandbox_previews};
 mod daylight;
 pub use calibration::render_calibration_previews;
+mod water;
 mod weather;
 pub use daylight::render_daylight_previews;
+pub(crate) use water::render_water_previews;
 pub use weather::render_weather_previews;
 mod block;
 mod visuals;
@@ -564,6 +566,7 @@ enum PreviewScene {
     Hoppers,
     Surface,
     SurfaceBare,
+    Water { x: i32, z: i32, level: i64 },
     Effect,
     Fire,
     Vegetation,
@@ -677,6 +680,7 @@ async fn render_previews_weather(
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
     let (mut pipeline, mut cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+    let water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut rain_renderer = render::fire::FireRenderer::with_capacity(
         &device,
@@ -787,6 +791,20 @@ async fn render_previews_weather(
         surface_height(target_xz.0, target_xz.1)
     };
     let (camera_position, target) = match scene {
+        PreviewScene::Water { x, z, level } => {
+            let target = Vec3::new(x as f32 + 0.5, level as f32 + 1.0, z as f32 + 0.5);
+            (
+                target
+                    + if world::water_feature(i64::from(x), i64::from(z), SEED)
+                        .is_some_and(|feature| feature.2 == "pond")
+                    {
+                        Vec3::new(9.0, 35.0, 11.0)
+                    } else {
+                        Vec3::new(27.0, 24.0, 32.0)
+                    },
+                target,
+            )
+        }
         PreviewScene::Surface
         | PreviewScene::SurfaceBare
         | PreviewScene::Effect
@@ -886,8 +904,13 @@ async fn render_previews_weather(
     } else {
         0
     };
-    for z in -2..=2 {
-        for x in -2..=2 {
+    let terrain_radius = if matches!(scene, PreviewScene::Water { .. }) {
+        4
+    } else {
+        2
+    };
+    for z in -terrain_radius..=terrain_radius {
+        for x in -terrain_radius..=terrain_radius {
             for y in bottom_chunk..=4 {
                 let key = ChunkKey {
                     x: center_chunk.0 + x,
@@ -1135,10 +1158,11 @@ async fn render_previews_weather(
     }
     let motion_sequence = matches!(scene, PreviewScene::Outdoor(outdoor::View::Motion));
     let mut foliage_motion = outdoor::motion::Foliage::default();
+    let mut water_meshes = Vec::new();
     let mut gpu_meshes = Vec::new();
     let mut local_sources = Vec::new();
-    for z in -2..=2 {
-        for x in -2..=2 {
+    for z in -terrain_radius..=terrain_radius {
+        for x in -terrain_radius..=terrain_radius {
             for y in bottom_chunk..=4 {
                 let key = ChunkKey {
                     x: center_chunk.0 + x,
@@ -1152,9 +1176,18 @@ async fn render_previews_weather(
                     SEED,
                     matches!(scene, PreviewScene::Cave { bounced: true, .. }),
                 );
-                let mesh = render::mesh_chunk_lit(chunk, &light, 0);
+                let mesh = render::mesh_chunk_lit_with_neighbors(
+                    chunk,
+                    &light,
+                    0,
+                    crate::content::catalog(),
+                    &chunks,
+                );
                 local_sources.extend_from_slice(&mesh.local_sources);
-                if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
+                if mesh.indices.is_empty()
+                    && mesh.cutout_indices.is_empty()
+                    && mesh.water_indices.is_empty()
+                {
                     continue;
                 }
                 let upload = |vertices: &[f32], indices: &[u32]| {
@@ -1180,6 +1213,11 @@ async fn render_previews_weather(
                         indices.len() as u32,
                     ))
                 };
+                if let Some((vertices, indices, count)) =
+                    upload(&mesh.water_vertices, &mesh.water_indices)
+                {
+                    water_meshes.push((key, vertices, indices, count));
+                }
                 gpu_meshes.push((
                     upload(&mesh.vertices, &mesh.indices),
                     upload(&mesh.cutout_vertices, &mesh.cutout_indices),
@@ -1904,6 +1942,15 @@ async fn render_previews_weather(
                     }),
                     ..Default::default()
                 });
+                water_renderer.prepare(&queue);
+                water_meshes.sort_by(|a, b| {
+                    render::water::distance(b.0, camera.position)
+                        .total_cmp(&render::water::distance(a.0, camera.position))
+                        .then_with(|| a.0.cmp(&b.0))
+                });
+                for (_, vertices, indices, count) in &water_meshes {
+                    water_renderer.draw(&mut pass, vertices, indices, *count);
+                }
                 if matches!(scene, PreviewScene::Fire) {
                     fire_renderer.draw(&mut pass);
                 }

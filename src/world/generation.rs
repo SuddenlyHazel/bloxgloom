@@ -225,7 +225,7 @@ impl Contributor for Builtin {
 }
 
 fn builtin_state_key(block: BlockId) -> Result<&'static str, GenerationError> {
-    const KEYS: [&str; 16] = [
+    const KEYS: [&str; 17] = [
         "bloxgloom:air",
         "bloxgloom:grass",
         "bloxgloom:dirt",
@@ -242,6 +242,7 @@ fn builtin_state_key(block: BlockId) -> Result<&'static str, GenerationError> {
         "bloxgloom:blue_flower",
         "bloxgloom:fern",
         "bloxgloom:tall_grass",
+        "bloxgloom:water",
     ];
     KEYS.get(block.0 as usize).copied().ok_or_else(|| {
         GenerationError::Contributor(format!("unknown builtin generation block ID {}", block.0))

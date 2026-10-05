@@ -8,7 +8,7 @@ use glam::Vec3;
 
 fn material(catalog: &Catalog, id: BlockStateId) -> Option<RainMaterial> {
     let block = catalog.block(id)?;
-    if !block.solid {
+    if !block.solid && !block.fluid {
         return None;
     }
     Some(if let Some(acoustics) = catalog.block_acoustics(id) {
@@ -78,8 +78,9 @@ pub(super) fn sample(
                 // Current weather travels toward +X/+Z. These windward faces
                 // receive driving rain only when their neighbouring cell is known air.
                 for (dx, dz, normal) in [(-1, 0, [-1.0, 0.0]), (0, -1, [0.0, -1.0])] {
-                    if block(x + dx, y, z + dz)
-                        .is_some_and(|id| catalog.block_flags(id) & crate::content::SOLID == 0)
+                    if catalog.block_flags(id) & crate::content::FLUID == 0
+                        && block(x + dx, y, z + dz)
+                            .is_some_and(|id| catalog.block_flags(id) & crate::content::SOLID == 0)
                     {
                         scene.tiles.push(RainTile {
                             impact: declared.and_then(|a| a.impact),

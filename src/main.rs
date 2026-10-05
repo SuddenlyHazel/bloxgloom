@@ -85,11 +85,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v27-fixture"
+        "world-v28-fixture"
     } else {
-        "world-v27"
+        "world-v28"
     };
     match args.next().as_deref() {
+        Some("water-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "/tmp/bloxgloom-water-preview".into());
+            preview::render_water_previews(std::path::Path::new(&directory))?;
+        }
         Some("model-preview") => {
             let usage =
                 "usage: model-preview <model.glb> <output.png> [controls.json] [preview.json]";

@@ -98,3 +98,18 @@ fn declared_material_and_habitat_survive_states_and_only_sample_exposed_faces() 
             .all(|t| t.material == RainMaterial::Metal && t.habitat == Habitat::None)
     );
 }
+
+#[test]
+fn water_receives_rain_at_surface_without_vertical_sheet_impacts() {
+    let catalog = Catalog::builtins();
+    let scene = sample(Vec3::new(8.0, 5.0, 8.0), 6, &catalog, |_, y, _| {
+        Some(if y <= 3 { world::WATER } else { world::AIR })
+    });
+    assert_eq!(scene.tiles.len(), 256);
+    assert!(
+        scene
+            .tiles
+            .iter()
+            .all(|tile| tile.material == RainMaterial::Water && tile.centre[1] == 4.0)
+    );
+}

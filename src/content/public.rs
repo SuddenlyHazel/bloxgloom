@@ -75,6 +75,7 @@ impl Catalog {
             textures: self.public_faces(&b.textures)?,
             solid: b.solid,
             opaque: b.material == api::Material::Opaque,
+            fluid: b.material == api::Material::Fluid,
             cutout: b.material == api::Material::Cutout,
             plant: b.geometry != api::Geometry::Cube,
             replaceable: b.replaceable,

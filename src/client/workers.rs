@@ -659,11 +659,12 @@ impl Mesher {
                     if !current() {
                         continue;
                     }
-                    let mesh = render::mesh_chunk_lit_with_catalog(
+                    let mesh = render::mesh_chunk_lit_with_neighbors(
                         &job.chunk,
                         &light,
                         job.revision,
                         &job.catalog,
+                        &job.known,
                     );
                     let mut lighting = Vec::with_capacity(crate::world::CHUNK_VOLUME);
                     for y in 0..crate::world::CHUNK_SIZE {

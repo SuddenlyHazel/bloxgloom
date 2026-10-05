@@ -431,6 +431,7 @@ impl ClientBundle {
                     } | match block.material {
                         Material::Opaque => 0,
                         Material::Cutout => 4,
+                        Material::Fluid => 8,
                         Material::Invisible => return Err(invalid()),
                     }])?;
                 }
@@ -1013,13 +1014,14 @@ impl Startup {
                         2 => Geometry::NarrowCrossedPlant,
                         _ => return Err(invalid()),
                     };
-                    if flags & !7 != 0 {
+                    if flags & !15 != 0 {
                         return Err(invalid());
                     }
-                    let material = if flags & 4 != 0 {
-                        Material::Cutout
-                    } else {
-                        Material::Opaque
+                    let material = match flags & 12 {
+                        0 => Material::Opaque,
+                        4 => Material::Cutout,
+                        8 => Material::Fluid,
+                        _ => return Err(invalid()),
                     };
                     has_visual |= geometry != Geometry::Cube || material != Material::Opaque;
                     Some((geometry, material))
@@ -1083,6 +1085,12 @@ impl Startup {
                 if let Some((geometry, material)) = visual {
                     block.geometry = geometry;
                     block.material = material;
+                    if material == Material::Fluid {
+                        block.swatch = bloxgloom_host_api::content::DEFAULT_FLUID_SWATCH;
+                    }
+                    if material == Material::Fluid && (block.solid || geometry != Geometry::Cube) {
+                        return Err(invalid());
+                    }
                     if geometry != Geometry::Cube && (material != Material::Cutout || block.solid) {
                         return Err(invalid());
                     }

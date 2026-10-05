@@ -85,6 +85,7 @@ pub(in crate::server::script) fn cube(
                 block.material = match text(value)?.as_str() {
                     "opaque" => Material::Opaque,
                     "cutout" => Material::Cutout,
+                    "fluid" => Material::Fluid,
                     _ => return Err("unsupported block material"),
                 };
             }
@@ -99,6 +100,12 @@ pub(in crate::server::script) fn cube(
             states.ok_or("properties require explicit states")?,
             &block.properties,
         )?;
+    }
+    if block.material == Material::Fluid && (block.solid || block.geometry != Geometry::Cube) {
+        return Err("fluid material requires cube geometry and solid=false");
+    }
+    if block.material == Material::Fluid {
+        block.swatch = bloxgloom_host_api::content::DEFAULT_FLUID_SWATCH;
     }
     if block.geometry != Geometry::Cube && (block.material != Material::Cutout || block.solid) {
         return Err("crossed plants require cutout material and solid=false");

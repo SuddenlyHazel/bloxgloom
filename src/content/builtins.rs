@@ -4,7 +4,7 @@ use bloxgloom_host_api::content as api;
 impl Catalog {
     pub fn builtins() -> Self {
         let mut catalog = Self::new();
-        const PNGS: [(&str, &[u8], bool, bool, bool); 27] = [
+        const PNGS: [(&str, &[u8], bool, bool, bool); 28] = [
             (
                 "grass_top",
                 include_bytes!("../../assets/textures/blocks/grass_top.png"),
@@ -194,8 +194,15 @@ impl Catalog {
                 false,
                 false,
             ),
+            (
+                "water",
+                include_bytes!("../../assets/textures/blocks/water.png"),
+                false,
+                false,
+                false,
+            ),
         ];
-        for (name, png, stitch_edges, stitch_vertical, alpha_cutout) in PNGS {
+        for (name, png, stitch_edges, stitch_vertical, alpha_cutout) in PNGS.into_iter().take(27) {
             // Embedded assets are exercised by the renderer's material tests; avoid decoding
             // them once here and again during GPU upload on every startup.
             let texture = api::Texture {
@@ -226,6 +233,16 @@ impl Catalog {
         }
 
         super::companions::register(&mut catalog);
+        // Append after existing companion maps: builtin texture IDs are stable.
+        catalog.embedded_texture(&api::Texture {
+            key: "bloxgloom:water".into(),
+            png: Cow::Borrowed(PNGS[27].1),
+            stitch_edges: false,
+            stitch_vertical: false,
+            alpha_cutout: false,
+            emission_strength: 0.0,
+            foliage: Default::default(),
+        });
 
         let blocks = [
             block(world::AIR, "air", "AIR", [0.0; 4], [0, 0, 0]),
@@ -334,8 +351,20 @@ impl Catalog {
                 [0.38, 0.69, 0.34, 1.0],
                 [16, 16, 16],
             ),
+            block(
+                world::WATER,
+                "water",
+                "WATER",
+                api::DEFAULT_FLUID_SWATCH,
+                [27; 3],
+            ),
         ];
         for (id, definition) in blocks.into_iter().enumerate() {
+            if let Some(acoustics) = definition.acoustics {
+                catalog
+                    .block_acoustics
+                    .insert(definition.key.clone(), acoustics);
+            }
             catalog
                 .public_block_type_at(BlockTypeId(id as u32), &definition)
                 .expect("unique builtin block");
@@ -353,6 +382,7 @@ impl Catalog {
                 },
                 solid: true,
                 opaque: true,
+                fluid: false,
                 cutout: false,
                 plant: false,
                 replaceable: false,
@@ -544,6 +574,7 @@ impl Catalog {
                 },
                 solid: true,
                 opaque: true,
+                fluid: false,
                 cutout: false,
                 plant: false,
                 replaceable: false,
@@ -767,7 +798,7 @@ fn block(
     [top, side, bottom]: [u32; 3],
 ) -> api::Block {
     let flags = BUILTIN_FLAGS[id.0 as usize];
-    const TEXTURE_KEYS: [&str; 17] = [
+    const TEXTURE_KEYS: [&str; 28] = [
         "grass_top",
         "grass_side",
         "dirt",
@@ -785,9 +816,24 @@ fn block(
         "flower_blue",
         "fern",
         "tall_grass",
+        "seeds",
+        "sapling",
+        "stick",
+        "kiln_brick",
+        "kiln_vent",
+        "kiln_lit",
+        "hopper_side",
+        "hopper_top",
+        "chest_side",
+        "chest_top",
+        "water",
     ];
     api::Block {
-        acoustics: None,
+        acoustics: (id == world::WATER).then_some(api::Acoustics {
+            surface: api::RainSurface::Water,
+            habitat: api::Habitat::None,
+            impact: None,
+        }),
         key: format!("bloxgloom:{key}"),
         name: name.into(),
         swatch,
@@ -797,7 +843,9 @@ fn block(
             bottom: format!("bloxgloom:{}", TEXTURE_KEYS[bottom as usize]),
         },
         solid: flags & SOLID != 0,
-        material: if flags & OPAQUE != 0 {
+        material: if flags & FLUID != 0 {
+            api::Material::Fluid
+        } else if flags & OPAQUE != 0 {
             api::Material::Opaque
         } else if flags & CUTOUT != 0 {
             api::Material::Cutout
@@ -815,7 +863,13 @@ fn block(
         supports_plant: flags & SUPPORTS_PLANT != 0,
         flammable: flags & FLAMMABLE != 0,
         emission: BUILTIN_EMISSION[id.0 as usize],
-        sky_attenuation: if id == world::LEAVES { 2 } else { 0 },
+        sky_attenuation: if id == world::LEAVES {
+            2
+        } else if id == world::WATER {
+            1
+        } else {
+            0
+        },
         reflectance: BUILTIN_REFLECTANCE[id.0 as usize],
         properties: if id == world::WOOD {
             vec![api::Property {

@@ -1,7 +1,7 @@
 //! Immutable snapshots only: no procedural estimates or world cache mutation.
 use super::{Column, Interval, LodTile, Span, TILE_COLUMNS, TILE_SIZE, TileKey, reduce::merge};
 use crate::{
-    content::{CUTOUT, Catalog, OPAQUE, PLANT},
+    content::{CUTOUT, Catalog, FLUID, OPAQUE, PLANT},
     world::{CHUNK_SIZE, Chunk},
 };
 use std::collections::BTreeMap;
@@ -73,7 +73,7 @@ pub fn extract(
                 for y in 0..CHUNK_SIZE {
                     let id = chunk.block([x, y, z]).ok_or("missing source block")?;
                     let state = catalog.state(id).ok_or("unknown source state")?;
-                    if state.flags & (OPAQUE | CUTOUT) == 0 || state.flags & PLANT != 0 {
+                    if state.flags & (OPAQUE | CUTOUT | FLUID) == 0 || state.flags & PLANT != 0 {
                         continue;
                     }
                     let span = Span {

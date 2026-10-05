@@ -14,6 +14,7 @@ pub(crate) mod game_ui;
 mod hooks;
 pub(crate) mod lod;
 mod material;
+pub(crate) mod water;
 pub(crate) mod weather;
 pub(crate) use material::resources::required_limits as material_device_limits;
 mod mesh;
@@ -61,7 +62,9 @@ pub(crate) use fire::VisualFire;
 pub(crate) use game_ui::Intent as GameUiIntent;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
-pub use mesh::{ChunkMesh, mesh_chunk_lit, mesh_chunk_lit_with_catalog};
+#[cfg(test)]
+pub use mesh::mesh_chunk_lit_with_catalog;
+pub use mesh::{ChunkMesh, mesh_chunk_lit_with_neighbors};
 pub(crate) use pipeline::{create_custom_voxel_pipeline, create_voxel_pipeline};
 pub(crate) use pipeline::{create_sun_shadow_pipelines, create_voxel_pipeline_with_catalog};
 pub(crate) use sky::{create_sky_pipeline, sky_camera_data};
@@ -174,6 +177,7 @@ pub struct Renderer {
     local_shadow_frame: std::time::Instant,
     sun_pipelines: (wgpu::RenderPipeline, wgpu::RenderPipeline),
     fire: fire::FireRenderer,
+    water: water::WaterRenderer,
     game_ui: game_ui::GameUi,
     meshes: HashMap<ChunkKey, GpuMesh>,
     ready_near: std::collections::HashSet<ChunkKey>,
@@ -315,6 +319,7 @@ impl Renderer {
                 .map_err(RendererError::Materials)?;
         let lod = lod::Gpu::new(&device, post::HDR_FORMAT);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
+        let water = water::WaterRenderer::new(&device, &camera_buffer);
         let rain =
             fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
         let mut avatars = avatars::AvatarRenderer::new(
@@ -405,6 +410,7 @@ impl Renderer {
             local_shadow_frame: std::time::Instant::now(),
             sun_pipelines,
             fire,
+            water,
             game_ui,
             meshes: HashMap::new(),
             ready_near: std::collections::HashSet::new(),
@@ -635,6 +641,7 @@ impl Renderer {
             self.ready_near.insert(key);
             if mesh.indices.is_empty()
                 && mesh.cutout_indices.is_empty()
+                && mesh.water_indices.is_empty()
                 && mesh.local_sources.is_empty()
             {
                 self.meshes.remove(&key);
@@ -669,6 +676,7 @@ impl Renderer {
                     local_sources: mesh.local_sources,
                     opaque: upload(&mesh.vertices, &mesh.indices, "opaque chunk"),
                     cutout: upload(&mesh.cutout_vertices, &mesh.cutout_indices, "cutout chunk"),
+                    water: upload(&mesh.water_vertices, &mesh.water_indices, "water chunk"),
                 },
             );
             bytes += mesh_bytes;
@@ -896,6 +904,23 @@ impl Renderer {
                 }),
                 ..Default::default()
             });
+            let mut water = self
+                .meshes
+                .iter()
+                .filter_map(|(key, mesh)| mesh.water.as_ref().map(|mesh| (*key, mesh)))
+                .filter(|(key, _)| visibility::chunk_visible_padded(view_projection, *key, 0.0))
+                .collect::<Vec<_>>();
+            water.sort_by(|(a, _), (b, _)| {
+                water::distance(*b, camera.position)
+                    .total_cmp(&water::distance(*a, camera.position))
+                    .then_with(|| a.cmp(b))
+            });
+            self.water.prepare(&self.queue);
+            for (_, mesh) in water {
+                stats.drawn_triangles +=
+                    self.water
+                        .draw(&mut pass, &mesh.vertex, &mesh.index, mesh.indices);
+            }
             stats.drawn_triangles += self.fire.draw(&mut pass);
             stats.drawn_triangles += self.rain.draw(&mut pass);
         }

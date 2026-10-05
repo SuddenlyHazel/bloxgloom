@@ -179,3 +179,32 @@ fn player_modifiers_change_authoritative_horizontal_jump_and_gravity_rates() {
     let falling = process_movement_batch(&terrain, boosted, &[]).state;
     close(boosted.vertical_velocity - falling.vertical_velocity, 0.2);
 }
+
+#[test]
+fn water_is_walk_through_and_does_not_enable_free_vertical_movement() {
+    let mut chunk = air_chunk(key(0, 0, 0));
+    for x in 0..16 {
+        for z in 0..16 {
+            for y in 0..4 {
+                chunk.blocks.set(
+                    Chunk::index([x, y, z]).unwrap(),
+                    if y == 0 {
+                        crate::world::STONE
+                    } else {
+                        crate::world::WATER
+                    },
+                );
+            }
+        }
+    }
+    let terrain = VoxelView::from_chunks([chunk]).unwrap();
+    let moved = process_movement_batch(&terrain, walking(1.0), &[command(1, [0.1, 0.1, 0.0])]);
+    assert_eq!(moved.consumed, 1);
+    close(moved.state.position()[0], 1.6);
+    close(moved.state.position()[1], 1.0);
+    let falling = process_movement_batch(&terrain, walking(2.0), &[]);
+    assert!(
+        falling.state.position()[1] < 2.0,
+        "water does not add buoyancy"
+    );
+}

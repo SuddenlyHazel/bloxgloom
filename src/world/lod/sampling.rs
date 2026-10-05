@@ -1,7 +1,7 @@
 //! Fine transition sampling shares the same gap-preserving union as parent reduction.
 use super::LodSampler;
 use crate::{
-    content::{CUTOUT, Catalog, OPAQUE, PLANT},
+    content::{CUTOUT, Catalog, FLUID, OPAQUE, PLANT},
     lod::{Column, Interval, Span},
     world::{AIR, BlockId},
 };
@@ -47,7 +47,7 @@ pub(super) fn column(
     let mut spans: Vec<Span> = Vec::new();
     for (y, id) in states {
         let state = catalog.state(id).ok_or("unknown builtin state")?;
-        if id == AIR || state.flags & (OPAQUE | CUTOUT) == 0 || state.flags & PLANT != 0 {
+        if id == AIR || state.flags & (OPAQUE | CUTOUT | FLUID) == 0 || state.flags & PLANT != 0 {
             continue;
         }
         if let Some(last) = spans.last_mut()

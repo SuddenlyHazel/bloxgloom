@@ -64,7 +64,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
     high.key = "test:high".into();
     catalog.register_block(high).unwrap();
     let mut low = catalog.block_type(BlockTypeId(3)).unwrap().clone();
-    low.id = BlockTypeId(16);
+    low.id = BlockTypeId(17);
     low.key = "test:low".into();
     catalog.register_block(low).unwrap();
     assert!(catalog.block_type(BlockTypeId(70_000)).is_some());
@@ -72,7 +72,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
         .register_state(BlockStateId(70_001), BlockTypeId(70_000), vec![], None)
         .unwrap();
     catalog
-        .register_state(BlockStateId(258), BlockTypeId(16), vec![], None)
+        .register_state(BlockStateId(258), BlockTypeId(17), vec![], None)
         .unwrap();
     assert!(catalog.state(BlockStateId(70_001)).is_some());
     let texture = catalog.block_type(BlockTypeId(3)).unwrap().textures.top;
@@ -89,7 +89,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
         .unwrap();
     catalog
         .register_item(ItemDef {
-            id: ItemId(16),
+            id: ItemId(17),
             key: "test:low".into(),
             name: "LOW".into(),
             swatch: [1.0; 4],
@@ -128,7 +128,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
 #[test]
 fn builtin_catalog_preserves_default_state_and_item_ids() {
     let catalog = Catalog::builtins();
-    assert_eq!(catalog.textures().len(), 51);
+    assert_eq!(catalog.textures().len(), 52);
     for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
         let state = BlockStateId(id);
         assert!(catalog.block(state).is_some());
@@ -147,7 +147,7 @@ fn builtin_catalog_preserves_default_state_and_item_ids() {
             assert_eq!(catalog.block_flags(state) & FLAMMABLE, 0);
         }
     }
-    assert!(catalog.block(BlockStateId(16)).is_none());
+    assert!(catalog.block(BlockStateId(17)).is_none());
     for (state, axis) in [
         (world::WOOD_X, "x"),
         (world::WOOD, "y"),
@@ -186,9 +186,9 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             foliage: Default::default(),
         })
         .unwrap();
-    assert_eq!(layer, TextureId(51));
+    assert_eq!(layer, TextureId(52));
     let marble = BlockDef {
-        id: BlockTypeId(16),
+        id: BlockTypeId(17),
         key: "example:marble".into(),
         name: "MARBLE".into(),
         swatch: [0.9, 0.85, 0.8, 1.0],
@@ -199,6 +199,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
         },
         solid: true,
         opaque: true,
+        fluid: false,
         cutout: false,
         plant: false,
         replaceable: false,
@@ -216,16 +217,16 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
     );
     let state = BlockStateId(258);
     catalog
-        .register_state(state, BlockTypeId(16), Vec::new(), None)
+        .register_state(state, BlockTypeId(17), Vec::new(), None)
         .unwrap();
     assert_eq!(
-        catalog.register_state(state, BlockTypeId(16), Vec::new(), None),
+        catalog.register_state(state, BlockTypeId(17), Vec::new(), None),
         Err(RegistrationError::DuplicateId)
     );
     assert_eq!(
         catalog.register_state(
             BlockStateId(259),
-            BlockTypeId(16),
+            BlockTypeId(17),
             vec![("axis".into(), "x".into())],
             None
         ),

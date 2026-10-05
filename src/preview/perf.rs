@@ -9,6 +9,7 @@ const GPU_READBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 struct PerfGpuMesh {
     opaque: Option<PerfGpuSubmesh>,
     cutout: Option<PerfGpuSubmesh>,
+    water: Option<PerfGpuSubmesh>,
 }
 
 struct PerfGpuSubmesh {
@@ -127,12 +128,22 @@ pub(super) async fn run_perf_benchmark_async(
     }
     for key in chunk_order {
         let light = LightField::build_with_bounce(key, &chunks, SEED, bounced);
-        precomputed_meshes.push_back(render::mesh_chunk_lit(&chunks[&key], &light, 0));
+        precomputed_meshes.push_back(render::mesh_chunk_lit_with_neighbors(
+            &chunks[&key],
+            &light,
+            0,
+            crate::content::catalog(),
+            &chunks,
+        ));
     }
     let generation_ms = generation_started.elapsed().as_secs_f64() * 1_000.0;
     let nonempty_meshes = precomputed_meshes
         .iter()
-        .filter(|mesh| !mesh.indices.is_empty() || !mesh.cutout_indices.is_empty())
+        .filter(|mesh| {
+            !mesh.indices.is_empty()
+                || !mesh.cutout_indices.is_empty()
+                || !mesh.water_indices.is_empty()
+        })
         .count();
     let (mesh_bytes, vertex_count, index_count) = precomputed_meshes.iter().fold(
         (0usize, 0usize, 0usize),
@@ -140,8 +151,9 @@ pub(super) async fn run_perf_benchmark_async(
             (
                 bytes + mesh.byte_len(),
                 vertices
-                    + (mesh.vertices.len() + mesh.cutout_vertices.len()) / render::VERTEX_FLOATS,
-                indices + mesh.indices.len() + mesh.cutout_indices.len(),
+                    + (mesh.vertices.len() + mesh.cutout_vertices.len()) / render::VERTEX_FLOATS
+                    + mesh.water_vertices.len() / 12,
+                indices + mesh.indices.len() + mesh.cutout_indices.len() + mesh.water_indices.len(),
             )
         },
     );
@@ -166,6 +178,7 @@ pub(super) async fn run_perf_benchmark_async(
     let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let shadow_quality = super::sun_shadow::quality()?;
+    let water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut sun_shadows =
         render::sun_shadow::SunShadows::new(&device, &camera_buffer, shadow_quality);
     let camera_group = sun_shadows.camera_group.clone();
@@ -310,7 +323,10 @@ pub(super) async fn run_perf_benchmark_async(
             }
             let mesh = pending_render.pop_front().unwrap();
             near_ready.insert(mesh.key);
-            if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
+            if mesh.indices.is_empty()
+                && mesh.cutout_indices.is_empty()
+                && mesh.water_indices.is_empty()
+            {
                 gpu_meshes.remove(&mesh.key);
                 continue;
             }
@@ -337,6 +353,7 @@ pub(super) async fn run_perf_benchmark_async(
                 PerfGpuMesh {
                     opaque: upload(&mesh.vertices, &mesh.indices),
                     cutout: upload(&mesh.cutout_vertices, &mesh.cutout_indices),
+                    water: upload(&mesh.water_vertices, &mesh.water_indices),
                 },
             );
             uploaded_chunks += 1;
@@ -546,6 +563,43 @@ pub(super) async fn run_perf_benchmark_async(
             }
         }
         post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
+        {
+            let mut attachments = render::scene_ao::attachments(
+                &post.scene,
+                &post.ambient.indirect,
+                wgpu::Color::TRANSPARENT,
+            );
+            for attachment in attachments.iter_mut().flatten() {
+                attachment.ops.load = wgpu::LoadOp::Load;
+            }
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perf water"),
+                color_attachments: &attachments,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            water_renderer.prepare(&queue);
+            let mut water = gpu_meshes
+                .iter()
+                .filter_map(|(key, m)| m.water.as_ref().map(|m| (*key, m)))
+                .filter(|(key, _)| render::chunk_visible(matrix, *key))
+                .collect::<Vec<_>>();
+            water.sort_by(|(a, _), (b, _)| {
+                render::water::distance(*b, camera.position)
+                    .total_cmp(&render::water::distance(*a, camera.position))
+                    .then_with(|| a.cmp(b))
+            });
+            for (_, m) in water {
+                final_triangles += water_renderer.draw(&mut pass, &m.vertex, &m.index, m.indices);
+            }
+        }
         post.draw_motion(&queue, &mut encoder, &depth_view, None);
         post.resolve_temporal(&device, &mut encoder, &depth_view);
         post.encode(&device, &queue, &mut encoder, &color_view);

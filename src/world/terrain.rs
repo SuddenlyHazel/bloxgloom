@@ -1,11 +1,12 @@
 //! Deterministic terrain generation, biome sampling, and chunk decoration.
+mod hydrology;
 
 use std::collections::HashMap;
 
 use super::{
     AIR, BEDROCK_Y, BLUE_FLOWER, BlockId, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey, DIRT, FERN,
     GRASS, GRAVEL, LEAVES, MAX_GENERATED_HEIGHT, MOSS, RED_FLOWER, SAND, SNOW, STONE, TALL_GRASS,
-    WOOD, YELLOW_FLOWER, supports_plant,
+    WATER, WOOD, YELLOW_FLOWER, supports_plant,
 };
 
 pub(super) fn generate_blocks(key: ChunkKey, seed: u64) -> Vec<BlockId> {
@@ -19,11 +20,12 @@ pub(super) fn generate_blocks(key: ChunkKey, seed: u64) -> Vec<BlockId> {
         return blocks;
     }
     let mut patterns = HashMap::new();
+    let mut hydrology = hydrology::Sampler::new(seed);
     for z in 0..CHUNK_SIZE {
         for x in 0..CHUNK_SIZE {
             let world_x = i64::from(key.x) * CHUNK_SIZE as i64 + x as i64;
             let world_z = i64::from(key.z) * CHUNK_SIZE as i64 + z as i64;
-            let column = terrain_column(world_x, world_z, seed);
+            let column = hydrology.column(world_x, world_z);
             let pattern =
                 if bottom <= column.height && bottom + CHUNK_SIZE as i64 > column.height - 4 {
                     surface_pattern(world_x, world_z, seed, &mut patterns)
@@ -78,6 +80,9 @@ pub(super) fn tree_anchor(cell_x: i64, cell_z: i64, seed: u64) -> Option<Tree> {
         return None;
     }
     let column = terrain_column(x, z, seed);
+    if column.water_level.is_some() {
+        return None;
+    }
     let frequency = match column.biome {
         Biome::Forest => 380,
         Biome::Plains => 45,
@@ -196,11 +201,12 @@ fn decorate_chunk(
             }
         }
     }
+    let mut hydrology = hydrology::Sampler::new(seed);
     for z in 0..CHUNK_SIZE {
         for x in 0..CHUNK_SIZE {
             let world_x = first_x + x as i64;
             let world_z = first_z + z as i64;
-            let column = terrain_column(world_x, world_z, seed);
+            let column = hydrology.column(world_x, world_z);
             let world_y = column.height + 1;
             if !(first_y..first_y + CHUNK_SIZE as i64).contains(&world_y) {
                 continue;
@@ -243,9 +249,15 @@ pub(super) struct Column {
     pub(super) height: i64,
     pub(super) rocky: bool,
     pub(super) biome: Biome,
+    pub(super) water_level: Option<i64>,
+    water_kind: Option<hydrology::Kind>,
+    pub(super) shore: bool,
 }
 
 pub(super) fn terrain_column(x: i64, z: i64, seed: u64) -> Column {
+    hydrology::Sampler::new(seed).column(x, z)
+}
+fn base_column(x: i64, z: i64, seed: u64) -> Column {
     let continent = noise2(x, z, 256, seed ^ 0x42ab_51a4);
     let temperature = noise2(x, z, 384, seed ^ 0x8179_e6f2);
     let moisture = noise2(x, z, 320, seed ^ 0x6a03_d2e1);
@@ -283,6 +295,9 @@ pub(super) fn terrain_column(x: i64, z: i64, seed: u64) -> Column {
         height,
         rocky: biome == Biome::Highland && height > 41,
         biome,
+        water_level: None,
+        water_kind: None,
+        shore: false,
     }
 }
 
@@ -317,11 +332,17 @@ fn generated_block_with_pattern(
         return STONE;
     }
     if y > column.height {
-        AIR
+        if column.water_level.is_some_and(|level| y <= level) {
+            WATER
+        } else {
+            AIR
+        }
     } else {
         // Coarse caverns and finer breaks share absolute world coordinates, so
         // both horizontal and vertical chunk faces sample the same field.
-        if y >= i64::from(BEDROCK_Y) + 5 {
+        if y >= i64::from(BEDROCK_Y) + 5
+            && !(column.water_level.is_some() && y >= column.height - 3)
+        {
             let caverns = noise3(x, y, z, 22, seed ^ 0x9907_ae41);
             let breaks = noise3(x, y, z, 9, seed ^ 0x287a_13dc);
             let near_spawn = x.abs() <= 12 && z.abs() <= 12;
@@ -333,12 +354,20 @@ fn generated_block_with_pattern(
         if y < column.height - 4 {
             return STONE;
         }
-        let top = match column.biome {
-            Biome::Plains => [GRASS, GRASS, GRAVEL, STONE][pattern as usize],
-            Biome::Forest => [GRASS, MOSS, MOSS, STONE][pattern as usize],
-            Biome::Desert => [SAND, SAND, GRAVEL, STONE][pattern as usize],
-            Biome::Tundra => [SNOW, SNOW, GRAVEL, STONE][pattern as usize],
-            Biome::Highland => [STONE, GRAVEL, GRAVEL, SNOW][pattern as usize],
+        let top = if column.shore {
+            if matches!(column.biome, Biome::Desert) {
+                SAND
+            } else {
+                GRAVEL
+            }
+        } else {
+            match column.biome {
+                Biome::Plains => [GRASS, GRASS, GRAVEL, STONE][pattern as usize],
+                Biome::Forest => [GRASS, MOSS, MOSS, STONE][pattern as usize],
+                Biome::Desert => [SAND, SAND, GRAVEL, STONE][pattern as usize],
+                Biome::Tundra => [SNOW, SNOW, GRAVEL, STONE][pattern as usize],
+                Biome::Highland => [STONE, GRAVEL, GRAVEL, SNOW][pattern as usize],
+            }
         };
         if y == column.height {
             return top;
@@ -527,6 +556,7 @@ pub(super) struct LodSampler {
     seed: u64,
     patterns: HashMap<(i64, i64), [u8; 64]>,
     trees: HashMap<(i64, i64), Option<Tree>>,
+    hydrology: hydrology::Sampler,
 }
 impl LodSampler {
     pub(super) fn new(seed: u64) -> Self {
@@ -534,10 +564,11 @@ impl LodSampler {
             seed,
             patterns: HashMap::new(),
             trees: HashMap::new(),
+            hydrology: hydrology::Sampler::new(seed),
         }
     }
     pub(super) fn column(&mut self, x: i64, z: i64, bottom: i32, top: i32) -> Vec<BlockId> {
-        let column = terrain_column(x, z, self.seed);
+        let column = self.hydrology.column(x, z);
         let pattern = surface_pattern(x, z, self.seed, &mut self.patterns);
         let mut trees = Vec::new();
         for cz in (z - TREE_RADIUS).div_euclid(TREE_CELL)..=(z + TREE_RADIUS).div_euclid(TREE_CELL)
@@ -587,4 +618,18 @@ impl LodSampler {
             })
             .collect()
     }
+}
+
+/// Procedural diagnostics/previews only; gameplay reads authoritative chunks.
+pub(crate) fn water_feature(x: i64, z: i64, seed: u64) -> Option<(i64, i64, &'static str)> {
+    let column = terrain_column(x, z, seed);
+    Some((
+        column.water_level?,
+        column.height,
+        match column.water_kind? {
+            hydrology::Kind::River => "river",
+            hydrology::Kind::Lake => "lake",
+            hydrology::Kind::Pond => "pond",
+        },
+    ))
 }
