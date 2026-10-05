@@ -33,7 +33,7 @@ The server retains movement and collision authority. Water has no solid collisio
 
 ## Verification
 
-The release build, formatting check and strict Clippy check pass. GPU-rendered river, lake and pond previews were inspected, including a lake with temporal AA enabled. Behavioral coverage includes deterministic generation across seeds and sampling orders, negative-coordinate chunk seams, dry spawn, bounded basin depths, fluid-preserving LOD reduction, authoritative neighbor meshing, rain impacts, targeting through water and unchanged ground movement. A real nonblocking loopback client negotiates a package-defined fluid catalog and verifies the edit survives a save/restart.
+`cargo test --workspace` passes: 1,866 game tests and 61 host API tests, with 13 game tests ignored. The release build, `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings` also pass. One model-startup test hit its existing time limit during an earlier busy run; its isolated retry and the complete clean rerun both passed. GPU-rendered river, lake and pond previews were inspected, including a lake with temporal AA enabled. Behavioral coverage includes deterministic generation across seeds and sampling orders, negative-coordinate chunk seams, dry spawn, bounded basin depths, fluid-preserving LOD reduction, authoritative neighbor meshing, rain impacts, targeting through water and unchanged ground movement. A real nonblocking loopback client negotiates a package-defined fluid catalog and verifies the edit survives a save/restart.
 
 Headless benchmarks on Apple M1 Pro / Metal, 1280×720, radius 6, 300 steady frames, medium sun shadows, temporal AA off:
 
