@@ -18,3 +18,7 @@ cargo build --release
     Finished `release` profile [optimized] target(s) in 49.63s
 
 See cache.txt and edit.txt for focused cache and real-listener GPU verification.
+
+graphify update .
+Passed AST refresh: 19,647 nodes, 43,786 edges, 1,078 communities.
+Existing unsupported Luau syntax and community-label warnings remain; no LLM labeling was run.

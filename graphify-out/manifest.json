@@ -1182,9 +1182,9 @@
     "semantic_hash": ""
   },
   "src/preview/perf.rs": {
-    "mtime": 1791207401.6939933,
-    "seen": 1791208355.982988,
-    "ast_hash": "3b05b6fedda79a9edcc5db0a6b582926",
+    "mtime": 1791215090.5550842,
+    "seen": 1791216373.214526,
+    "ast_hash": "a6b7fc1a092edb0e15f4138dd813ca80",
     "semantic_hash": ""
   },
   "src/preview/visuals.rs": {
@@ -1194,9 +1194,9 @@
     "semantic_hash": ""
   },
   "src/protocol.rs": {
-    "mtime": 1791206916.079117,
-    "seen": 1791208355.9830039,
-    "ast_hash": "6f907e261344ffa9be0ea295e1ca6b15",
+    "mtime": 1791214824.0871434,
+    "seen": 1791216373.214538,
+    "ast_hash": "ffb9b2861585cd1176cfa330d62883e5",
     "semantic_hash": ""
   },
   "src/protocol/bundle.rs": {
@@ -1242,9 +1242,9 @@
     "semantic_hash": ""
   },
   "src/render.rs": {
-    "mtime": 1791207583.466309,
-    "seen": 1791208355.9830248,
-    "ast_hash": "c7f207ff036596b2696901c56946bbc3",
+    "mtime": 1791215340.4896262,
+    "seen": 1791216373.21456,
+    "ast_hash": "d574be588f32cde8a89f93ae1a07c256",
     "semantic_hash": ""
   },
   "src/render/avatars.rs": {
@@ -7848,9 +7848,9 @@
     "semantic_hash": ""
   },
   "src/render/lod.rs": {
-    "mtime": 1791204289.199975,
-    "seen": 1791204463.382305,
-    "ast_hash": "a650284182ee2296dc39102273f0d156",
+    "mtime": 1791215090.7414427,
+    "seen": 1791216373.214643,
+    "ast_hash": "9020098bf2564d84412483cf7bbab812",
     "semantic_hash": ""
   },
   "src/render/lod/colors.rs": {
@@ -7860,15 +7860,15 @@
     "semantic_hash": ""
   },
   "src/render/lod/gpu.rs": {
-    "mtime": 1791204703.4067795,
-    "seen": 1791204740.367397,
-    "ast_hash": "7a3fa303df46d695c3a37e9933a32441",
+    "mtime": 1791215433.7982779,
+    "seen": 1791216373.214646,
+    "ast_hash": "92f07f968e401818d15e88dec7ee1a85",
     "semantic_hash": ""
   },
   "src/render/lod/mesh.rs": {
-    "mtime": 1791204703.4063342,
-    "seen": 1791204740.367399,
-    "ast_hash": "b383c962c04d50a5de9c9bdcbd493e39",
+    "mtime": 1791215090.7332182,
+    "seen": 1791216373.214647,
+    "ast_hash": "8d7c246151d240edea637a9430e10c8b",
     "semantic_hash": ""
   },
   "src/render/lod/selection.rs": {
@@ -7878,21 +7878,21 @@
     "semantic_hash": ""
   },
   "src/server/lod.rs": {
-    "mtime": 1790906053.7638876,
-    "seen": 1791052677.8136199,
-    "ast_hash": "5f911638cee2f010eb860a117ced9123",
+    "mtime": 1791214807.3150353,
+    "seen": 1791216373.2149189,
+    "ast_hash": "4e47c406be8450e8ae0dfb3e0bd50f6f",
     "semantic_hash": ""
   },
   "src/server/lod/worker.rs": {
-    "mtime": 1790906053.7646408,
-    "seen": 1791052677.813622,
-    "ast_hash": "47fee3598fc4c3984fa7d75f647ee30f",
+    "mtime": 1791214807.31208,
+    "seen": 1791216373.214923,
+    "ast_hash": "2d6cdf06f3050e163370c3bf7004b93e",
     "semantic_hash": ""
   },
   "LOD-IMPLEMENTATION-PLAN.md": {
-    "mtime": 1791204614.1457865,
-    "seen": 1791204740.368188,
-    "ast_hash": "e3409275876bc89569cf2799570aca74",
+    "mtime": 1791216073.1867423,
+    "seen": 1791216373.215348,
+    "ast_hash": "a15064fb1c42ad5de5a8084b38edd17f",
     "semantic_hash": ""
   },
   "src/client/lod/tests.rs": {
@@ -7902,9 +7902,9 @@
     "semantic_hash": ""
   },
   "src/preview/lod.rs": {
-    "mtime": 1791204420.35804,
-    "seen": 1791204463.382169,
-    "ast_hash": "f53552963660cfd43789723a74227201",
+    "mtime": 1791215485.0310357,
+    "seen": 1791216373.214512,
+    "ast_hash": "97a2e8e566b6b3cd0fb5f007725e5d61",
     "semantic_hash": ""
   },
   "src/render/lod/coverage.rs": {
@@ -7914,15 +7914,15 @@
     "semantic_hash": ""
   },
   "src/render/lod/tests.rs": {
-    "mtime": 1791204360.1309042,
-    "seen": 1791204463.382314,
-    "ast_hash": "59f3217917cd2f85e6787576e569f42e",
+    "mtime": 1791215149.7650957,
+    "seen": 1791216373.214657,
+    "ast_hash": "fe5547fed594f1690c085dd26ec5857e",
     "semantic_hash": ""
   },
   "src/server/lod/tests.rs": {
-    "mtime": 1790906053.7642238,
-    "seen": 1791052677.813621,
-    "ast_hash": "a3bd0150fa2f84520e3b5868bdd8da02",
+    "mtime": 1791215991.7796004,
+    "seen": 1791216373.214922,
+    "ast_hash": "1e24345d2bf442ed8fddacbda6133b5f",
     "semantic_hash": ""
   },
   "src/server/net/tests/lod.rs": {
@@ -7932,9 +7932,9 @@
     "semantic_hash": ""
   },
   "src/world/lod.rs": {
-    "mtime": 1791204556.0179434,
-    "seen": 1791204740.36816,
-    "ast_hash": "e03047584bce4ffeb662ce1630715916",
+    "mtime": 1791214759.8945606,
+    "seen": 1791216373.21532,
+    "ast_hash": "f71b8114d1b26f2a912678985c3cbace",
     "semantic_hash": ""
   },
   "src/world/lod/tests.rs": {
@@ -7950,9 +7950,9 @@
     "semantic_hash": ""
   },
   "src/render/lod/qa.rs": {
-    "mtime": 1791056850.4563239,
-    "seen": 1791057623.44676,
-    "ast_hash": "2bb13dd21786f2a449ade5a657c82778",
+    "mtime": 1791215194.7875366,
+    "seen": 1791216373.214654,
+    "ast_hash": "d43917795b64e548b8be63c5ab97dab8",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay/lod_exploration.rs": {
@@ -7968,9 +7968,9 @@
     "semantic_hash": ""
   },
   "docs/lod/README.md": {
-    "mtime": 1791205058.56696,
-    "seen": 1791208355.983937,
-    "ast_hash": "d399d747404e69738e146dd5d58aad96",
+    "mtime": 1791216354.3985727,
+    "seen": 1791216373.215374,
+    "ast_hash": "727979e6f6b73dec5a25b847b3670c7c",
     "semantic_hash": ""
   },
   "docs/lod/verification/lod-1024.txt": {
@@ -10332,15 +10332,15 @@
     "semantic_hash": ""
   },
   "src/render/lod/vertex.rs": {
-    "mtime": 1791204290.844692,
-    "seen": 1791204463.382315,
-    "ast_hash": "321e78c734d1c8561bed6738f1f88b1f",
+    "mtime": 1791214955.0772023,
+    "seen": 1791216373.214659,
+    "ast_hash": "27723a6b46839b2e33ae3e2d22f67ee6",
     "semantic_hash": ""
   },
   "src/render/lod/vertex/tests.rs": {
-    "mtime": 1791204290.8443592,
-    "seen": 1791204463.382316,
-    "ast_hash": "1cf0a1b85d72d4cc85092f8b1f1a5c29",
+    "mtime": 1791215194.792819,
+    "seen": 1791216373.2146602,
+    "ast_hash": "cb6e77f1eb551730ee1d3c18d171418b",
     "semantic_hash": ""
   },
   "src/world/lod/sampling.rs": {
@@ -10368,15 +10368,15 @@
     "semantic_hash": ""
   },
   "src/render/water.rs": {
-    "mtime": 1791208310.285781,
-    "seen": 1791208355.9831839,
-    "ast_hash": "c5cc3eb478e0f002c3588170c3a12885",
+    "mtime": 1791215283.51501,
+    "seen": 1791216373.2147079,
+    "ast_hash": "82be100b3d6776e0a20b2161459ffdf2",
     "semantic_hash": ""
   },
   "src/render/water/tests.rs": {
-    "mtime": 1791207735.3522542,
-    "seen": 1791208355.9831848,
-    "ast_hash": "ee1153c166bd24e557efd6f4ecd237fa",
+    "mtime": 1791215007.902898,
+    "seen": 1791216373.214709,
+    "ast_hash": "0b404f3b51f0557f84812d80f8f7c574",
     "semantic_hash": ""
   },
   "src/world/terrain/hydrology.rs": {
@@ -10392,9 +10392,9 @@
     "semantic_hash": ""
   },
   "WATER.md": {
-    "mtime": 1791209246.666883,
-    "seen": 1791209258.165378,
-    "ast_hash": "f327d362f461cd71781702e7e8360bc0",
+    "mtime": 1791215433.7997334,
+    "seen": 1791216373.215353,
+    "ast_hash": "b24d9a41b6b40516365e39f85d57cf3c",
     "semantic_hash": ""
   },
   "docs/lod/verification/2026-10-05/checks.txt": {
@@ -10497,6 +10497,132 @@
     "mtime": 1791205025.6594512,
     "seen": 1791208355.9842198,
     "ast_hash": "d3c63c00bd6b6ab20cd5f4af51e77a4c",
+    "semantic_hash": ""
+  },
+  "src/render/lod/pipelines.rs": {
+    "mtime": 1791215194.7824068,
+    "seen": 1791216373.214653,
+    "ast_hash": "c212351d9bed3bd42232714f504db714",
+    "semantic_hash": ""
+  },
+  "src/render/lod/surface.rs": {
+    "mtime": 1791215090.7382362,
+    "seen": 1791216373.214656,
+    "ast_hash": "91065c03813d508e56ff926581454e76",
+    "semantic_hash": ""
+  },
+  "src/render/lod/tests/appearance.rs": {
+    "mtime": 1791215194.7895162,
+    "seen": 1791216373.214658,
+    "ast_hash": "b492d9e3b710bde6cfe7806e0538d8b3",
+    "semantic_hash": ""
+  },
+  "src/server/lod/disk.rs": {
+    "mtime": 1791214807.3071284,
+    "seen": 1791216373.21492,
+    "ast_hash": "028ca64c2298b676ccc4ba660a540ead",
+    "semantic_hash": ""
+  },
+  "src/server/lod/sources.rs": {
+    "mtime": 1791215955.8815608,
+    "seen": 1791216373.214921,
+    "ast_hash": "be75b136449c8df7673b4fe5cfef3969",
+    "semantic_hash": ""
+  },
+  "src/server/lod/tests/persistent.rs": {
+    "mtime": 1791215836.8483453,
+    "seen": 1791216373.214922,
+    "ast_hash": "775d817f074d70781fe5fa27810ca9fb",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/bounced.txt": {
+    "mtime": 1791216059.75746,
+    "seen": 1791216373.2153778,
+    "ast_hash": "a6d308496a7b477c13c2e3b3cc1ec1d8",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/cache.txt": {
+    "mtime": 1791216059.757816,
+    "seen": 1791216373.215379,
+    "ast_hash": "bb302e96660ad33a28c84ebd6daa7415",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/edit.txt": {
+    "mtime": 1791216305.7346406,
+    "seen": 1791216373.215379,
+    "ast_hash": "6a2c525817a07b98594be6413a9a3c84",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/lod-1024.txt": {
+    "mtime": 1791216059.7565696,
+    "seen": 1791216373.21538,
+    "ast_hash": "9d0774f3e32a02c36211b77f391048d6",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/lod-512-before.txt": {
+    "mtime": 1791216059.7581239,
+    "seen": 1791216373.215381,
+    "ast_hash": "15b4b0563a532247a9f702a1821d7368",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/lod-512.txt": {
+    "mtime": 1791216059.7563064,
+    "seen": 1791216373.215382,
+    "ast_hash": "444f9f4eafe25f1ac8ea3a54378f8947",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/near.txt": {
+    "mtime": 1791216059.7572212,
+    "seen": 1791216373.215383,
+    "ast_hash": "965f572249c6ef04ac59f7890faf1286",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/taa.txt": {
+    "mtime": 1791216059.7576797,
+    "seen": 1791216373.215384,
+    "ast_hash": "011e7f8e51fa9deb67fcb9f810a881e1",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/edit-after.png": {
+    "mtime": 1791216305.7344825,
+    "seen": 1791216373.215631,
+    "ast_hash": "600b7bda3c6f9016f9d3c2f9dd2eaa2d",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/edit-before.png": {
+    "mtime": 1791216305.7342904,
+    "seen": 1791216373.215632,
+    "ast_hash": "7e7dfacee5e3ed39b05415402d9bb214",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/integrated-taa.png": {
+    "mtime": 1791216059.756019,
+    "seen": 1791216373.215633,
+    "ast_hash": "2ce11c377b27cbe1feb3cc2ae4faae32",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/transition-average.png": {
+    "mtime": 1791216059.7539902,
+    "seen": 1791216373.2156339,
+    "ast_hash": "9f76ec48d40fcadd29360afd7af96ffb",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/transition-textured.png": {
+    "mtime": 1791216059.7533615,
+    "seen": 1791216373.2156339,
+    "ast_hash": "69a85a12bfb33800cd095f2779e0ea9f",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/water-noon.png": {
+    "mtime": 1791216059.7544627,
+    "seen": 1791216373.215635,
+    "ast_hash": "eea720441080c98d17a0cfc6c7199bc4",
+    "semantic_hash": ""
+  },
+  "docs/lod/verification/2026-10-05/finishing/water-ready-3d.png": {
+    "mtime": 1791216059.7550335,
+    "seen": 1791216373.215636,
+    "ast_hash": "9bdb9bba632a0ecffd4915692386e65f",
     "semantic_hash": ""
   }
 }
