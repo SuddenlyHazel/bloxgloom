@@ -24,8 +24,7 @@ pub const MAX_TILE_COVERAGE: usize = 2048;
 pub const MAX_TILE_BYTES: usize = 60 * 1024;
 // Allocation is bounded by the unchanged packet cap, not an unrelated lower
 // occupancy limit. Coverage and forest bytes further reduce admission capacity.
-pub const MAX_TILE_SPANS: usize =
-    (MAX_TILE_BYTES - palette::HEADER_BYTES - 4 * TILE_COLUMNS) / 10;
+pub const MAX_TILE_SPANS: usize = (MAX_TILE_BYTES - palette::HEADER_BYTES - 4 * TILE_COLUMNS) / 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TileKey {

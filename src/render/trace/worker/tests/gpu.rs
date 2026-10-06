@@ -40,6 +40,7 @@ fn gpu_live_preparation_admits_current_scene_and_handles_resize_during_build() {
         profile: None,
         headless: false,
         size: None,
+        water_reconstruction_supported: false,
     };
     let key = ChunkKey { x: 0, y: 0, z: 0 };
     trace.set(key, Some(geometry(0.0)));

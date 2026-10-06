@@ -49,5 +49,6 @@ fn scene_bvh_covers_every_leaf_and_preserves_wind_bounds() {
 }
 
 pub(in crate::render::trace) mod denoise;
+pub(in crate::render::trace) mod query_counters;
 pub(in crate::render::trace) mod transport;
 mod water;

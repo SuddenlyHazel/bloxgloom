@@ -1,9 +1,22 @@
 //! Actual opt-in MRT/bind-group/history proof against the untouched default path.
 use super::*;
 use crate::render::trace::tests::transport::water_paths;
+#[path = "lobes/probe.rs"]
+mod probe;
+#[path = "lobes/reconstruction.rs"]
+mod reconstruction;
 
 #[test]
 fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_transmission() {
+    run_host(false);
+}
+
+#[test]
+fn gpu_first_water_raw_moments_use_exact_primary_samples_guides_and_history_pixels() {
+    run_host(true);
+}
+
+fn run_host(raw_moments: bool) {
     let (catalog, emitter) = water_paths::catalog();
     let f = Fixture::new(&catalog);
     let pool = water_paths::pool(&catalog, emitter, true, false, false);
@@ -12,8 +25,10 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
         height: 16,
         depth_or_array_layers: 1,
     };
-    let mut old = Gpu::new_with_lod_mode(&f.device, &pool, &[], size, &f.material_layout, false);
-    let mut split = Gpu::new_with_lod_mode(&f.device, &pool, &[], size, &f.material_layout, true);
+    eprintln!("water host: create default production pipeline");
+    let old = Gpu::new_with_lod_mode(&f.device, &pool, &[], size, &f.material_layout, false);
+    eprintln!("water host: create split production pipeline");
+    let split = Gpu::new_with_lod_mode(&f.device, &pool, &[], size, &f.material_layout, true);
     assert_eq!(
         split.primary_transmission[0].texture().format(),
         wgpu::TextureFormat::Rgba16Float
@@ -22,6 +37,23 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
         old.primary_transmission[0].texture().format(),
         wgpu::TextureFormat::R16Float
     );
+    let mut modes = vec![old, split];
+    if raw_moments {
+        eprintln!("water host: create raw/moments production pipelines");
+        modes.push(Gpu::new_with_lod_options(
+            &f.device,
+            &pool,
+            &[],
+            size,
+            &f.material_layout,
+            lobes::Mode {
+                split: true,
+                reconstruction: true,
+                filtering: false,
+            },
+        ));
+    }
+    let mut moment_oracle = reconstruction::Oracle::new(modes[0].target_size());
     let eye = Vec3::new(8.0, 8.0, 8.0);
     let matrix =
         glam::camera::rh::proj::directx::perspective(28.0f32.to_radians(), 1.0, 0.1, 100.0)
@@ -81,7 +113,7 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
     );
     // Admit identical current drop artwork before history, avoiding an unrelated
     // one-time material admission reset during this pose/removal sequence.
-    for gpu in [&mut old, &mut split] {
+    for gpu in &mut modes {
         ready(
             &f,
             gpu,
@@ -109,8 +141,15 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
             },
         };
         let mut results = Vec::new();
-        for gpu in [&mut old, &mut split] {
+        for (mode, gpu) in modes.iter_mut().enumerate() {
+            eprintln!("water host: frame{frame} mode{mode} prepare/resolve");
             ready(&f, gpu, &targets);
+            let history_available = gpu.history_valid && gpu.frame > 0;
+            assert_eq!(
+                history_available,
+                !matches!(frame, 0 | 3 | 7),
+                "independent admission/appearance reset oracle frame{frame} mode{mode}"
+            );
             gpu.sample_seed = Some(1049 + frame * 17);
             let mut encoder = f.device.create_command_encoder(&Default::default());
             {
@@ -162,6 +201,12 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
             assert!(gpu.take_scheduling_error().is_none());
             f.queue.submit([encoder.finish()]);
             let index = (gpu.frame as usize - 1) % 2;
+            eprintln!("water host: frame{frame} mode{mode} MRT/HDR readback");
+            let read = if raw_moments {
+                probe::read
+            } else {
+                super::read
+            };
             results.push((
                 read(&f, &gpu.history[index]),
                 read(&f, &gpu.history_geometry[index]),
@@ -169,8 +214,69 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
                 read(&f, &gpu.primary_transmission[index]),
                 read(&f, &hdr),
             ));
+            let expected_age = match frame {
+                0..=2 => frame + 1,
+                3..=6 => frame - 2,
+                _ => frame - 6,
+            } as f32;
+            assert!(
+                results
+                    .last()
+                    .unwrap()
+                    .1
+                    .iter()
+                    .all(|g| g[3] == expected_age),
+                "original primary history age frame{frame} mode{mode}"
+            );
+            if gpu.water_reconstruction.is_some() {
+                moment_oracle.observe(
+                    &f,
+                    gpu,
+                    [&depth, &normal, &response, &indirect],
+                    frame,
+                    history_available,
+                );
+            }
         }
         let (a, b) = (&results[0], &results[1]);
+        if raw_moments {
+            let raw = &results[2];
+            for pixel in 0..a.0.len() {
+                assert_eq!(
+                    a.1[pixel].map(f32::to_bits),
+                    raw.1[pixel].map(f32::to_bits),
+                    "raw capture preserves geometry/age frame{frame} pixel{pixel}"
+                );
+                assert_eq!(
+                    a.3[pixel][0].to_bits(),
+                    raw.3[pixel][3].to_bits(),
+                    "raw capture preserves originalT"
+                );
+                for channel in 0..3 {
+                    for (name, x, y) in [
+                        ("static mean", a.0[pixel][channel], raw.0[pixel][channel]),
+                        (
+                            "current correction",
+                            a.2[pixel][channel],
+                            raw.2[pixel][channel],
+                        ),
+                    ] {
+                        assert!(
+                            (x - y).abs() <= 2e-5 * x.abs().max(1.0),
+                            "raw capture{name} frame{frame} pixel{pixel}: {x} != {y}"
+                        );
+                    }
+                }
+            }
+            for (pixel, (x, y)) in a.4.iter().zip(&raw.4).enumerate() {
+                for channel in 0..3 {
+                    assert!(
+                        (x[channel] - y[channel]).abs() <= 2e-5 * x[channel].abs().max(1.0),
+                        "raw moment-only path preserves final HDR frame{frame} pixel{pixel}: {x:?} != {y:?}"
+                    );
+                }
+            }
+        }
         for pixel in 0..a.0.len() {
             assert_eq!(
                 a.1[pixel].map(f32::to_bits),
@@ -240,4 +346,7 @@ fn gpu_opted_first_water_lobes_preserve_full_history_correction_and_packed_trans
         reflected > 0 && transmitted > 0 && dynamic_energy > 0.0001,
         "both optical lobes and current off-screen actor visibility must contribute"
     );
+    if raw_moments {
+        moment_oracle.assert_discriminates_raw_from_mean();
+    }
 }

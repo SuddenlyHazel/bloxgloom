@@ -7,6 +7,7 @@ pub(crate) mod profiling;
 pub(crate) mod scene;
 #[cfg(test)]
 mod tests;
+mod water_filter_diagnostics;
 mod worker;
 use crate::render::daylight::Atmosphere;
 use crate::world::ChunkKey;
@@ -28,6 +29,7 @@ pub(crate) struct TraceLighting {
     profile: Option<profiling::Profile>,
     headless: bool,
     size: Option<wgpu::Extent3d>,
+    water_reconstruction_supported: bool,
 }
 impl TraceLighting {
     pub fn new(device: &wgpu::Device) -> Self {
@@ -55,6 +57,23 @@ impl TraceLighting {
             profile: None,
             headless: false,
             size: None,
+            water_reconstruction_supported: false,
+        }
+    }
+    /// Freeze adapter admission before worker or headless GPU creation. The
+    /// default has no extra fragment storage binding or reconstruction images.
+    pub fn set_water_reconstruction_adapter(&mut self, adapter: &wgpu::Adapter) {
+        if self.gpu.is_some() || self.worker.gpu_configured {
+            return;
+        }
+        self.water_reconstruction_supported = gpu::Gpu::water_reconstruction_supported(adapter);
+        if self.enabled
+            && gpu::Gpu::water_reconstruction_requested()
+            && !self.water_reconstruction_supported
+        {
+            tracing::warn!(
+                "adapter lacks first-water reconstruction support; using split-only path"
+            );
         }
     }
     pub fn set(&mut self, key: ChunkKey, chunk: Option<Arc<scene::Chunk>>) {
@@ -203,12 +222,13 @@ impl TraceLighting {
             && size.height > 0
             && let Some(scene) = &self.scene
         {
-            self.gpu = Some(gpu::Gpu::new_with_lod(
+            self.gpu = Some(gpu::Gpu::new_with_lod_supported(
                 device,
                 scene,
                 &self.lod_pages,
                 size,
                 &material_pipeline.get_bind_group_layout(1),
+                self.water_reconstruction_supported,
             ));
         }
         if self.enabled
@@ -218,8 +238,12 @@ impl TraceLighting {
             && size.height > 0
         {
             self.size = Some(size);
-            self.worker
-                .configure(device, material_pipeline.get_bind_group_layout(1), size);
+            self.worker.configure(
+                device,
+                material_pipeline.get_bind_group_layout(1),
+                size,
+                self.water_reconstruction_supported,
+            );
         }
     }
     /// Optional diagnostics enabled only by an explicit headless harness call.
@@ -278,12 +302,13 @@ impl TraceLighting {
         if self.gpu.is_none() {
             let size = scene.texture().size();
             let layout = material_pipeline.get_bind_group_layout(1);
-            self.gpu = Some(gpu::Gpu::new_with_lod(
+            self.gpu = Some(gpu::Gpu::new_with_lod_supported(
                 device,
                 self.scene.as_ref().unwrap(),
                 &self.lod_pages,
                 size,
                 &layout,
+                self.water_reconstruction_supported,
             ));
             if !self
                 .gpu

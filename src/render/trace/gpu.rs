@@ -3,12 +3,18 @@ mod diagnostics;
 mod history;
 mod lobes;
 mod lod;
+#[cfg(test)]
+mod primary_cost;
 mod scheduling;
 mod shaders;
 use super::scene::Scene;
 use crate::render::{daylight::Atmosphere, post::HDR_FORMAT};
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
+#[cfg(test)]
+pub(super) fn transport_probe_source() -> String {
+    shaders::transport_with_lod_vector(false, false, false)
+}
 struct Geometry {
     nodes: wgpu::Buffer,
     source_triangles: wgpu::Buffer,
@@ -39,6 +45,7 @@ pub(crate) struct Gpu {
     scheduling_error: Option<String>,
     history_samples: u32,
     water_lobes: bool,
+    water_reconstruction: Option<lobes::Reconstruction>,
     #[cfg(test)]
     sample_seed: Option<u32>,
     frame: u32,
@@ -92,6 +99,7 @@ impl Gpu {
     pub(super) fn target_size(&self) -> wgpu::Extent3d {
         self.history[0].texture().size()
     }
+    #[cfg(test)]
     pub fn new_with_lod(
         device: &wgpu::Device,
         scene: &Scene,
@@ -108,6 +116,32 @@ impl Gpu {
             lobes::configured(),
         )
     }
+    pub fn new_with_lod_supported(
+        device: &wgpu::Device,
+        scene: &Scene,
+        lod_pages: &[Scene],
+        size: wgpu::Extent3d,
+        material_layout: &wgpu::BindGroupLayout,
+        water_support: bool,
+    ) -> Self {
+        Self::new_with_lod_options(
+            device,
+            scene,
+            lod_pages,
+            size,
+            material_layout,
+            lobes::Mode::configured(water_support),
+        )
+    }
+    pub(in crate::render::trace) fn water_reconstruction_supported(
+        adapter: &wgpu::Adapter,
+    ) -> bool {
+        lobes::reconstruction_supported(adapter)
+    }
+    pub(in crate::render::trace) fn water_reconstruction_requested() -> bool {
+        lobes::reconstruction_requested()
+    }
+    #[cfg(test)]
     pub(super) fn new_with_lod_mode(
         device: &wgpu::Device,
         scene: &Scene,
@@ -116,6 +150,39 @@ impl Gpu {
         material_layout: &wgpu::BindGroupLayout,
         water_lobes: bool,
     ) -> Self {
+        Self::new_with_lod_options(
+            device,
+            scene,
+            lod_pages,
+            size,
+            material_layout,
+            lobes::Mode {
+                split: water_lobes,
+                reconstruction: false,
+                filtering: false,
+            },
+        )
+    }
+    fn new_with_lod_options(
+        device: &wgpu::Device,
+        scene: &Scene,
+        lod_pages: &[Scene],
+        size: wgpu::Extent3d,
+        material_layout: &wgpu::BindGroupLayout,
+        mode: lobes::Mode,
+    ) -> Self {
+        let transport_size = wgpu::Extent3d {
+            width: size.width.div_ceil(resolution_scale()).max(1),
+            height: size.height.div_ceil(resolution_scale()).max(1),
+            depth_or_array_layers: 1,
+        };
+        let reconstruction =
+            mode.reconstruction && lobes::Reconstruction::fits(device, transport_size);
+        if mode.reconstruction && !reconstruction {
+            tracing::warn!("first-water reconstruction exceeds256MiB; using split-only path");
+        }
+        let water_lobes = mode.split || reconstruction;
+        let filter_lobes = reconstruction && mode.filtering;
         let dynamic = super::dynamic::DynamicGpu::new(device);
         tracing::debug!(
             bytes = scene.byte_len(),
@@ -164,52 +231,48 @@ impl Gpu {
             entry(15, texture(false)),
         ];
         entries.extend(lod::LodGeometry::layout_entries());
+        if reconstruction {
+            entries.push(lobes::Reconstruction::storage_entry());
+        }
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("path transport inputs"),
             entries: &entries,
         });
+        let mut composite_entries = vec![
+            entry(0, texture(false)),
+            entry(1, texture(false)),
+            entry(
+                2,
+                wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            ),
+            entry(3, texture(false)),
+            entry(4, texture(false)),
+            entry(5, texture(true)),
+            entry(6, texture(false)),
+            entry(7, texture(false)),
+            entry(8, texture(false)),
+            entry(9, texture(false)),
+        ];
+        if filter_lobes {
+            composite_entries.extend([entry(10, texture(false)), entry(11, texture(false))]);
+        }
         let composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ray radiance reconstruction"),
-            entries: &[
-                entry(0, texture(false)),
-                entry(1, texture(false)),
-                entry(
-                    2,
-                    wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                ),
-                entry(3, texture(false)),
-                entry(4, texture(false)),
-                entry(5, texture(true)),
-                entry(6, texture(false)),
-                entry(7, texture(false)),
-                entry(8, texture(false)),
-                entry(9, texture(false)),
-            ],
+            entries: &composite_entries,
         });
-        let source = shaders::transport_for_lobes(water_lobes);
+        let source = shaders::transport_for_modes(water_lobes, reconstruction);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("path transport"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
+        let composition_source = shaders::composition(water_lobes, filter_lobes);
         let composition = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ray radiance reconstruction"),
-            source: wgpu::ShaderSource::Wgsl(
-                format!(
-                    "{}\n{}\n{}\n{}\n{}\n{}\n{}",
-                    crate::render::sky::STYLE_SHADER,
-                    include_str!("../material/sky_prefilter.wgsl"),
-                    include_str!("../material/pbr.wgsl"),
-                    include_str!("denoise.wgsl"),
-                    include_str!("filter.wgsl"),
-                    include_str!("composite.wgsl"),
-                    lobes::packet(water_lobes)
-                )
-                .into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(composition_source.into()),
         });
         let pipeline = |shader: &wgpu::ShaderModule,
                         layouts: &[Option<&wgpu::BindGroupLayout>],
@@ -317,6 +380,8 @@ impl Gpu {
             scheduling_error: None,
             history_samples: history::configured_samples(),
             water_lobes,
+            water_reconstruction: reconstruction
+                .then(|| lobes::Reconstruction::new(device, transport_size, mode.filtering)),
             #[cfg(test)]
             sample_seed: None,
             frame: 0,
@@ -403,6 +468,9 @@ impl Gpu {
         self.filtered = Self::target(device, size, HDR_FORMAT);
         self.current_correction = Self::target(device, size, HDR_FORMAT);
         self.baseline = Self::baseline(device, size);
+        if let Some(reconstruction) = &mut self.water_reconstruction {
+            reconstruction.resize(device, self.history[0].texture().size());
+        }
         self.frame = 0;
         self.history_valid = false;
     }
@@ -544,11 +612,21 @@ impl Gpu {
             ),
         ];
         entries.extend(self.lod.entries());
+        if let Some(reconstruction) = &self.water_reconstruction {
+            entries.push(binding(
+                16,
+                wgpu::BindingResource::TextureView(&reconstruction.raw),
+            ));
+        }
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ray scene frame"),
             layout: &self.layout,
             entries: &entries,
         });
+        #[cfg(test)]
+        if self.primary_cost_probe(device, queue, encoder, &group, materials) {
+            return;
+        }
         if let Err(error) =
             self.encode_transport(device, queue, encoder, &group, materials, current, profile)
         {
@@ -558,32 +636,56 @@ impl Gpu {
             self.scheduling_error = Some(error);
             return;
         }
+        if let Some(reconstruction) = &self.water_reconstruction {
+            reconstruction.encode(
+                device,
+                encoder,
+                &self.history_geometry[current],
+                old,
+                current,
+            );
+        }
         let compose_group = |radiance: &wgpu::TextureView| {
             let binding = |binding, resource| wgpu::BindGroupEntry { binding, resource };
+            let mut entries = vec![
+                binding(0, wgpu::BindingResource::TextureView(radiance)),
+                binding(1, wgpu::BindingResource::TextureView(normal)),
+                binding(2, self.uniform.as_entire_binding()),
+                binding(
+                    3,
+                    wgpu::BindingResource::TextureView(&self.history_geometry[current]),
+                ),
+                binding(4, wgpu::BindingResource::TextureView(indirect)),
+                binding(5, wgpu::BindingResource::TextureView(depth)),
+                binding(6, wgpu::BindingResource::TextureView(response)),
+                binding(
+                    7,
+                    wgpu::BindingResource::TextureView(&self.primary_transmission[current]),
+                ),
+                binding(8, wgpu::BindingResource::TextureView(&self.baseline)),
+                binding(
+                    9,
+                    wgpu::BindingResource::TextureView(&self.current_correction),
+                ),
+            ];
+            if let Some(reconstruction) = &self.water_reconstruction
+                && reconstruction.filtering
+            {
+                entries.extend([
+                    binding(
+                        10,
+                        wgpu::BindingResource::TextureView(&reconstruction.moments[current]),
+                    ),
+                    binding(
+                        11,
+                        wgpu::BindingResource::TextureView(&reconstruction.guide[current]),
+                    ),
+                ]);
+            }
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("ray composite"),
                 layout: &self.composite_layout,
-                entries: &[
-                    binding(0, wgpu::BindingResource::TextureView(radiance)),
-                    binding(1, wgpu::BindingResource::TextureView(normal)),
-                    binding(2, self.uniform.as_entire_binding()),
-                    binding(
-                        3,
-                        wgpu::BindingResource::TextureView(&self.history_geometry[current]),
-                    ),
-                    binding(4, wgpu::BindingResource::TextureView(indirect)),
-                    binding(5, wgpu::BindingResource::TextureView(depth)),
-                    binding(6, wgpu::BindingResource::TextureView(response)),
-                    binding(
-                        7,
-                        wgpu::BindingResource::TextureView(&self.primary_transmission[current]),
-                    ),
-                    binding(8, wgpu::BindingResource::TextureView(&self.baseline)),
-                    binding(
-                        9,
-                        wgpu::BindingResource::TextureView(&self.current_correction),
-                    ),
-                ],
+                entries: &entries,
             })
         };
         let filtering = compose_group(&self.history[current]);

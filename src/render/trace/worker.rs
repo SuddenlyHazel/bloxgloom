@@ -24,6 +24,7 @@ struct GpuContext {
     device: wgpu::Device,
     materials: wgpu::BindGroupLayout,
     size: wgpu::Extent3d,
+    water_reconstruction_supported: bool,
 }
 enum Update {
     Chunk(ChunkUpdate),
@@ -107,12 +108,13 @@ impl Worker {
                     // pipeline compilation run here rather than during redraw.
                     let gpu = context.as_ref().and_then(|context| {
                         (valid && eligible(&scene, &lod_pages)).then(|| {
-                            super::gpu::Gpu::new_with_lod(
+                            super::gpu::Gpu::new_with_lod_supported(
                                 &context.device,
                                 &scene,
                                 &lod_pages,
                                 context.size,
                                 &context.materials,
+                                context.water_reconstruction_supported,
                             )
                         })
                     });
@@ -159,6 +161,7 @@ impl Worker {
         device: &wgpu::Device,
         materials: wgpu::BindGroupLayout,
         size: wgpu::Extent3d,
+        water_reconstruction_supported: bool,
     ) {
         if self.gpu_configured {
             return;
@@ -170,6 +173,7 @@ impl Worker {
                 device: device.clone(),
                 materials,
                 size,
+                water_reconstruction_supported,
             },
         });
     }

@@ -235,6 +235,7 @@ fn alpha_samples(png: &[u8]) -> [[f32; 2]; 2] {
 pub(in crate::render::trace) struct Fixture {
     pub(in crate::render::trace) device: wgpu::Device,
     pub(in crate::render::trace) queue: wgpu::Queue,
+    pipeline: wgpu::RenderPipeline,
     pub(in crate::render::trace) materials: wgpu::BindGroup,
     pub(in crate::render::trace) material_layout: wgpu::BindGroupLayout,
     layout: wgpu::BindGroupLayout,
@@ -295,6 +296,7 @@ impl Fixture {
             usage: wgpu::BufferUsages::STORAGE,
         });
         Self {
+            pipeline,
             dynamic,
             empty_pages,
             device,
@@ -596,3 +598,6 @@ fn gpu_zero_solar_lobes_skip_queries_but_preserve_emission_and_botanical_transmi
 
 #[path = "transport/guide_query.rs"]
 mod guide_query;
+
+#[path = "transport/cost_probe.rs"]
+mod cost_probe;

@@ -1,6 +1,7 @@
 //! Bounded read-only static LOD pages, separate from near-space certificates.
 use crate::render::trace::scene::{Scene, pages};
 use wgpu::util::DeviceExt;
+pub(super) mod vector;
 
 pub(super) const SHADER: &str = include_str!("../lod.wgsl");
 

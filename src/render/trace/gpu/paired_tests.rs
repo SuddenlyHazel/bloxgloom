@@ -5,6 +5,8 @@ mod history_tests;
 mod lobe_tests;
 #[path = "paired_tests/scheduling.rs"]
 mod scheduling_tests;
+#[path = "paired_tests/vector.rs"]
+mod vector_tests;
 use super::*;
 use crate::render::trace::{
     dynamic::{DynamicAsset, DynamicInstance, DynamicTargets, Material, Vertex},
@@ -486,6 +488,12 @@ fn draw_probe(
         ),
     ];
     entries.extend(gpu.lod.entries());
+    if let Some(reconstruction) = &gpu.water_reconstruction {
+        entries.push(bind(
+            16,
+            wgpu::BindingResource::TextureView(&reconstruction.raw),
+        ));
+    }
     let group = f.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &gpu.layout,

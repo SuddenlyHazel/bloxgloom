@@ -55,7 +55,7 @@ struct Output { @builtin(position) position:vec4f };
 }
 "#;
 
-pub(super) fn device() -> (wgpu::Device, wgpu::Queue) {
+pub(in crate::render::trace) fn device() -> (wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     pollster::block_on(adapter.request_device(&Default::default())).unwrap()

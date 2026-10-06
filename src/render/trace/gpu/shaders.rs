@@ -3,8 +3,15 @@
 pub(super) fn transport() -> String {
     transport_for_lobes(false)
 }
+#[cfg(test)]
 pub(super) fn transport_for_lobes(enabled: bool) -> String {
-    format!(
+    transport_for_modes(enabled, false)
+}
+pub(super) fn transport_for_modes(enabled: bool, raw_samples: bool) -> String {
+    transport_with_lod_vector(enabled, raw_samples, super::lod::vector::configured())
+}
+pub(super) fn transport_with_lod_vector(enabled: bool, raw_samples: bool, vector: bool) -> String {
+    let source = format!(
         "const RAY_MATERIAL_FAST:bool={};\nconst RAY_NEAR_FIRST:bool={};\nconst RAY_LOD_TIERED:bool={};\nconst RAY_SUN_SKIP:bool={};\nconst RAY_CAUSTIC_GUIDE:bool={};\nconst RAY_CAUSTIC_PHASE_GUIDE:bool={};\nconst RAY_CAUSTIC_GGX_GUIDE:bool={};\nconst RAY_WATER_COMPONENT:u32={}u;\n{}",
         super::super::optimizations::material_fast(),
         std::env::var("BLOXGLOOM_GI_NEAR_FIRST").as_deref() == Ok("1"),
@@ -34,13 +41,16 @@ pub(super) fn transport_for_lobes(enabled: bool) -> String {
                     "const RAY_KNOWN_CERTIFICATE:bool=false;"
                 }
             ),
-            super::lod::SHADER.replace(
-                "const RAY_LOD_ROOT_ORDER:bool=false;",
-                if std::env::var("BLOXGLOOM_GI_LOD_ROOT_ORDER").as_deref() == Ok("1") {
-                    "const RAY_LOD_ROOT_ORDER:bool=true;"
-                } else {
-                    "const RAY_LOD_ROOT_ORDER:bool=false;"
-                }
+            super::lod::vector::source_for(
+                &super::lod::SHADER.replace(
+                    "const RAY_LOD_ROOT_ORDER:bool=false;",
+                    if std::env::var("BLOXGLOOM_GI_LOD_ROOT_ORDER").as_deref() == Ok("1") {
+                        "const RAY_LOD_ROOT_ORDER:bool=true;"
+                    } else {
+                        "const RAY_LOD_ROOT_ORDER:bool=false;"
+                    }
+                ),
+                vector
             ),
             super::super::dynamic::shader(crate::content::catalog()),
             include_str!("../water.wgsl").to_owned(),
@@ -62,6 +72,23 @@ pub(super) fn transport_for_lobes(enabled: bool) -> String {
             include_str!("../paired.wgsl").to_owned()
         ]
         .join("\n")
+    );
+    super::lobes::raw_source(source, raw_samples)
+}
+
+pub(super) fn composition(water_lobes: bool, filtering: bool) -> String {
+    super::lobes::filter_source(
+        format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            crate::render::sky::STYLE_SHADER,
+            include_str!("../../material/sky_prefilter.wgsl"),
+            include_str!("../../material/pbr.wgsl"),
+            include_str!("../denoise.wgsl"),
+            include_str!("../filter.wgsl"),
+            include_str!("../composite.wgsl"),
+            super::lobes::packet(water_lobes)
+        ),
+        filtering,
     )
 }
 
@@ -69,8 +96,30 @@ pub(super) fn transport_for_lobes(enabled: bool) -> String {
 mod tests {
     #[test]
     fn complete_transport_shader_validates_all_target_and_medium_paths() {
-        for enabled in [false, true] {
-            let source = super::transport_for_lobes(enabled);
+        for (enabled, raw_samples) in [(false, false), (true, false), (true, true)] {
+            let source = super::transport_for_modes(enabled, raw_samples);
+            let module = wgpu::naga::front::wgsl::parse_str(&source)
+                .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&source)));
+            wgpu::naga::valid::Validator::new(
+                wgpu::naga::valid::ValidationFlags::all(),
+                wgpu::naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        }
+    }
+    #[test]
+    fn first_water_raw_moments_and_optical_filter_modules_validate() {
+        let mut sources = vec![include_str!("../water/lobes/moments.wgsl").to_owned()];
+        for (split, filtering) in [(false, false), (true, false), (true, true)] {
+            let source = super::composition(split, filtering);
+            assert_eq!(source.contains("var ray_lobe_guide:"), filtering);
+            sources.push(source);
+        }
+        let plain = super::transport_for_lobes(true);
+        assert!(!plain.contains("texture_storage_2d_array"));
+        assert_eq!(super::super::lobes::raw_source(plain.clone(), false), plain);
+        for source in sources {
             let module = wgpu::naga::front::wgsl::parse_str(&source)
                 .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&source)));
             wgpu::naga::valid::Validator::new(

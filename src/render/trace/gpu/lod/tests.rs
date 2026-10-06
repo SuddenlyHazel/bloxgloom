@@ -4,6 +4,8 @@ use bytemuck::Zeroable;
 use std::sync::Arc;
 #[path = "tests/root_order.rs"]
 mod root_order;
+#[path = "tests/vector.rs"]
+mod vector;
 
 fn item(source: &str, prefix: &str) -> String {
     let start = source

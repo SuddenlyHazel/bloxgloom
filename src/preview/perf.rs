@@ -172,6 +172,7 @@ pub(super) async fn run_perf_benchmark_async(
         .sum::<usize>();
 
     let mut post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
+    post.trace.set_water_reconstruction_adapter(&adapter);
     if std::env::var("BLOXGLOOM_GI_PROFILE").is_ok_and(|value| value == "1") {
         if timestamp_supported {
             post.trace.profile(&device, steady_frames)?;

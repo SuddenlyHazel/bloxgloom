@@ -321,6 +321,7 @@ impl Renderer {
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
         let mut post = post::PostProcess::new(&device, config.width, config.height, format);
+        post.trace.set_water_reconstruction_adapter(&adapter);
         post.enable_temporal(&device, post::temporal_requested());
         let sky = SkyRenderer::new(&device, config.width, config.height, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =

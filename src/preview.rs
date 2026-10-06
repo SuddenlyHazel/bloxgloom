@@ -1861,6 +1861,9 @@ async fn render_previews_weather(
         let mut post = motion_post.take().unwrap_or_else(|| {
             render::post::PostProcess::new(&device, output.width, output.height, FORMAT)
         });
+        if new_transport_scene {
+            post.trace.set_water_reconstruction_adapter(&adapter);
+        }
         let post_size = post.scene.texture().size();
         if post_size.width != output.width || post_size.height != output.height {
             post.resize(&device, output.width, output.height);
@@ -2396,6 +2399,45 @@ async fn render_previews_weather(
             && let Some(diagnostics) = post.trace.water_history_diagnostics(&device, &queue)?
         {
             println!("{diagnostics}");
+        }
+        if std::env::var("BLOXGLOOM_GI_WATER_FILTER_DIAGNOSTICS").as_deref() == Ok("1") {
+            let stem = output
+                .path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let directory = output.path.with_file_name(format!("{stem}-water-filters"));
+            let full_frame = !render::bsl_reference::enabled()
+                && !post.temporal_enabled()
+                && matches!(
+                    scene,
+                    PreviewScene::Landscape(landscape::Shot::Coast) | PreviewScene::Water { .. }
+                )
+                && rain_renderer.is_empty()
+                && fire_renderer.is_empty();
+            if let Some(diagnostics) = post.trace.write_water_filter_diagnostics(
+                &device,
+                &queue,
+                [
+                    &depth_view,
+                    &post.reflections.normal,
+                    &post.reflections.response,
+                    &post.ambient.indirect,
+                ],
+                &directory,
+                full_frame,
+            )? {
+                println!("{}", diagnostics.summary);
+                if let Some(hdr) = diagnostics.hdr {
+                    transport::water_comparison::write(
+                        &device, &queue, &mut post, hdr, &directory,
+                    )?;
+                } else {
+                    println!(
+                        "production water comparisons skipped: require enhanced static coast/water, TAAoff and no posttrace particles"
+                    );
+                }
+            }
         }
         if motion_sequence {
             motion_post = Some(post);

@@ -6,6 +6,7 @@ use std::{
 };
 
 pub(super) mod profile;
+pub(super) mod water_comparison;
 
 /// Explicit controls for convergence and pending-work attribution in static captures.
 pub(super) struct Capture {
