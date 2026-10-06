@@ -72,7 +72,7 @@ fn test_color(input:SkyVertex)->vec3f {
 }
 struct Previous {@location(0) color:vec4f,@location(1) depth:f32};
 @fragment fn previous_frame(input:SkyVertex)->Previous {
- let flags=u32(sky_camera.reference.w);let foreground=(flags&32u)!=0u||((flags&1u)!=0u&&input.position.x>=11.0);
+ let flags=u32(sky_camera.reference.w);let foreground=(flags&32u)!=0u||((flags&1u)!=0u&&(input.position.x>=11.0||input.position.x<10.0));
  return Previous(vec4f(test_color(input),1.0),select(-1.0,0.1,foreground));
 }
 struct Current {@location(0) color:vec4f,@location(1) motion:vec4f,@location(2) reactive:vec4f,@builtin(frag_depth) depth:f32};

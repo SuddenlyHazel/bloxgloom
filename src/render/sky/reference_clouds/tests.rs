@@ -40,3 +40,6 @@ fn missing_local_noise_is_a_reportable_input_error() {
     let path = std::env::temp_dir().join(format!("missing-bsl-noise-{}", std::process::id()));
     assert!(super::Noise::read(&path).is_err());
 }
+
+#[path = "render_tests.rs"]
+mod render;

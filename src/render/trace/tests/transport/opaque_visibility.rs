@@ -83,13 +83,21 @@ fn gpu_opaque_any_hit_matches_ordered_sunlight_with_leaf_sheets_and_alpha_holes(
     for first in [stone, glow] {
         let mut geometry = plane(-2.0, 2.0, 1.0, first, [0.5; 2], false);
         geometry.extend(plane(-2.0, 2.0, 2.0, glow, [0.5; 2], false));
+        // This direct-light fixture explicitly supplies exterior skylight;
+        // generic test planes otherwise default to a sealed/unknown sky value.
+        for triangle in &mut geometry {
+            triangle.b[3] = 1.0;
+        }
         let one = fixture.run(geometry.clone(), 19, 0.0, 1, 1)[0];
         let twelve = fixture.run(geometry, 19, 0.0, 12, 1)[0];
         assert_eq!(
             one, twelve,
             "zero continuation must retain current direct/emission exactly"
         );
-        assert!(twelve[0] > 0.0);
+        assert!(
+            twelve[0] > 0.0,
+            "current-vertex radiance missing for material {first}: {twelve:?}"
+        );
         assert_eq!(twelve[3], 1.0, "zero path traced extra vertices");
     }
     let mut geometry = plane(-2.0, 2.0, 1.0, stone, [0.5; 2], false);

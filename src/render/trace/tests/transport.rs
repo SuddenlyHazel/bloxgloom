@@ -88,6 +88,7 @@ const FIXTURE: &str = r#"
 "#;
 
 fn source(bounces: u32) -> String {
+    let path_loop = format!("for(var bounce=0u;bounce<{bounces}u;bounce++) {{");
     let transport = include_str!("../transport.wgsl")
         .replace("bounce<12u", &format!("bounce<{bounces}u"))
         // Controlled first-scatter fixture: retain actual geometry, production
@@ -98,13 +99,16 @@ fn source(bounces: u32) -> String {
         // Count real path vertices and control only the stochastic scatter for
         // exact-zero/tiny-positive energy fixtures. Production hit/shading,
         // direct/emission accumulation and zero termination remain untouched.
-        .replace("let hit=ray_cast(origin,direction,512.0);\n        var event=",
-            "test_vertex_count++;\n        let hit=ray_cast(origin,direction,512.0);\n        var event=")
+        .replace(&path_loop,&format!("{path_loop}test_vertex_count++;"))
         .replace("let sample=scatter(hit.normal,-direction,surface);",
             "var sample=scatter(hit.normal,-direction,surface); if ray_frame.counts.y>=19u && ray_frame.counts.y<=21u {sample=RayScatter(vec3f(0.0,0.0,1.0),vec3f(0.0)); if ray_frame.counts.y==21u && bounce==0u {sample.weight=vec3f(1e-20);}}")
         .replace("var origin=start;", "test_transport_count++;var origin=start;")
         .replace("let sample=scatter(n,-direction,surface);",
             "var sample=scatter(n,-direction,surface); if ray_frame.counts.y==22u||ray_frame.counts.y==23u {sample=RayScatter(vec3f(0.0,0.0,1.0),vec3f(select(0.0,1e-20,ray_frame.counts.y==23u)));}");
+    assert!(
+        transport.contains("test_vertex_count++;"),
+        "vertex-count fixture must instrument the real path loop"
+    );
     format!(
         "var<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{transport}\n{}\n{}\n{}\n{}\n{FIXTURE}",
         render::sky::environment_shader(),
@@ -490,3 +494,4 @@ mod sky_escape;
 
 #[path = "transport/opaque_visibility.rs"]
 mod opaque_visibility;
+

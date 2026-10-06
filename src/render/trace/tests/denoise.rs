@@ -322,9 +322,30 @@ fn spatial_denoise_fixture(scale: u32) {
         (false, true, false, false, false, false),
         (false, false, true, false, false, false),
         (false, false, true, true, false, false),
+        // Medium-only sky and a raster-only foreground share material class2;
+        // their path lengths/raster depth classes must remain disjoint.
+        (true, false, true, false, false, false),
         (false, false, false, false, true, false),
         (false, false, false, false, false, true),
     ] {
+        let mut reset = device.create_command_encoder(&Default::default());
+        {
+            let _pass = reset.begin_render_pass(&wgpu::RenderPassDescriptor {
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+        }
+        queue.submit([reset.finish()]);
+        if media_only && depth_edge {
+            draw_medium_depth_edge(&device, &queue, &depth_view);
+        }
         let mut uniform_data = vec![0.0f32; 72];
         let inverse = if foreground {
             let mut encoder = device.create_command_encoder(&Default::default());
@@ -342,6 +363,8 @@ fn spatial_denoise_fixture(scale: u32) {
                 });
             }
             queue.submit([encoder.finish()]);
+            glam::camera::rh::proj::directx::perspective(0.2, 2.0, 0.1, 1000.0).inverse()
+        } else if media_only && depth_edge {
             glam::camera::rh::proj::directx::perspective(0.2, 2.0, 0.1, 1000.0).inverse()
         } else if media_only {
             Mat4::from_scale(Vec3::new(0.1, 0.1, 1.0))
@@ -366,6 +389,10 @@ fn spatial_denoise_fixture(scale: u32) {
                 return (point.truncate() / point.w).length();
             }
             if media_only {
+                if depth_edge && x >= width / 2 {
+                    let point = inverse * Vec4::new(nx, ny, 0.5, 1.0);
+                    return (point.truncate() / point.w).length();
+                }
                 return 2400.0;
             }
             let plane = if depth_edge && x >= width / 2 {
@@ -677,9 +704,65 @@ fn spatial_denoise_fixture(scale: u32) {
                 assert_eq!(pixel[3], 0.0);
             }
         }
+        eprintln!(
+            "filter scale={scale} media={media_only} depth_edge={depth_edge} foreground={foreground} noise_error={max_error}"
+        );
         assert!(
             max_error < 0.16,
             "irradiance noise/edge error={max_error}; depth_edge={depth_edge}; media_only={media_only}; foreground={foreground}; water_edge={water_edge}; signed={signed}"
         );
     }
+}
+
+// Real depth attachment, split between sky and raster-only foreground, while
+// both receiver records are intentionally absent (medium-only classification).
+fn draw_medium_depth_edge(device: &wgpu::Device, queue: &wgpu::Queue, depth: &wgpu::TextureView) {
+    let shader=device.create_shader_module(wgpu::ShaderModuleDescriptor {label:Some("medium sky/foreground depth split"),source:wgpu::ShaderSource::Wgsl(r#"
+@vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {let p=vec2f(f32((i<<1u)&2u),f32(i&2u));return vec4f(p*2.0-1.0,0.0,1.0);}
+@fragment fn fs(@builtin(position) p:vec4f)->@builtin(frag_depth) f32 {return select(1.0,0.5,p.x>=16.0);}
+"#.into())});
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        primitive: Default::default(),
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+        pass.set_pipeline(&pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit([encoder.finish()]);
 }

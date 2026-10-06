@@ -1,9 +1,10 @@
 // Shared inputs, vertex entry point and world_position are in filter.wgsl.
-struct RayCandidate { radiance:vec4f,geometry:vec4f,position:vec3f,bilinear:f32 };
+struct RayCandidate { radiance:vec4f,geometry:vec4f,position:vec3f,bilinear:f32,sky:bool };
 @fragment fn fs_main(@builtin(position) frag:vec4f)->@location(0) vec4f {
     let p=vec2i(frag.xy);var center=textureLoad(receiver,p,0);
     let stride=max(2,i32(ray_frame.parameters.z));
     let media_only=center.z<=0.0||center.w<=0.0;
+    let center_sky=media_only&&textureLoad(depth,p,0)>=0.999999;
     let center_water=!media_only&&ray_is_water(textureLoad(indirect,p,0).a);
     let size=vec2i(textureDimensions(radiance));let full_size=vec2f(textureDimensions(receiver));
     if media_only {
@@ -34,20 +35,29 @@ struct RayCandidate { radiance:vec4f,geometry:vec4f,position:vec3f,bilinear:f32 
         if r.a<=0.0||abs(g.w)<=0.0||(g.z<0.0)!=center_water
             ||(g.z>1.0)!=media_only||abs(abs(g.z)-center.z)>0.20 {bilinear=0.0;}
         let difference=center_position-position;
-        let error=abs(dot(difference,oct_decode(g.xy)))+length(difference)*0.002;
-        if error>tolerance*2.0 {bilinear=0.0;}
-        candidates[i]=RayCandidate(r,g,position,bilinear);
+        let sample_sky=media_only&&textureLoad(depth,sample_pixel,0)>=0.999999;
+        var error=abs(dot(difference,oct_decode(g.xy)))+length(difference)*0.002;
+        if media_only {
+            error=select(abs(center.w-r.a),0.0,center_sky);
+            if center_sky!=sample_sky||(!center_sky&&error>max(0.03,center.w*0.01)*2.0) {bilinear=0.0;}
+        } else if error>tolerance*2.0 {bilinear=0.0;}
+        candidates[i]=RayCandidate(r,g,position,bilinear,sample_sky);
         if bilinear>0.0&&error<best {best=error;center_geometry=g;center_sample=q;}
     }
     if abs(center_geometry.w)<=0.0 {return vec4f(0.0);}
-    let n=oct_decode(center_geometry.xy);let water=center_geometry.z<0.0;
+    var n=oct_decode(center_geometry.xy);if media_only {n=-normalize(center_position-ray_frame.eye.xyz);}
+    let water=center_geometry.z<0.0;
     var sum=vec3f(0.0);var weights=0.0;
     for(var i=0u;i<4u;i++) {
         let candidate=candidates[i];let g=candidate.geometry;
         if candidate.bilinear<=0.0||(g.w<0.0)!=(center_geometry.w<0.0) {continue;}
         let gn=oct_decode(g.xy);if dot(n,gn)<0.85 {continue;}
-        let weight=candidate.bilinear*ray_spatial_weight(center_position,candidate.position,gn,
-            center.z,abs(g.z),0.0,tolerance);
+        var weight=0.0;
+        if media_only {
+            weight=candidate.bilinear*ray_media_spatial_weight(n,gn,center.w,candidate.radiance.a,0.0,center_sky,candidate.sky);
+        } else {
+            weight=candidate.bilinear*ray_spatial_weight(center_position,candidate.position,gn,center.z,abs(g.z),0.0,tolerance);
+        }
         sum+=candidate.radiance.rgb*weight;weights+=weight;
     }
     let basis=select(ray_filter_basis(textureLoad(indirect,p,0)),vec3f(1.0),water||media_only);

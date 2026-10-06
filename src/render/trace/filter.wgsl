@@ -19,6 +19,24 @@ fn world_position(pixel:vec2f,distance:f32,size:vec2f)->vec3f {
     let far=ray_frame.inverse*vec4f(ndc,1.0,1.0);
     return ray_frame.eye.xyz+normalize(far.xyz/far.w-ray_frame.eye.xyz)*distance;
 }
+// Camera-path medium radiance lives on directions/segment lengths, not receiver
+// planes. In particular equal-distance sky endpoints form a sphere. Preserve
+// raster sky/foreground classification and finite segment-depth discontinuities.
+fn ray_media_spatial_weight(center_direction:vec3f,sample_direction:vec3f,
+    center_distance:f32,sample_distance:f32,pixel_distance_squared:f32,
+    center_sky:bool,sample_sky:bool)->f32 {
+    if center_sky!=sample_sky {return 0.0;}
+    var segment=1.0;
+    if !center_sky {
+        let tolerance=max(0.03,center_distance*0.01);
+        let delta=(center_distance-sample_distance)/tolerance;
+        segment=exp(-delta*delta);
+    }
+    // Angular bandwidth ~14 degrees; screen-space support stays bounded by the
+    // existing low-resolution radius and Gaussian, independent of radial range.
+    let angular=exp(-max(0.0,1.0-dot(center_direction,sample_direction))*32.0);
+    return segment*angular*exp(-pixel_distance_squared/9.0);
+}
 // Irradiance-like corrections are denoised at transport resolution. Keep the
 // center radial depth unchanged; transmission and material detail are separate.
 @fragment fn fs_filter(@builtin(position) frag:vec4f)->@location(0) vec4f {
@@ -31,6 +49,7 @@ fn world_position(pixel:vec2f,distance:f32,size:vec2f)->vec3f {
     let center_position=world_position(vec2f(full_pixel),center.a,vec2f(full_size));
     let n=oct_decode(center_geometry.xy);let water=center_geometry.z<0.0;
     let media_only=center_geometry.z>1.0;let roughness=abs(center_geometry.z);
+    let center_sky=media_only&&textureLoad(depth,full_pixel,0)>=0.999999;
     let tolerance=max(0.012,center.a*0.0015);
     let radius=select(select(1,2,roughness>0.35),4,media_only);
     var sum=vec3f(0.0);var weights=0.0;
@@ -44,7 +63,13 @@ fn world_position(pixel:vec2f,distance:f32,size:vec2f)->vec3f {
         let sample_pixel=min(q*stride+vec2i(stride/2),full_size-vec2i(1));
         let sample_position=world_position(vec2f(sample_pixel),r.a,vec2f(full_size));
         let offset=vec2f(q-p);
-        var weight=ray_spatial_weight(center_position,sample_position,gn,roughness,abs(g.z),dot(offset,offset),tolerance);
+        var weight=0.0;
+        if media_only {
+            let sample_sky=textureLoad(depth,sample_pixel,0)>=0.999999;
+            weight=ray_media_spatial_weight(n,gn,center.a,r.a,dot(offset,offset),center_sky,sample_sky);
+        } else {
+            weight=ray_spatial_weight(center_position,sample_position,gn,roughness,abs(g.z),dot(offset,offset),tolerance);
+        }
         if radius==1 {weight*=exp(-dot(offset,offset)*1.5);}
         sum+=r.rgb*weight;weights+=weight;
     }}
