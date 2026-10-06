@@ -50,13 +50,22 @@ fn projected(p:vec3f)->vec3f {
  return vec3f(h.xy/h.w*vec2f(0.5,-0.5)+0.5,h.z/h.w);
 }
 fn onscreen(p:vec3f)->bool {return all(p.xy>vec2f(0.002))&&all(p.xy<vec2f(0.998))&&p.z>0.0&&p.z<0.999999;}
+// Ripples perturb shading normals, while fluid geometry remains voxel faces.
+fn water_face_normal(n:vec3f)->vec3f {
+ let axis=abs(n);var face=vec3f(0.0);
+ if axis.y>=axis.x && axis.y>=axis.z {face.y=sign(n.y);}
+ else if axis.x>=axis.z {face.x=sign(n.x);} else {face.z=sign(n.z);}
+ return face;
+}
 @fragment fn trace(@builtin(position) frag:vec4f)->@location(0) vec4f {
  let p=min(vec2i(frag.xy)*2+vec2i(1),vec2i(settings.size.xy)-1);
  let data=textureLoad(normals,p,0);let weight=textureLoad(response,p,0);
  let z=data.w;
  if z<=0.0||data.z<=0.0||data.z>0.82||max(max(weight.r,weight.g),weight.b)<0.002 {return vec4f(0.0);}
  let center=world_at(p);let v=normalize(settings.eye.xyz-center);let n=bg_reflection_oct_decode(data.xy);
- let ray=reflect(-v,n);let gn=geometry_normal(p,center,false);
+ let ray=reflect(-v,n);var gn:vec3f;
+ if textureLoad(indirect,p,0).a < -1.5 {gn=water_face_normal(n);}
+ else {gn=geometry_normal(p,center,false);}
  // Mapped normals may face below the actual polygon. They cannot tunnel into
  // their own wall/floor and then collect light from its opposite side.
  if dot(ray,gn)<0.025 {return vec4f(0.0);}
@@ -109,6 +118,14 @@ fn onscreen(p:vec3f)->bool {return all(p.xy>vec2f(0.002))&&all(p.xy<vec2f(0.998)
  let p=vec2i(frag.xy);let data=textureLoad(normals,p,0);
  if data.z<=0.0||data.z>0.82 {return vec4f(0.0);}
  let center=world_at(p);let n=bg_reflection_oct_decode(data.xy);let coordinate=(frag.xy-1.5)*0.5;let base=vec2i(floor(coordinate));
+ let water=textureLoad(indirect,p,0).a < -1.5;
+ // Water's normals perturb a flat voxel face. Use that geometric face for
+ // plane rejection; the shading normal otherwise rejects perfectly coplanar
+ // neighbors and punches holes in the half-resolution reflection.
+ var plane_normal=n;
+ if water {
+  plane_normal=water_face_normal(n);
+ }
  let dimensions=vec2i(textureDimensions(replacement));var sum=vec3f(0.0);var weights=0.0;
  // Normal/plane-aware reconstruction avoids half-resolution reflection color
  // bleeding across silhouettes, neighboring faces, and roughness boundaries.
@@ -117,10 +134,20 @@ fn onscreen(p:vec3f)->bool {return all(p.xy>vec2f(0.002))&&all(p.xy<vec2f(0.998)
   let full=min(q*2+vec2i(1),vec2i(settings.size.xy)-1);
   let other=textureLoad(normals,full,0);
   if other.z<=0.0||other.w<=0.0 {continue;}
-  let plane=abs(dot(world_at(full)-center,n));
+  if water != (textureLoad(indirect,full,0).a < -1.5) {continue;}
+  let other_center=world_at(full);
+  let plane=abs(dot(other_center-center,plane_normal));
+  var tolerance=0.05;
+  if water {
+   // Radial receiver distance is binary16. Its rounding error grows with
+   // distance; project the two half-ULP bounds onto the geometric normal.
+   // This keeps distant flat water continuous without crossing real shores.
+   tolerance+=0.0005*(data.w*abs(dot(normalize(center-settings.eye.xyz),plane_normal))
+    +other.w*abs(dot(normalize(other_center-settings.eye.xyz),plane_normal)));
+  }
   let d=abs(coordinate-vec2f(q));
   let w=max(0.0,1.0-d.x)*max(0.0,1.0-d.y)*pow(max(dot(n,bg_reflection_oct_decode(other.xy)),0.0),16.0)
-    *exp(-plane*plane/0.0025)*exp(-abs(data.z-other.z)*12.0);
+    *exp(-plane*plane/(tolerance*tolerance))*exp(-abs(data.z-other.z)*12.0);
   sum+=textureLoad(replacement,q,0).rgb*w;weights+=w;
  }}
  return vec4f(sum/max(weights,0.00001),0.0);

@@ -78,9 +78,67 @@ fn fluid_only_tiles_remain_drawable_and_count_toward_geometry_budget() {
     };
     let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
     assert!(mesh.indices.is_empty());
-    assert_eq!(mesh.water_indices.len(), 36);
-    assert_eq!(mesh.byte_len(), 24 * 20 + 36 * 4);
+    assert_eq!(mesh.water_indices.len(), 12);
+    assert_eq!(mesh.byte_len(), 8 * 20 + 12 * 4);
     assert!(mesh.bounds.is_some());
+}
+
+#[test]
+fn fluid_frontiers_do_not_invent_translucent_walls_but_known_air_keeps_waterfalls() {
+    let catalog = crate::content::catalog();
+    let colors = FaceColors::new(catalog);
+    let mut tile = fixture(TileKey {
+        level: 2,
+        x: 0,
+        z: 0,
+    });
+    for c in &mut tile.columns {
+        *c = Column {
+            coverage: vec![Interval { bottom: 0, top: 32 }],
+            spans: vec![Span {
+                bottom: 4,
+                top: 17,
+                state: WATER,
+                sky: 15,
+                glow: 0,
+            }],
+        };
+    }
+    let unknown = mesh(&tile, &[], catalog, &colors).unwrap();
+    assert!(
+        unknown
+            .water_indices
+            .iter()
+            .all(|i| unknown.vertices[*i as usize].unpack()[4].abs() > 0.5)
+    );
+    let mut air = fixture(TileKey {
+        level: 2,
+        x: 1,
+        z: 0,
+    });
+    for c in &mut air.columns {
+        c.coverage = vec![Interval {
+            bottom: 10,
+            top: 32,
+        }];
+    }
+    let waterfall = mesh(&tile, &[&air], catalog, &colors).unwrap();
+    let sides: Vec<_> = waterfall
+        .water_indices
+        .iter()
+        .map(|i| waterfall.vertices[*i as usize].unpack())
+        .filter(|v| v[3] > 0.5)
+        .collect();
+    assert!(
+        !sides.is_empty(),
+        "known air must retain waterfall geometry"
+    );
+    assert!(
+        sides
+            .iter()
+            .all(|v| v[0] == 128.0 && (10.0..=17.0).contains(&v[1])),
+        "unknown part of neighbor column cannot create a wall"
+    );
 }
 #[test]
 fn only_transition_levels_receive_actual_face_textures() {

@@ -6,8 +6,11 @@
 @group(0) @binding(4) var<uniform> options: vec4f;
 @group(0) @binding(5) var<uniform> lens:BgReferenceLens;
 @group(0) @binding(6) var lens_visibility:texture_2d<f32>;
-@vertex fn vs(@builtin(vertex_index) id:u32)->@builtin(position) vec4f {
-    let p=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));return vec4f(p[id],0.0,1.0);
+struct DisplayVertex {@builtin(position) position:vec4f,@location(0) uv:vec2f};
+@vertex fn vs(@builtin(vertex_index) id:u32)->DisplayVertex {
+    let p=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));
+    var output:DisplayVertex;output.position=vec4f(p[id],0.0,1.0);
+    output.uv=vec2f(p[id].x*0.5+0.5,0.5-p[id].y*0.5);return output;
 }
 fn bg_encode_srgb(color:vec3f)->vec3f {return select(1.055*pow(max(color,vec3f(0.0)),vec3f(1.0/2.4))-0.055,color*12.92,color<=vec3f(0.0031308));}
 fn bg_decode_srgb(color:vec3f)->vec3f {return select(pow((color+0.055)/1.055,vec3f(2.4)),color/12.92,color<=vec3f(0.04045));}
@@ -32,8 +35,10 @@ fn luma(color:vec3f)->f32 {return dot(color,vec3f(0.299,0.587,0.114));}
     }
     return vec4f(encoded,1.0);
 }
-@fragment fn present(@builtin(position) p:vec4f)->@location(0) vec4f {
-    var encoded=textureLoad(source,vec2i(p.xy),0).rgb;
+@fragment fn present(input:DisplayVertex)->@location(0) vec4f {
+    // Presentation can upscale a smaller world image into a native-size UI
+    // attachment. Normalized UVs still sample exact texel centers at 1x.
+    var encoded=textureSampleLevel(source,linear_sampler,input.uv,0.0).rgb;
     if options.z>0.5 {encoded=bg_decode_srgb(encoded);}
     return vec4f(encoded,1.0);
 }

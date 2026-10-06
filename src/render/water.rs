@@ -3,6 +3,7 @@ use super::{DEPTH_FORMAT, daylight, post, scene_ao};
 use crate::world::{CHUNK_SIZE, ChunkKey};
 use glam::Vec3;
 use wgpu::util::DeviceExt;
+pub(crate) mod optics;
 pub(crate) mod reference;
 
 pub(crate) fn distance(key: ChunkKey, eye: Vec3) -> f32 {
@@ -34,6 +35,7 @@ pub(crate) struct WaterRenderer {
     camera_group: wgpu::BindGroup,
     time: wgpu::Buffer,
     reference: Option<reference::Reference>,
+    optics: Option<optics::Optics>,
 }
 impl WaterRenderer {
     pub(crate) fn new(device: &wgpu::Device, camera: &wgpu::Buffer) -> Self {
@@ -42,6 +44,7 @@ impl WaterRenderer {
             source: wgpu::ShaderSource::Wgsl(shader(include_str!("water.wgsl")).into()),
         });
         let reference = super::bsl_reference::enabled().then(|| reference::Reference::new(device));
+        let optics = reference.is_none().then(|| optics::Optics::new(device));
         let mut entries = vec![wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -54,6 +57,8 @@ impl WaterRenderer {
         }];
         if reference.is_some() {
             entries.extend(reference::Inputs::layout_entries(1));
+        } else {
+            entries.extend(optics::Inputs::layout_entries(1));
         }
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("water uniforms"),
@@ -70,6 +75,8 @@ impl WaterRenderer {
         }];
         if let Some(reference) = &reference {
             resources.extend(reference.inputs.entries(1));
+        } else if let Some(optics) = &optics {
+            resources.extend(optics.inputs.entries(1));
         }
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("water uniforms"),
@@ -94,7 +101,11 @@ impl WaterRenderer {
             camera_group: super::sun_shadow::fallback_camera_group(device, camera),
             time,
             reference,
+            optics,
         }
+    }
+    pub(crate) fn optical_inputs(&self) -> Option<&optics::Inputs> {
+        self.optics.as_ref().map(|optics| &optics.inputs)
     }
     pub(crate) fn reference_inputs(&self) -> Option<&reference::Inputs> {
         self.reference.as_ref().map(|reference| &reference.inputs)
@@ -106,6 +117,19 @@ impl WaterRenderer {
         scene: &wgpu::TextureView,
         opaque_depth: &wgpu::TextureView,
     ) -> wgpu::TextureView {
+        if let Some(optics) = &mut self.optics {
+            optics.begin(device, encoder, scene, opaque_depth);
+            let mut entries = vec![wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.time.as_entire_binding(),
+            }];
+            entries.extend(optics.inputs.entries(1));
+            self.group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("enhanced water optical inputs"),
+                layout: &self.pipeline.get_bind_group_layout(1),
+                entries: &entries,
+            });
+        }
         let Some(reference) = self.reference.as_mut() else {
             return scene.clone();
         };
@@ -147,6 +171,9 @@ impl WaterRenderer {
         self.prepare_at(queue, water_time);
         if let Some(reference) = &self.reference {
             reference.inputs.prepare(queue, frame);
+        }
+        if let Some(optics) = &self.optics {
+            optics.prepare(queue, frame);
         }
     }
     pub(crate) fn set_camera_group(&mut self, group: wgpu::BindGroup) {
@@ -190,7 +217,11 @@ pub(super) fn reference_source_for(source: &str, lod: bool, reference: bool) -> 
     reference::source(source, lod, reference)
 }
 pub(super) fn shader(source: &str) -> String {
-    let source = reference_source(source, false);
+    let source = if super::bsl_reference::enabled() {
+        reference_source(source, false)
+    } else {
+        optics::source(source, false)
+    };
     daylight::surface_shader(&format!(
         "{}\n{}\n{}\n{}\n{}\n{source}",
         include_str!("material/pbr.wgsl"),
@@ -201,7 +232,11 @@ pub(super) fn shader(source: &str) -> String {
     ))
 }
 pub(super) fn lod_shader(source: &str) -> String {
-    let source = reference_source(source, true);
+    let source = if super::bsl_reference::enabled() {
+        reference_source(source, true)
+    } else {
+        optics::source(source, true)
+    };
     daylight::surface_shader(&format!(
         "{}\n{}\n{}\n{}\n{}\n{source}",
         include_str!("material/pbr.wgsl"),

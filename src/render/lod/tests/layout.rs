@@ -33,6 +33,7 @@ fn production_distant_terrain_and_water_layouts_accept_reference_receivers() {
         }),
     );
     gpu.set_reference_water_inputs(&device, water.reference_inputs());
+    gpu.set_optical_water_inputs(&device, water.optical_inputs());
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 }
 

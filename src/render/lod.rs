@@ -9,6 +9,7 @@ mod pipelines;
 mod ray;
 mod selection;
 mod surface;
+mod surface_shape;
 mod vertex;
 pub(crate) use colors::FaceColors;
 pub(crate) use gpu::{Gpu, UploadError};

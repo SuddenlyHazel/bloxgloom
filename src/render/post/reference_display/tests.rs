@@ -125,6 +125,103 @@ fn flags(display: &ReferenceDisplay, queue: &wgpu::Queue, data: [f32; 4]) {
 }
 
 #[test]
+fn gpu_reference_present_upscales_entire_viewport_and_preserves_native_pixels() {
+    pollster::block_on(async {
+        let adapter = wgpu::Instance::default()
+            .request_adapter(&Default::default())
+            .await
+            .unwrap();
+        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+        let (width, height) = (7, 5);
+        let pattern: Vec<_> = (0..width * height)
+            .flat_map(|i| {
+                let x = i % width;
+                let y = i / width;
+                [
+                    32 + (x * 13 + y * 17) as u8,
+                    180 - (x * 11 + y * 7) as u8,
+                    64,
+                    255,
+                ]
+            })
+            .collect();
+        let source = write(&device, &queue, width, height, &pattern);
+        for format in [
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ] {
+            let display = ReferenceDisplay::new(&device, width, height, format);
+            flags(
+                &display,
+                &queue,
+                [0.0, 0.0, if format.is_srgb() { 1.0 } else { 0.0 }, 0.0],
+            );
+            for (out_width, out_height) in [(7, 5), (14, 10), (19, 13)] {
+                let texture = output(&device, out_width, out_height, format);
+                let mut encoder = device.create_command_encoder(&Default::default());
+                draw(
+                    &mut encoder,
+                    &display.present_pipeline,
+                    &display.group(&device, &source),
+                    &[&texture.create_view(&Default::default())],
+                );
+                let bytes = read(&device, &queue, encoder, &texture);
+                if format == wgpu::TextureFormat::Rgba8Unorm
+                    && (out_width, out_height) == (width, height)
+                {
+                    assert_eq!(
+                        bytes, pattern,
+                        "native presentation must retain exact encoded pixels"
+                    );
+                }
+                for y in 0..out_height {
+                    for x in 0..out_width {
+                        let pixel = ((y * out_width + x) * 4) as usize;
+                        for channel in 0..3 {
+                            // Independent bilinear encoded-color interpolation with
+                            // clamp-to-edge, before the one output transfer conversion.
+                            let sx = (f64::from(x) + 0.5) * f64::from(width) / f64::from(out_width)
+                                - 0.5;
+                            let sy = (f64::from(y) + 0.5) * f64::from(height)
+                                / f64::from(out_height)
+                                - 0.5;
+                            let base = [sx.floor(), sy.floor()];
+                            let fraction = [sx - base[0], sy - base[1]];
+                            let mut expected = 0.0;
+                            for dy in 0..2 {
+                                for dx in 0..2 {
+                                    let px =
+                                        (base[0] as i64 + dx).clamp(0, i64::from(width) - 1) as u32;
+                                    let py = (base[1] as i64 + dy).clamp(0, i64::from(height) - 1)
+                                        as u32;
+                                    expected += f64::from(
+                                        pattern[((py * width + px) * 4) as usize + channel],
+                                    ) * if dx == 0 {
+                                        1.0 - fraction[0]
+                                    } else {
+                                        fraction[0]
+                                    } * if dy == 0 {
+                                        1.0 - fraction[1]
+                                    } else {
+                                        fraction[1]
+                                    };
+                                }
+                            }
+                            assert!(
+                                bytes[pixel + channel].abs_diff(expected.round() as u8) <= 1,
+                                "{format:?} {out_width}x{out_height} ({x},{y}) channel{channel}: {} vs {expected}",
+                                bytes[pixel + channel]
+                            );
+                        }
+                        assert_eq!(bytes[pixel + 3], 255);
+                    }
+                }
+            }
+        }
+    });
+}
+
+#[test]
 fn gpu_reference_display_gamma_grain_fxaa_and_transfer_match_source_defaults() {
     pollster::block_on(async {
         let adapter = wgpu::Instance::default()

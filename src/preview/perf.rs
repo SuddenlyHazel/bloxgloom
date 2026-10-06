@@ -1,5 +1,6 @@
 pub(crate) mod characters;
 mod clock;
+mod quality;
 mod upload;
 
 use super::*;
@@ -51,6 +52,9 @@ pub(super) async fn run_perf_benchmark_async(
     if !(1..=6).contains(&radius) {
         return Err("view radius must be in 1..=6".into());
     }
+    let quality = quality::Options::from_env()?;
+    let (perf_width, perf_height) = quality.dimensions;
+    let (output_width, output_height) = quality.native;
     let water_clock = clock::WaterClock::from_env()?;
 
     let instance = wgpu::Instance::default();
@@ -171,8 +175,21 @@ pub(super) async fn run_perf_benchmark_async(
         .map(|mesh| mesh.cutout_indices.len())
         .sum::<usize>();
 
-    let mut post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
+    let mut post = render::post::PostProcess::new(&device, perf_width, perf_height, FORMAT);
     post.trace.set_water_reconstruction_adapter(&adapter);
+    if let Some(config) = &quality.config {
+        post.reflections.set_enabled(config.reflections_enabled);
+        post.configure(
+            &queue,
+            config.post_processing,
+            config.exposure,
+            if config.bloom_enabled {
+                config.bloom_strength
+            } else {
+                0.0
+            },
+        );
+    }
     if std::env::var("BLOXGLOOM_GI_PROFILE").is_ok_and(|value| value == "1") {
         if timestamp_supported {
             post.trace.profile(&device, steady_frames)?;
@@ -187,10 +204,19 @@ pub(super) async fn run_perf_benchmark_async(
         if post.temporal_enabled() { "on" } else { "off" }
     );
     let mut sky =
-        render::SkyRenderer::new(&device, PERF_WIDTH, PERF_HEIGHT, render::post::HDR_FORMAT);
+        render::SkyRenderer::new(&device, perf_width, perf_height, render::post::HDR_FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
-    let shadow_quality = super::sun_shadow::quality()?;
+    let shadow_quality = if std::env::var_os("BLOXGLOOM_SUN_SHADOWS").is_some() {
+        super::sun_shadow::quality()?
+    } else {
+        quality
+            .config
+            .as_ref()
+            .map_or(crate::config::SunShadowQuality::default(), |c| {
+                c.sun_shadow_quality
+            })
+    };
     let mut water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut sun_shadows =
         render::sun_shadow::SunShadows::new(&device, &camera_buffer, shadow_quality);
@@ -204,7 +230,7 @@ pub(super) async fn run_perf_benchmark_async(
         sun_shadows.projection.settings.distance
     );
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
-        render::create_target_pipeline(&device, FORMAT);
+        render::create_target_pipeline(&device, render::post::HDR_FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
     let capture_path = std::env::var_os("BLOXGLOOM_PERF_IMAGE")
         .filter(|path| !path.is_empty())
@@ -212,8 +238,8 @@ pub(super) async fn run_perf_benchmark_async(
     let color = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("headless perf color"),
         size: wgpu::Extent3d {
-            width: PERF_WIDTH,
-            height: PERF_HEIGHT,
+            width: output_width,
+            height: output_height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -231,8 +257,8 @@ pub(super) async fn run_perf_benchmark_async(
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("headless perf depth"),
         size: wgpu::Extent3d {
-            width: PERF_WIDTH,
-            height: PERF_HEIGHT,
+            width: perf_width,
+            height: perf_height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -266,8 +292,13 @@ pub(super) async fn run_perf_benchmark_async(
     lod_gpu.set_horizon(lod_horizon);
     lod_gpu.set_sun_shadows(camera_group.clone());
     lod_gpu.set_reference_water_inputs(&device, water_renderer.reference_inputs());
+    lod_gpu.set_optical_water_inputs(&device, water_renderer.optical_inputs());
     let (lod_meshes, lod_summary_bytes) = if lod_horizon > 0 {
-        super::lod::terrain_meshes(camera, lod_horizon)?
+        super::lod::terrain_meshes_quality(
+            camera,
+            lod_horizon,
+            quality.config.as_ref().map(|c| c.lod_quality),
+        )?
     } else {
         (vec![], 0)
     };
@@ -295,8 +326,8 @@ pub(super) async fn run_perf_benchmark_async(
     lod_gpu.prepare(
         &queue,
         camera,
-        PERF_WIDTH,
-        PERF_HEIGHT,
+        perf_width,
+        perf_height,
         render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
         near_ready.iter().copied(),
     );
@@ -445,8 +476,8 @@ pub(super) async fn run_perf_benchmark_async(
         lod_gpu.prepare_at(
             &queue,
             camera,
-            PERF_WIDTH,
-            PERF_HEIGHT,
+            perf_width,
+            perf_height,
             atmosphere,
             near_ready.iter().copied(),
             water_time,
@@ -496,15 +527,15 @@ pub(super) async fn run_perf_benchmark_async(
             },
             hovered: None,
         };
-        ui_renderer.prepare(&queue, PERF_WIDTH, PERF_HEIGHT, &ui_frame);
+        ui_renderer.prepare(&queue, output_width, output_height, &ui_frame);
         sky.configure(atmosphere);
         queue.write_buffer(
             &sky.camera,
             0,
             bytemuck::cast_slice(&render::sky_camera_data_at_sample_in_medium(
                 camera,
-                PERF_WIDTH,
-                PERF_HEIGHT,
+                perf_width,
+                perf_height,
                 atmosphere,
                 u32::try_from(samples.len())?,
                 eye_in_water,
@@ -519,13 +550,16 @@ pub(super) async fn run_perf_benchmark_async(
             camera_data[28] = f32::from(lod_horizon) * 0.65;
             camera_data[29] = f32::from(lod_horizon);
         }
+        if let Some(config) = &quality.config {
+            camera_data[32..36].copy_from_slice(&config.parallax.uniform());
+        }
         post.configure_reference_ao(camera_data, camera.fov_y_radians);
         queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
         queue.write_buffer(
             &target_camera_buffer,
             0,
             bytemuck::cast_slice(
-                &render::view_projection(camera, PERF_WIDTH, PERF_HEIGHT).to_cols_array(),
+                &render::view_projection(camera, perf_width, perf_height).to_cols_array(),
             ),
         );
         queue.write_buffer(
@@ -543,8 +577,8 @@ pub(super) async fn run_perf_benchmark_async(
         sky.prepare_timed(
             &device,
             &mut encoder,
-            PERF_WIDTH,
-            PERF_HEIGHT,
+            perf_width,
+            perf_height,
             frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
                 query_set: set,
                 beginning_of_pass_write_index: Some(first_query),
@@ -638,7 +672,7 @@ pub(super) async fn run_perf_benchmark_async(
                 eye_in_water,
                 sample: u32::try_from(samples.len())?,
                 camera,
-                size: [PERF_WIDTH, PERF_HEIGHT],
+                size: [perf_width, perf_height],
                 view_projection: matrix,
             },
             water_time,
@@ -646,6 +680,7 @@ pub(super) async fn run_perf_benchmark_async(
         let water_target =
             water_renderer.begin_frame(&device, &mut encoder, &post.scene, &depth_view);
         lod_gpu.set_reference_water_inputs(&device, water_renderer.reference_inputs());
+        lod_gpu.set_optical_water_inputs(&device, water_renderer.optical_inputs());
         let water_depth = water_renderer
             .reference_front_depth()
             .cloned()
@@ -722,18 +757,17 @@ pub(super) async fn run_perf_benchmark_async(
         post.draw_motion(&queue, &mut encoder, &depth_view, None);
         post.resolve_temporal(&device, &mut encoder, &depth_view);
         post.configure_reference_lens(
-            render::view_projection(camera, PERF_WIDTH, PERF_HEIGHT),
+            render::view_projection(camera, perf_width, perf_height),
             camera.position,
             atmosphere,
             1.0 / 60.0,
             eye_in_water,
         );
-        post.encode(&device, &queue, &mut encoder, &color_view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("target block outline"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_view,
+                    view: &post.scene,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -756,6 +790,7 @@ pub(super) async fn run_perf_benchmark_async(
             pass.set_vertex_buffer(0, target_vertices.slice(..));
             pass.draw(0..24, 0..1);
         }
+        post.encode(&device, &queue, &mut encoder, &color_view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("screen-space playing HUD"),
@@ -981,13 +1016,19 @@ pub(super) async fn run_perf_benchmark_async(
         "mesh payload: {draw_mesh_bytes} raster vertex/index bytes, {trace_triangle_bytes} retained CPU ray triangle bytes; mesh/upload budget figures include the full worker payload"
     );
     eprintln!(
-        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; GI completion checkpoint interval={} (0 means only final timestamp readback), checkpoint waits excluded from CPU samples",
-        PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done, gi_inflight,
+        "measurement: world {}x{}, native output {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; GI completion checkpoint interval={} (0 means only final timestamp readback), checkpoint waits excluded from CPU samples",
+        perf_width,
+        perf_height,
+        output_width,
+        output_height,
+        upload_frame_count,
+        steady_done,
+        gi_inflight,
     );
     // Copy/readback follows all measured submissions and timestamp resolution;
     // the optional image never enters CPU/GPU percentile samples.
     if let Some(path) = capture_path {
-        super::capture::save_texture(&device, &queue, &color, PERF_WIDTH, PERF_HEIGHT, &path)?;
+        super::capture::save_texture(&device, &queue, &color, output_width, output_height, &path)?;
         eprintln!("final-frame image: {}", path.display());
     }
     Ok(())

@@ -36,6 +36,21 @@ pub(crate) fn mesh(
     catalog: &Catalog,
     colors: &FaceColors,
 ) -> Result<Mesh, String> {
+    mesh_with_surface_shape(
+        tile,
+        neighbors,
+        catalog,
+        colors,
+        std::env::var("BLOXGLOOM_LOD_SURFACE_SHAPE").as_deref() != Ok("0"),
+    )
+}
+pub(super) fn mesh_with_surface_shape(
+    tile: &LodTile,
+    neighbors: &[&LodTile],
+    catalog: &Catalog,
+    colors: &FaceColors,
+    reconstruct: bool,
+) -> Result<Mesh, String> {
     tile.validate(catalog)?;
     let mut m = Mesh {
         key: tile.key,
@@ -57,6 +72,7 @@ pub(crate) fn mesh(
     if tile.columns.len() != 1024 {
         return Err("unsupported LOD mesh bounds or level".into());
     }
+    let shape = super::surface_shape::Shape::new(tile, neighbors, catalog, reconstruct);
     let mut caps = std::collections::BTreeMap::new();
     for z in 0..32 {
         for x in 0..32 {
@@ -122,6 +138,22 @@ pub(crate) fn mesh(
                                 neighbor = nx
                                     .zip(nz)
                                     .and_then(|(nx, nz)| find_column(tile, neighbors, nx, nz));
+                                // Unknown horizontal residency is not a shore.
+                                // A full-depth translucent wall at that edge
+                                // darkens the same ocean a second time. Match
+                                // the near mesh's authoritative-neighbor rule.
+                                if catalog.block_flags(span.state) & crate::content::FLUID != 0 {
+                                    intervals = neighbor.map_or_else(Vec::new, |n| {
+                                        n.coverage
+                                            .iter()
+                                            .filter_map(|known| {
+                                                let bottom = span.bottom.max(known.bottom);
+                                                let top = span.top.min(known.top);
+                                                (bottom < top).then_some((bottom, top))
+                                            })
+                                            .collect()
+                                    });
+                                }
                                 if let Some(nc) = neighbor {
                                     if !edge
                                         || catalog.block_flags(span.state) & crate::content::FLUID
@@ -220,11 +252,21 @@ pub(crate) fn mesh(
                     continue;
                 }
                 let mut dx = 1;
-                while x + dx < 32 && cells[x + dx + 32 * z] {
+                let shaped = side > 0 && shape.cap_changes(x, z, y);
+                while !shaped
+                    && x + dx < 32
+                    && cells[x + dx + 32 * z]
+                    && !(side > 0 && shape.cap_changes(x + dx, z, y))
+                {
                     dx += 1;
                 }
                 let mut dz = 1;
-                while z + dz < 32 && (x..x + dx).all(|xx| cells[xx + 32 * (z + dz)]) {
+                while !shaped
+                    && z + dz < 32
+                    && (x..x + dx).all(|xx| {
+                        cells[xx + 32 * (z + dz)] && !(side > 0 && shape.cap_changes(xx, z + dz, y))
+                    })
+                {
                     dz += 1;
                 }
                 for zz in z..z + dz {
@@ -244,6 +286,21 @@ pub(crate) fn mesh(
                 )?;
             }
         }
+    }
+    let deformed = shape.deform(&mut m.vertices);
+    // Shared ground corners collapse former stair walls. Do not retain their
+    // zero-area triangles in the raster or optional ray acceleration payload.
+    if deformed {
+        let mut kept = 0;
+        for first in (0..m.indices.len()).step_by(3) {
+            let p = [m.indices[first], m.indices[first + 1], m.indices[first + 2]]
+                .map(|i| glam::Vec3::from(m.vertices[i as usize].position));
+            if (p[1] - p[0]).cross(p[2] - p[0]).length_squared() > 0.0 {
+                m.indices.copy_within(first..first + 3, kept);
+                kept += 3;
+            }
+        }
+        m.indices.truncate(kept);
     }
     for tree in &tile.trees {
         let Some(base) = super::forest::root_base(tile, tree, catalog) else {

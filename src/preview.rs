@@ -1607,6 +1607,7 @@ async fn render_previews_weather(
     };
     if let Some(horizon) = &mut landscape_horizon {
         horizon.set_reference_water_inputs(&device, water_renderer.reference_inputs());
+        horizon.set_optical_water_inputs(&device, water_renderer.optical_inputs());
     }
     for (frame, output) in outputs.into_iter().enumerate() {
         if let (PreviewScene::Characters(clip, time, _), Some(visuals)) =
@@ -2147,6 +2148,7 @@ async fn render_previews_weather(
                 water_renderer.begin_frame(&device, &mut encoder, &post.scene, &depth_view);
             if let Some(horizon) = &mut landscape_horizon {
                 horizon.set_reference_water_inputs(&device, water_renderer.reference_inputs());
+                horizon.set_optical_water_inputs(&device, water_renderer.optical_inputs());
             }
             let water_depth = water_renderer
                 .reference_front_depth()

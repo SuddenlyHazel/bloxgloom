@@ -55,7 +55,7 @@ fn source() -> String {
  let face=id.x%6u;let normals=array<vec3f,6>(vec3f(0.0,1.0,0.0),vec3f(0.0,-1.0,0.0),vec3f(-1.0,0.0,0.0),vec3f(1.0,0.0,0.0),vec3f(0.0,0.0,1.0),vec3f(0.0,0.0,-1.0));let n=normals[face];let sky=select(1.0,0.0,id.x>=6u);
  let main=voxel_vertex(VertexInput(vec3f(0.0),n,vec2f(0.5),0.0,vec2f(sky,0.0),0.0,0.0,0.0,0.0));
  let actor=avatar_vertex(ActorInput(vec3f(0.0),n,5u,vec3f(0.0),vec4u(0u),vec2u(u32(sky*15.0),0u),vec4u(0u),vec4f(0.0),vec3f(1.0),vec3f(1.0),vec4u(0u),vec4f(0.0,0.0,0.0,1.0)),false);
- let codes=array<u32,6>(3u,2u,0u,1u,5u,4u);let coarse=lod_vertex(In(vec3f(0.0),vec4f(1.0),codes[face]|(u32(sky*15.0)<<3u)));
+ let codes=array<u32,6>(3u,2u,0u,1u,5u,4u);let coarse=lod_vertex(In(vec3f(0.0),0xffffffffu,codes[face]|(u32(sky*15.0)<<3u)));
  result[id.x*10u]=vec4f(bg_surface_light(n,camera.sun,sky,vec3f(0.0),vec3f(0.0),vec3f(0.0),1.0),1.0);
  result[id.x*10u+1u]=vec4f(main.light,1.0);result[id.x*10u+2u]=vec4f(actor.color,1.0);result[id.x*10u+3u]=vec4f(coarse.light,1.0);
  result[id.x*10u+4u]=vec4f(actor.indirect,1.0);result[id.x*10u+5u]=vec4f(coarse.indirect,1.0);

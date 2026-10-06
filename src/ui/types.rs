@@ -43,6 +43,10 @@ impl UiScreen {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SettingId {
+    QualityPreset,
+    RenderScale,
+    Reflections,
+    LocalShadows,
     Sensitivity,
     FieldOfView,
     ViewDistance,
@@ -110,6 +114,10 @@ pub struct UiSettings {
     pub lod_horizon: u16,
     pub lod_quality: u8,
     pub scale: f32,
+    pub quality_preset: crate::config::quality::QualityPreset,
+    pub render_scale: f32,
+    pub reflections_enabled: bool,
+    pub local_shadows: crate::render::local_shadow::Settings,
     pub fullscreen: bool,
     pub bounced_gi: bool,
     pub sun_shadow_quality: crate::config::SunShadowQuality,
@@ -135,6 +143,10 @@ impl Default for UiSettings {
             lod_horizon: 512,
             lod_quality: 1,
             scale: 1.0,
+            quality_preset: crate::config::quality::QualityPreset::Custom,
+            render_scale: 1.0,
+            reflections_enabled: true,
+            local_shadows: Default::default(),
             fullscreen: false,
             bounced_gi: false,
             sun_shadow_quality: crate::config::SunShadowQuality::default(),

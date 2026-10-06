@@ -10,7 +10,7 @@ struct Tile { relative: vec4f, origin: vec4i };
 @group(2) @binding(4) var material_specular:texture_2d_array<f32>;
 struct MaterialMetadata { flags: u32, layer: u32 };
 @group(2) @binding(5) var<storage, read> material_metadata: array<MaterialMetadata>;
-struct In { @location(0) position: vec3f, @location(1) color: vec4f, @location(2) surface: u32 };
+struct In { @location(0) position: vec3f, @location(1) color: u32, @location(2) surface: u32 };
 struct Out {
     @builtin(position) position: vec4f,
     @location(0) relative: vec3f,
@@ -34,7 +34,14 @@ struct Out {
     o.normal = normal;
     o.sky = sky;
     o.surface = v.surface;
-    o.color = v.color;
+    o.color = vec4f(vec4u(v.color&255u,(v.color>>8u)&255u,(v.color>>16u)&255u,v.color>>24u))/255.0;
+    if (v.surface&2048u)!=0u {
+        // Same RGB9E5 decode as the CPU ray representation. Water never uses
+        // the opaque material-layer bits, which instead preserve its alpha.
+        let scale=exp2(f32(v.color>>27u)-24.0);
+        o.color=vec4f(vec3f(vec3u(v.color&511u,(v.color>>9u)&511u,(v.color>>18u)&511u))*scale,
+            f32((v.surface>>13u)&255u)/255.0);
+    }
     o.light = bg_surface_light(normal, camera.sun, sky, glow*glow*vec3f(1.0,0.57,0.23), vec3f(0.0), vec3f(0.0), 1.0);
     o.indirect = bg_indirect_daylight(normal, camera.sun, sky);
     return o;
@@ -91,7 +98,15 @@ fn bg_lod_coverage(v: Out) {
     }
     let world=v.local+vec3f(tile.origin.xyz);
     let view=normalize(-v.relative);
-    let normal=select(-v.normal,v.normal,dot(v.normal,view)>=0.0);
+    // Reconstructed ground caps are actual ramps. Their lighting/reflection
+    // normal must follow their triangles, while coverage and UVs retain the
+    // authoritative voxel face axis. This also matches unchanged flat faces.
+    var geometry_normal=v.normal;
+    let cross_normal=normalize(cross(dpdx(v.relative),dpdy(v.relative)));
+    if !cutout && v.color.a<0.999 {
+        geometry_normal=select(-cross_normal,cross_normal,dot(cross_normal,v.normal)>=0.0);
+    }
+    let normal=select(-geometry_normal,geometry_normal,dot(geometry_normal,view)>=0.0);
     // Coarse summaries retain their actual flat geometry. When source artwork
     // is admitted, decode the same companion channels as near materials;
     // untextured averages never inherit the sentinel layer's material flags.
@@ -112,8 +127,8 @@ fn bg_lod_coverage(v: Out) {
     }
     let receiver=bg_shadow_receiver(world);
     let visibility=bg_sun_visibility(receiver)*bg_primary_sun_transmittance(world);
-    let ambient=bg_indirect_daylight(v.normal,camera.sun,v.sky);
-    let direct=bg_direct_light(v.normal,camera.sun,v.sky)*visibility;
+    let ambient=bg_indirect_daylight(geometry_normal,camera.sun,v.sky);
+    let direct=bg_direct_light(geometry_normal,camera.sun,v.sky)*visibility;
     let nv=clamp(dot(normal,view),0.0,1.0);
     let diffuse=bg_pbr_diffuse_weight(pbr,nv);
     let glow=f32((v.surface>>7u)&15u)/15.0;

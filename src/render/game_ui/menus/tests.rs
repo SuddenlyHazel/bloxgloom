@@ -120,7 +120,8 @@ fn admin_flying_checkbox_clicks_and_disables_while_waiting_for_server() {
 #[test]
 fn graphics_settings_do_not_offer_a_model_override() {
     let rows = settings_rows(crate::ui::UiSettings::default(), true);
-    assert_eq!(rows.len(), 11);
+    assert!(rows.iter().any(|row| row.0 == SettingId::QualityPreset));
+    assert!(rows.iter().any(|row| row.0 == SettingId::RenderScale));
     assert!(rows.iter().all(|row| row.1 != "Characters"));
 }
 
@@ -174,11 +175,15 @@ fn native_graphics_rows_show_each_sun_shadow_quality_without_replacing_post_cont
         assert_eq!(
             rows.iter().map(|row| row.0).collect::<Vec<_>>(),
             [
+                SettingId::QualityPreset,
+                SettingId::RenderScale,
+                SettingId::Reflections,
                 SettingId::PostProcessing,
                 SettingId::Exposure,
                 SettingId::Bloom,
                 SettingId::BloomStrength,
                 SettingId::SunShadows,
+                SettingId::LocalShadows,
                 SettingId::LodHorizon,
                 SettingId::LodQuality,
                 SettingId::Parallax,
@@ -187,8 +192,8 @@ fn native_graphics_rows_show_each_sun_shadow_quality_without_replacing_post_cont
                 SettingId::ParallaxQuality,
             ]
         );
-        assert_eq!(rows[4].1, "Sun shadows");
-        assert_eq!(rows[4].2, quality.label());
+        assert_eq!(rows[7].1, "Sun shadows");
+        assert_eq!(rows[7].2, quality.label());
         assert!(
             !settings_rows(settings, false)
                 .iter()
@@ -249,9 +254,12 @@ fn native_graphics_adjusters_dispatch_their_own_controls() {
         };
         draw(vec![]);
         let (mut output, _) = draw(vec![]);
-        label_center(&output.shapes, "Medium");
         for (name, setting) in [
+            ("Quality preset", SettingId::QualityPreset),
+            ("World resolution", SettingId::RenderScale),
+            ("Screen reflections", SettingId::Reflections),
             ("Sun shadows", SettingId::SunShadows),
+            ("Local shadow lights", SettingId::LocalShadows),
             ("Distant terrain", SettingId::LodHorizon),
             ("Distant detail", SettingId::LodQuality),
             ("Parallax", SettingId::Parallax),
@@ -259,19 +267,27 @@ fn native_graphics_adjusters_dispatch_their_own_controls() {
             ("Parallax distance", SettingId::ParallaxDistance),
             ("Parallax quality", SettingId::ParallaxQuality),
         ] {
-            if size.y < 500.0 && setting == SettingId::LodQuality {
-                // Compact native menus intentionally scroll. Exercise that
-                // input path before clicking the lower distant-detail row.
+            // Both compact and desktop menus scroll as the graphics controls
+            // expand. Find an actually visible row before exercising its buttons.
+            for _ in 0..12 {
+                let visible = output.shapes.iter().any(|shape| {
+                    matches!(&shape.shape, egui::epaint::Shape::Text(text)
+                        if text.galley.job.text == name
+                        && shape.clip_rect.contains(text.pos + text.galley.rect.center().to_vec2()))
+                });
+                if visible {
+                    break;
+                }
                 draw(vec![
                     egui::Event::PointerMoved(egui::pos2(size.x * 0.5, size.y * 0.5)),
                     egui::Event::MouseWheel {
                         unit: egui::MouseWheelUnit::Point,
-                        delta: egui::vec2(0.0, -200.0),
+                        delta: egui::vec2(0.0, -100.0),
                         phase: egui::TouchPhase::Move,
                         modifiers: egui::Modifiers::NONE,
                     },
                 ]);
-                for _ in 0..8 {
+                for _ in 0..12 {
                     output = draw(vec![]).0;
                 }
             }
@@ -312,7 +328,7 @@ fn native_graphics_adjusters_dispatch_their_own_controls() {
             modifiers: egui::Modifiers::NONE,
         };
         let mut keyboard_controls = Vec::new();
-        for _ in 0..20 {
+        for _ in 0..40 {
             draw(vec![key(egui::Key::Tab, true)]);
             draw(vec![key(egui::Key::Tab, false)]);
             let (_, intents) = draw(vec![key(egui::Key::Enter, true)]);
@@ -322,6 +338,9 @@ fn native_graphics_adjusters_dispatch_their_own_controls() {
             }));
             draw(vec![key(egui::Key::Enter, false)]);
         }
+        assert!(keyboard_controls.contains(&UiControl::Increase(SettingId::QualityPreset)));
+        assert!(keyboard_controls.contains(&UiControl::Decrease(SettingId::RenderScale)));
+        assert!(keyboard_controls.contains(&UiControl::Increase(SettingId::Reflections)));
         assert!(keyboard_controls.contains(&UiControl::Increase(SettingId::SunShadows)));
         assert!(keyboard_controls.contains(&UiControl::Decrease(SettingId::SunShadows)));
         assert!(keyboard_controls.contains(&UiControl::Increase(SettingId::LodHorizon)));

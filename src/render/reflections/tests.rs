@@ -1,5 +1,6 @@
 use super::*;
 use wgpu::util::DeviceExt;
+mod water;
 const WIDTH: u32 = 96;
 const HEIGHT: u32 = 64;
 

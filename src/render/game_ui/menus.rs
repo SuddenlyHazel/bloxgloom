@@ -123,6 +123,15 @@ fn settings(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
         intents.push(Intent::Control(UiControl::ToggleSettingsPage));
     }
     ui.add_space(8.0);
+    if graphics {
+        ui.label(
+            RichText::new(
+                "The MacBook preset is recommended for laptops. World resolution keeps the UI sharp.",
+            )
+            .size(11.0)
+            .color(MUTED),
+        );
+    }
     let settings = frame.settings;
     let rows = settings_rows(settings, graphics);
     for (setting, label, value) in rows {
@@ -162,6 +171,26 @@ fn settings_rows(
     if graphics {
         vec![
             (
+                SettingId::QualityPreset,
+                "Quality preset",
+                settings.quality_preset.label().into(),
+            ),
+            (
+                SettingId::RenderScale,
+                "World resolution",
+                format!("{:.0}%", settings.render_scale * 100.0),
+            ),
+            (
+                SettingId::Reflections,
+                "Screen reflections",
+                if settings.reflections_enabled {
+                    "On"
+                } else {
+                    "Off"
+                }
+                .into(),
+            ),
+            (
                 SettingId::PostProcessing,
                 "Post effects",
                 if settings.post_processing {
@@ -190,6 +219,11 @@ fn settings_rows(
                 SettingId::SunShadows,
                 "Sun shadows",
                 settings.sun_shadow_quality.label().into(),
+            ),
+            (
+                SettingId::LocalShadows,
+                "Local shadow lights",
+                settings.local_shadows.count.to_string(),
             ),
             (
                 SettingId::LodHorizon,

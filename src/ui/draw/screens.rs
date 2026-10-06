@@ -312,6 +312,26 @@ impl UiBuilder<'_> {
         ];
         let graphics_rows = [
             (
+                SettingId::QualityPreset,
+                "QUALITY PRESET",
+                frame.settings.quality_preset.label().to_uppercase(),
+            ),
+            (
+                SettingId::RenderScale,
+                "WORLD RESOLUTION",
+                format!("{:.0}%", frame.settings.render_scale * 100.0),
+            ),
+            (
+                SettingId::Reflections,
+                "SCREEN REFLECTIONS",
+                if frame.settings.reflections_enabled {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .into(),
+            ),
+            (
                 SettingId::PostProcessing,
                 "POST EFFECTS",
                 if frame.settings.post_processing {
@@ -345,6 +365,11 @@ impl UiBuilder<'_> {
                 SettingId::SunShadows,
                 "SUN SHADOWS",
                 frame.settings.sun_shadow_quality.label().to_uppercase(),
+            ),
+            (
+                SettingId::LocalShadows,
+                "LOCAL SHADOW LIGHTS",
+                frame.settings.local_shadows.count.to_string(),
             ),
             (
                 SettingId::LodHorizon,

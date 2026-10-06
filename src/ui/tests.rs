@@ -385,11 +385,15 @@ fn graphics_controls_fit_and_hit_test_at_both_ui_scales() {
         let layout = UiLayout::new(width, height, scale, UiScreen::Graphics);
         let mut controls = vec![UiControl::ToggleSettingsPage, UiControl::Back];
         for setting in [
+            SettingId::QualityPreset,
+            SettingId::RenderScale,
+            SettingId::Reflections,
             SettingId::PostProcessing,
             SettingId::Exposure,
             SettingId::Bloom,
             SettingId::BloomStrength,
             SettingId::SunShadows,
+            SettingId::LocalShadows,
             SettingId::LodHorizon,
             SettingId::LodQuality,
             SettingId::Parallax,

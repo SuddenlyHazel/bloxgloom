@@ -9,6 +9,7 @@ pub(super) struct Appearance {
     pub layer: u32,
     pub color: [f32; 4],
     pub textured: bool,
+    pub reconstructed: bool,
 }
 
 pub(super) fn requested() -> bool {
@@ -87,6 +88,16 @@ fn extract_with_textures(mesh: &Mesh, textures: bool) -> Result<Arc<Chunk>, Stri
             normal[3] = -1.0;
             let positions =
                 vertices.map(|v| std::array::from_fn::<_, 3, _>(|a| v.position[a] + origin[a]));
+            let points = positions.map(glam::Vec3::from);
+            let mut geometric = (points[1] - points[0])
+                .cross(points[2] - points[0])
+                .normalize_or_zero();
+            if material.reconstructed && geometric != glam::Vec3::ZERO {
+                if geometric.dot(glam::Vec3::from_array(normal[..3].try_into().unwrap())) < 0.0 {
+                    geometric = -geometric;
+                }
+                normal[..3].copy_from_slice(&geometric.to_array());
+            }
             let uv = vertices.map(|v| uv(v, axis));
             let mut flags = surface::LOD
                 | surface::COARSE_COLOR
@@ -95,7 +106,8 @@ fn extract_with_textures(mesh: &Mesh, textures: bool) -> Result<Arc<Chunk>, Stri
             if material.packed & (1 << 11) != 0 {
                 flags |= surface::WATER;
             }
-            let has_layer = (material.packed >> 13) & 0x3ffff != 0;
+            let has_layer =
+                material.packed & (1 << 11) == 0 && (material.packed >> 13) & 0x3ffff != 0;
             let cutout = material.packed & (1 << 12) != 0;
             if has_layer && (cutout || material.textured && textures) {
                 flags |= surface::TEXTURE;

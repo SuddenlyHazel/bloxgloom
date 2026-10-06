@@ -7,6 +7,14 @@ pub(super) fn terrain_meshes(
     camera: Camera,
     horizon: u16,
 ) -> Result<(Vec<Mesh>, usize), Box<dyn Error>> {
+    terrain_meshes_quality(camera, horizon, None)
+}
+
+pub(super) fn terrain_meshes_quality(
+    camera: Camera,
+    horizon: u16,
+    configured_quality: Option<u8>,
+) -> Result<(Vec<Mesh>, usize), Box<dyn Error>> {
     let started = Instant::now();
     let catalog = crate::content::catalog();
     let quality = match std::env::var("BLOXGLOOM_LOD_QUALITY") {
@@ -15,7 +23,7 @@ pub(super) fn terrain_meshes(
             .ok()
             .filter(|v| *v <= 2)
             .ok_or("BLOXGLOOM_LOD_QUALITY must be 0, 1 or 2")?,
-        Err(std::env::VarError::NotPresent) => 1,
+        Err(std::env::VarError::NotPresent) => configured_quality.unwrap_or(1),
         Err(error) => return Err(error.into()),
     };
     let keys = render::lod::desired_tiles(camera.position, horizon, quality, 4);

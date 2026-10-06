@@ -1,5 +1,6 @@
-fn bg_water_surface(tint: vec4f, normal: vec3f, sky: f32, glow: f32,
-    world: vec3f, relative: vec3f, front: bool, time: f32, sun_visibility: f32, footprint:vec4f) -> BgSceneOutput {
+struct BgWaterLighting {output:BgSceneOutput,diffuse:vec3f,fresnel:f32};
+fn bg_water_lighting(tint: vec4f, normal: vec3f, sky: f32, glow: f32,
+    world: vec3f, relative: vec3f, front: bool, time: f32, sun_visibility: f32, footprint:vec4f) -> BgWaterLighting {
     var n = normal;
     var roughness = 0.12;
     if abs(n.y) > 0.5 {
@@ -28,6 +29,11 @@ fn bg_water_surface(tint: vec4f, normal: vec3f, sky: f32, glow: f32,
     result.color.a = alpha;
     // SSR replaces the same prefiltered fallback already in the color. Its
     // response includes alpha because this receiver blends over opaque ground.
-    return bg_scene_reflection(result,n,roughness,length(relative),
-        reflection_weight*alpha*bg_fog_transmittance(relative+camera.eye.xyz,fog_sky),sky);
+    return BgWaterLighting(bg_scene_reflection(result,n,roughness,length(relative),
+        reflection_weight*alpha*bg_fog_transmittance(relative+camera.eye.xyz,fog_sky),sky),
+        tint.rgb*shadowed_light*(1.0-fresnel),fresnel);
+}
+fn bg_water_surface(tint:vec4f,normal:vec3f,sky:f32,glow:f32,world:vec3f,relative:vec3f,
+ front:bool,time:f32,sun_visibility:f32,footprint:vec4f)->BgSceneOutput {
+ return bg_water_lighting(tint,normal,sky,glow,world,relative,front,time,sun_visibility,footprint).output;
 }

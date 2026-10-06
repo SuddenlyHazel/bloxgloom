@@ -11,6 +11,7 @@ use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
 pub(crate) mod bindings;
 pub(crate) mod lighting;
 pub(crate) mod parallax;
+pub(crate) mod quality;
 use bindings::{Bindings, NamedBindings};
 
 const CONFIG_VERSION: u32 = 1;
@@ -81,6 +82,10 @@ pub struct Config {
     /// 0 coarse, 1 balanced, 2 detailed.
     pub lod_quality: u8,
     pub scale: f32,
+    pub quality_preset: quality::QualityPreset,
+    /// World resolution relative to physical pixels; UI always stays native.
+    pub render_scale: f32,
+    pub reflections_enabled: bool,
     pub fullscreen: bool,
     pub bounced_gi: bool,
     pub sun_shadow_quality: SunShadowQuality,
@@ -112,6 +117,9 @@ impl Default for Config {
             lod_horizon: 512,
             lod_quality: 1,
             scale: 1.0,
+            quality_preset: quality::QualityPreset::Custom,
+            render_scale: 1.0,
+            reflections_enabled: true,
             fullscreen: false,
             bounced_gi: false,
             sun_shadow_quality: SunShadowQuality::default(),
@@ -155,8 +163,11 @@ impl Config {
     }
 
     /// Returns the native per-user settings path. Callers can use `load` and
-    /// `save` with another path to support an explicit override.
+    /// `save` with another path, or set `BLOXGLOOM_CONFIG`, for isolated sessions.
     pub fn default_path() -> PathBuf {
+        if let Some(path) = nonempty_env("BLOXGLOOM_CONFIG") {
+            return PathBuf::from(path);
+        }
         #[cfg(target_os = "macos")]
         {
             user_home()
@@ -242,7 +253,7 @@ impl Config {
     }
 
     fn sanitized(&self) -> Self {
-        Self {
+        let mut sanitized = Self {
             sensitivity: clamp_finite(self.sensitivity, MIN_SENSITIVITY, MAX_SENSITIVITY, 0.002),
             fov_degrees: clamp_finite(self.fov_degrees, MIN_FOV, MAX_FOV, 70.0),
             view_distance: self
@@ -251,6 +262,9 @@ impl Config {
             lod_horizon: sanitize_lod_horizon(self.lod_horizon),
             lod_quality: self.lod_quality.min(2),
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
+            quality_preset: self.quality_preset,
+            render_scale: clamp_finite(self.render_scale, quality::MIN_RENDER_SCALE, 1.0, 1.0),
+            reflections_enabled: self.reflections_enabled,
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
             sun_shadow_quality: self.sun_shadow_quality,
@@ -279,7 +293,9 @@ impl Config {
             } else {
                 Bindings::default()
             }),
-        }
+        };
+        sanitized.quality_preset = sanitized.effective_quality_preset();
+        sanitized
     }
 
     fn serialize(&self) -> String {
@@ -306,6 +322,12 @@ impl Config {
         text.push_str(&format!(
             "sun_shadow_quality={}\n",
             self.sun_shadow_quality.as_str()
+        ));
+        text.push_str(&format!(
+            "quality_preset={}\nrender_scale={}\nreflections_enabled={}\n",
+            self.quality_preset.as_str(),
+            self.render_scale,
+            self.reflections_enabled
         ));
         text.push_str(&self.parallax.serialize());
         text.push_str(&self.lighting.serialize());
@@ -386,6 +408,20 @@ fn parse_config(contents: &str) -> Config {
             "bind_drop" => {
                 if let Some(key) = bindings::parse(value) {
                     config.bindings.drop = key;
+                }
+            }
+            "quality_preset" => {
+                if let Some(preset) = quality::QualityPreset::parse(value) {
+                    config.quality_preset = preset;
+                }
+            }
+            "render_scale" => {
+                config.render_scale =
+                    parse_clamped_float(value, quality::MIN_RENDER_SCALE, 1.0, 1.0)
+            }
+            "reflections_enabled" => {
+                if let Ok(enabled) = value.parse() {
+                    config.reflections_enabled = enabled;
                 }
             }
             "post_processing" => {

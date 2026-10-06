@@ -657,6 +657,39 @@ impl ClientApp {
             return;
         }
         match setting {
+            SettingId::QualityPreset => {
+                let preset = self.config.effective_quality_preset().cycle(increase);
+                let previous_view = self.config.view_distance;
+                let previous_bounced = self.config.bounced_gi;
+                self.config.apply_quality_preset(preset);
+                if previous_view != self.config.view_distance {
+                    self.queue_command(ClientMessage::SetView {
+                        radius: self.config.view_distance,
+                    });
+                }
+                if previous_bounced != self.config.bounced_gi {
+                    let keys: Vec<_> = self.chunks.keys().copied().collect();
+                    for key in keys {
+                        self.queue_relight(key, false);
+                    }
+                }
+            }
+            SettingId::RenderScale => {
+                self.config.render_scale = (self.config.render_scale + sign * 0.05)
+                    .clamp(crate::config::quality::MIN_RENDER_SCALE, 1.0);
+            }
+            SettingId::Reflections => {
+                self.config.reflections_enabled = !self.config.reflections_enabled;
+            }
+            SettingId::LocalShadows => {
+                self.config.local_shadows.count =
+                    (self.config.local_shadows.count as i32 + sign as i32).clamp(0, 4) as usize;
+                self.config.local_shadows.updates = self
+                    .config
+                    .local_shadows
+                    .updates
+                    .min(self.config.local_shadows.count.max(1));
+            }
             SettingId::Parallax => self.config.parallax.enabled = !self.config.parallax.enabled,
             SettingId::ParallaxDepth => {
                 self.config.parallax.depth += sign * 0.005;
@@ -950,6 +983,12 @@ impl ClientApp {
             ],
             UiScreen::Graphics => vec![
                 UiControl::ToggleSettingsPage,
+                UiControl::Decrease(SettingId::QualityPreset),
+                UiControl::Increase(SettingId::QualityPreset),
+                UiControl::Decrease(SettingId::RenderScale),
+                UiControl::Increase(SettingId::RenderScale),
+                UiControl::Decrease(SettingId::Reflections),
+                UiControl::Increase(SettingId::Reflections),
                 UiControl::Decrease(SettingId::PostProcessing),
                 UiControl::Increase(SettingId::PostProcessing),
                 UiControl::Decrease(SettingId::Exposure),
@@ -960,6 +999,8 @@ impl ClientApp {
                 UiControl::Increase(SettingId::BloomStrength),
                 UiControl::Decrease(SettingId::SunShadows),
                 UiControl::Increase(SettingId::SunShadows),
+                UiControl::Decrease(SettingId::LocalShadows),
+                UiControl::Increase(SettingId::LocalShadows),
                 UiControl::Decrease(SettingId::LodHorizon),
                 UiControl::Increase(SettingId::LodHorizon),
                 UiControl::Decrease(SettingId::LodQuality),
@@ -2082,6 +2123,10 @@ impl ClientApp {
                 latency_ms: None,
             }),
             settings: UiSettings {
+                quality_preset: self.config.effective_quality_preset(),
+                render_scale: self.config.render_scale,
+                reflections_enabled: self.config.reflections_enabled,
+                local_shadows: self.config.local_shadows,
                 parallax: self.config.parallax,
                 audio_master: self.config.audio_master,
                 audio_ambient: self.config.audio_ambient,
@@ -2248,6 +2293,7 @@ impl ClientApp {
             renderer.configure_local_shadows(self.config.local_shadows);
             renderer.configure_lighting(self.config.lighting);
             renderer.set_contact_shadows(&contact_shadows);
+            renderer.configure_quality(self.config.render_scale, self.config.reflections_enabled);
             renderer.configure_post(
                 self.config.post_processing,
                 self.config.exposure,

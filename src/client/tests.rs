@@ -255,6 +255,63 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
 }
 
 #[test]
+fn quality_controls_save_and_manual_adjustment_restores_custom() {
+    use crate::config::quality::QualityPreset;
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "bloxgloom-quality-controls-{}-{unique}",
+        std::process::id()
+    ));
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config {
+            view_distance: 6,
+            profile: 123,
+            exposure: 1.7,
+            scale: 1.5,
+            ..Default::default()
+        },
+        path.clone(),
+    );
+    app.change_setting(SettingId::QualityPreset, true);
+    assert_eq!(app.config.quality_preset, QualityPreset::Performance);
+    assert_eq!(app.config.view_distance, 3);
+    assert_eq!(
+        app.config.render_scale,
+        crate::config::quality::MIN_RENDER_SCALE
+    );
+    assert!(!app.config.reflections_enabled);
+    assert_eq!(app.config.local_shadows.count, 0);
+    assert_eq!(app.config.profile, 123);
+    assert_eq!(app.config.exposure, 1.7);
+    assert_eq!(app.config.scale, 1.5);
+    assert!(app.pending_mesh.is_empty());
+    app.change_setting(SettingId::RenderScale, true);
+    assert_eq!(app.config.quality_preset, QualityPreset::Custom);
+    app.change_setting(SettingId::QualityPreset, true);
+    app.change_setting(SettingId::QualityPreset, true);
+    assert_eq!(app.config.quality_preset, QualityPreset::Balanced);
+    app.change_setting(SettingId::Reflections, false);
+    assert_eq!(app.config.quality_preset, QualityPreset::Custom);
+    app.screen = UiScreen::Graphics;
+    for setting in [
+        SettingId::QualityPreset,
+        SettingId::RenderScale,
+        SettingId::Reflections,
+        SettingId::LocalShadows,
+    ] {
+        assert!(app.focus_order().contains(&UiControl::Increase(setting)));
+        assert!(app.focus_order().contains(&UiControl::Decrease(setting)));
+    }
+    app.config_writer.finish();
+    assert_eq!(Config::load(&path), app.config);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn parallax_controls_update_live_frame_and_save_without_remeshing() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -326,6 +383,8 @@ fn sun_shadow_controls_cycle_save_and_remain_independent_of_post_and_audio() {
     app.advance_focus(false);
     assert_eq!(app.focused_control, Some(increase));
     let graphics_controls = [
+        UiControl::Decrease(SettingId::LocalShadows),
+        UiControl::Increase(SettingId::LocalShadows),
         UiControl::Decrease(SettingId::LodHorizon),
         UiControl::Increase(SettingId::LodHorizon),
         UiControl::Decrease(SettingId::LodQuality),

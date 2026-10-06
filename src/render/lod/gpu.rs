@@ -421,6 +421,33 @@ impl Gpu {
             entries: &resources,
         });
     }
+    pub(crate) fn set_optical_water_inputs(
+        &mut self,
+        device: &wgpu::Device,
+        inputs: Option<&super::super::water::optics::Inputs>,
+    ) {
+        let Some(inputs) = inputs else { return };
+        let mut entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.camera.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: self.coverage.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: self.options.as_entire_binding(),
+            },
+        ];
+        entries.extend(inputs.entries(3));
+        self.water_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("LOD enhanced water optical inputs"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &entries,
+        });
+    }
     pub(crate) fn set_sun_shadows(&mut self, group: wgpu::BindGroup) {
         self.shadow_group = group;
     }

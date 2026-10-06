@@ -1,4 +1,5 @@
-//! Compact distant geometry: exact positions and voxel light, quantized linear color.
+//! Compact distant geometry: exact positions/light, opaque UNORM and fluid RGB9E5.
+mod fluid_color;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct Vertex {
@@ -8,11 +9,25 @@ pub(super) struct Vertex {
 }
 impl Vertex {
     pub(super) fn material(mut self, surface: super::surface::Surface) -> Self {
-        self.color[3] = (surface.color[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+        let alpha = (surface.color[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+        if surface.fluid {
+            // Fluid tints are dark in linear space. UNORM8 changes the ocean's
+            // red by twelve percent; darker tints can lose a channel entirely.
+            // RGB9E5 uses the same four bytes; fluids need no material layer.
+            self.color = fluid_color::encode(surface.color[..3].try_into().unwrap()).to_le_bytes();
+            self.surface |= u32::from(alpha) << 13;
+        } else {
+            self.color[3] = alpha;
+        }
         self.surface |= (u32::from(surface.fluid) << 11)
             | (u32::from(surface.cutout) << 12)
-            | (surface.layer.map_or(0, |layer| layer + 1) << 13)
-            | (u32::from(surface.layer.is_some() && !surface.sample_texture) << 31);
+            | (surface
+                .layer
+                .filter(|_| !surface.fluid)
+                .map_or(0, |layer| layer + 1)
+                << 13)
+            | (u32::from(!surface.fluid && surface.layer.is_some() && !surface.sample_texture)
+                << 31);
         self
     }
     pub(super) fn new(
@@ -33,12 +48,40 @@ impl Vertex {
         }
     }
     pub(super) fn ray_surface(self) -> super::ray::Appearance {
-        let encoded = (self.surface >> 13) & 0x3ffff;
+        let fluid = self.surface & (1 << 11) != 0;
+        let encoded = if fluid {
+            0
+        } else {
+            (self.surface >> 13) & 0x3ffff
+        };
         super::ray::Appearance {
             packed: self.surface,
             layer: encoded.saturating_sub(1),
-            color: self.color.map(|c| f32::from(c) / 255.0),
+            color: self.decoded_color(),
             textured: encoded != 0 && self.surface & 0x80000000 == 0,
+            reconstructed: self.surface & ((1 << 11) | (1 << 12)) == 0 && self.color[3] == 254,
+        }
+    }
+    pub(super) fn mark_reconstructed(&mut self) {
+        // Opaque summaries have alpha one. Reserve this otherwise-unused byte
+        // value for geometric-normal reconstruction, preserving vertex stride.
+        self.color[3] = 254;
+    }
+    fn decoded_color(self) -> [f32; 4] {
+        if self.surface & (1 << 11) != 0 {
+            let rgb = fluid_color::decode(u32::from_le_bytes(self.color));
+            [
+                rgb[0],
+                rgb[1],
+                rgb[2],
+                ((self.surface >> 13) & 255) as f32 / 255.0,
+            ]
+        } else {
+            let mut color = self.color.map(|c| f32::from(c) / 255.0);
+            if self.surface & (1 << 12) == 0 && self.color[3] == 254 {
+                color[3] = 1.0;
+            }
+            color
         }
     }
     #[cfg(test)]
@@ -46,9 +89,7 @@ impl Vertex {
         let mut out = [0.0; 11];
         out[..3].copy_from_slice(&self.position);
         out[3 + (self.surface & 7) as usize / 2] = if self.surface & 1 == 0 { -1.0 } else { 1.0 };
-        for (i, c) in self.color[..3].iter().enumerate() {
-            out[6 + i] = f32::from(*c) / 255.0;
-        }
+        out[6..9].copy_from_slice(&self.decoded_color()[..3]);
         out[9] = ((self.surface >> 3) & 15) as f32 / 15.0;
         out[10] = ((self.surface >> 7) & 15) as f32 / 15.0;
         out

@@ -382,11 +382,15 @@ impl UiLayout {
             ]
         } else if self.screen == UiScreen::Graphics {
             &[
+                SettingId::QualityPreset,
+                SettingId::RenderScale,
+                SettingId::Reflections,
                 SettingId::PostProcessing,
                 SettingId::Exposure,
                 SettingId::Bloom,
                 SettingId::BloomStrength,
                 SettingId::SunShadows,
+                SettingId::LocalShadows,
                 SettingId::LodHorizon,
                 SettingId::LodQuality,
                 SettingId::Parallax,
@@ -489,7 +493,7 @@ impl UiLayout {
         let compact = panel.height < 500.0 * self.scale;
         if self.screen == UiScreen::Graphics {
             // Leave the header, footer and Back button clear in legacy previews.
-            (panel.height - if compact { 122.0 } else { 196.0 } * self.scale) / 11.0
+            (panel.height - if compact { 122.0 } else { 196.0 } * self.scale) / 15.0
         } else if compact {
             36.0 * self.scale
         } else {

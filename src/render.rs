@@ -31,6 +31,7 @@ pub(crate) mod daylight;
 pub(crate) mod local_shadow;
 mod pipeline;
 pub(crate) mod post;
+mod quality;
 pub(crate) mod reflections;
 pub(crate) mod scene_ao;
 mod scene_contact;
@@ -199,6 +200,7 @@ pub struct Renderer {
     pending_immediate: std::collections::HashSet<ChunkKey>,
     upload_burst: u8,
     size: PhysicalSize<u32>,
+    render_scale: f32,
 }
 
 impl Renderer {
@@ -331,6 +333,7 @@ impl Renderer {
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let mut water = water::WaterRenderer::new(&device, &camera_buffer);
         lod.set_reference_water_inputs(&device, water.reference_inputs());
+        lod.set_optical_water_inputs(&device, water.optical_inputs());
         let rain = weather::Renderer::new(&device, &camera_buffer);
         let mut avatars = avatars::AvatarRenderer::new(
             &device,
@@ -353,7 +356,7 @@ impl Renderer {
         let camera_group = sun_shadows.camera_group.clone();
         let sun_pipelines = create_sun_shadow_pipelines(&device, &pipeline, None);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
-            create_target_pipeline(&device, format);
+            create_target_pipeline(&device, post::HDR_FORMAT);
         let game_ui = game_ui::GameUi::new(&window, &device, &queue, format, &catalog);
         let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dropped item vertices"),
@@ -436,6 +439,7 @@ impl Renderer {
             pending_immediate: std::collections::HashSet::new(),
             upload_burst: 0,
             size,
+            render_scale: 1.0,
         })
     }
 
@@ -447,8 +451,7 @@ impl Renderer {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.depth = create_depth(&self.device, size.width, size.height);
-        self.post.resize(&self.device, size.width, size.height);
+        self.resize_scene();
     }
 
     pub fn configure_post(&mut self, enabled: bool, exposure: f32, bloom_strength: f32) {
@@ -721,6 +724,7 @@ impl Renderer {
         eye_in_water: bool,
         frame_time: f32,
     ) -> Result<RenderStats, RendererError> {
+        let scene_size = self.post.scene.texture().size();
         let water_time = water::time();
         self.post.trace.set_water_time(water_time);
         let uploaded_chunks = self.upload_pending();
@@ -729,8 +733,8 @@ impl Renderer {
             &self.device,
             &self.pipeline,
             wgpu::Extent3d {
-                width: self.config.width,
-                height: self.config.height,
+                width: scene_size.width,
+                height: scene_size.height,
                 depth_or_array_layers: 1,
             },
         );
@@ -759,8 +763,8 @@ impl Renderer {
         self.lod.prepare_at(
             &self.queue,
             camera,
-            self.config.width,
-            self.config.height,
+            scene_size.width,
+            scene_size.height,
             atmosphere,
             self.ready_near.iter().copied(),
             water_time,
@@ -789,8 +793,8 @@ impl Renderer {
             0,
             bytemuck::cast_slice(&sky_camera_data_at_sample_in_medium(
                 camera,
-                self.config.width,
-                self.config.height,
+                scene_size.width,
+                scene_size.height,
                 atmosphere,
                 self.sky_sample,
                 eye_in_water,
@@ -827,7 +831,7 @@ impl Renderer {
                 &self.target_camera_buffer,
                 0,
                 bytemuck::cast_slice(
-                    &visibility::view_projection(camera, self.config.width, self.config.height)
+                    &visibility::view_projection(camera, scene_size.width, scene_size.height)
                         .to_cols_array(),
                 ),
             );
@@ -873,8 +877,8 @@ impl Renderer {
         self.sky.prepare(
             &self.device,
             &mut encoder,
-            self.config.width,
-            self.config.height,
+            scene_size.width,
+            scene_size.height,
         );
         self.draw_sun_shadows(&mut encoder);
         self.draw_local_shadows(&mut encoder);
@@ -976,7 +980,7 @@ impl Renderer {
                 eye_in_water,
                 sample: self.sky_sample,
                 camera,
-                size: [self.config.width, self.config.height],
+                size: [scene_size.width, scene_size.height],
                 view_projection,
             },
             water_time,
@@ -986,6 +990,8 @@ impl Renderer {
                 .begin_frame(&self.device, &mut encoder, &self.post.scene, &self.depth);
         self.lod
             .set_reference_water_inputs(&self.device, self.water.reference_inputs());
+        self.lod
+            .set_optical_water_inputs(&self.device, self.water.optical_inputs());
         let water_depth = self
             .water
             .reference_front_depth()
@@ -1097,19 +1103,17 @@ impl Renderer {
         self.post
             .resolve_temporal(&self.device, &mut encoder, &self.depth);
         self.post.configure_reference_lens(
-            visibility::view_projection(camera, self.config.width, self.config.height),
+            visibility::view_projection(camera, scene_size.width, scene_size.height),
             camera.position,
             atmosphere,
             frame_time,
             eye_in_water,
         );
-        self.post
-            .encode(&self.device, &self.queue, &mut encoder, &view);
         if ui_frame.target.is_some() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("target block outline"),
+                label: Some("target block outline before display upscale"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.post.scene,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -1132,6 +1136,8 @@ impl Renderer {
             pass.set_vertex_buffer(0, self.target_vertices.slice(..));
             pass.draw(0..24, 0..1);
         }
+        self.post
+            .encode(&self.device, &self.queue, &mut encoder, &view);
         self.game_ui.encode(
             game_ui::DrawTarget {
                 window: &self.window,

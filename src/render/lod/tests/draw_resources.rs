@@ -223,6 +223,7 @@ fn gpu_lod_actual_opaque_and_water_draws_rebind_depth_and_reflections_across_fra
         );
         let water_scene = water.begin_frame(&device, &mut encoder, &scene, &depth);
         gpu.set_reference_water_inputs(&device, water.reference_inputs());
+        gpu.set_optical_water_inputs(&device, water.optical_inputs());
         // The aggregate group is rebound before the next opaque pass. Even
         // unused original-depth bindings must never accompany attachment WRITE.
         {

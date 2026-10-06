@@ -28,6 +28,9 @@ pub(super) fn new(
     });
     let reference_inputs =
         super::super::bsl_reference::enabled().then(|| water::reference::Inputs::fallback(device));
+    let optical_inputs = reference_inputs
+        .is_none()
+        .then(|| water::optics::Inputs::fallback(device));
     let mut camera_entries = vec![
         entry(0, wgpu::BufferBindingType::Uniform),
         entry(1, wgpu::BufferBindingType::Storage { read_only: true }),
@@ -35,6 +38,8 @@ pub(super) fn new(
     ];
     if reference_inputs.is_some() {
         camera_entries.extend(water::reference::Inputs::layout_entries(3));
+    } else {
+        camera_entries.extend(water::optics::Inputs::layout_entries(3));
     }
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("LOD camera coverage"),
@@ -55,6 +60,8 @@ pub(super) fn new(
         },
     ];
     if let Some(inputs) = &reference_inputs {
+        resources.extend(inputs.entries(3));
+    } else if let Some(inputs) = &optical_inputs {
         resources.extend(inputs.entries(3));
     }
     let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -81,7 +88,7 @@ pub(super) fn new(
         ],
         immediate_size: 0,
     });
-    let attrs = wgpu::vertex_attr_array![0=>Float32x3,1=>Unorm8x4,2=>Uint32];
+    let attrs = wgpu::vertex_attr_array![0=>Float32x3,1=>Uint32,2=>Uint32];
     let create = |fluid| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(if fluid {

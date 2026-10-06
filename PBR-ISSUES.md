@@ -623,3 +623,158 @@ Three serial 300-steady-frame runs of the frozen compact-cap release `2ab845e64d
 Near visible triangles remain 160,650/166,758. Voxel retained worker payload is 61,150,260 bytes, comprising 35,371,104 raster bytes and 25,779,156 CPU ray bytes; bounced payload is 63,489,540 bytes. The LOD scene admits 77/77 tiles and selects 28; distant mesh storage is 87,812,588 bytes with 1,735,974 generated triangles and 692,496 visible near+distant triangles. Separate summary/reduction/meshing setup is 1,513.23/34.60/641.33 ms, outside frame timing.
 
 The earlier generator-8 512 m checkpoint reports 83,822,444 distant bytes, 1,658,962 generated triangles, 669,952 visible triangles and 1,494.97/28.85/493.53 ms setup. Current horizon geometry and mesh setup cost more; this comparison includes both generator and cap changes and cannot isolate either cause. Median GPU time changes from 13.373 to 13.499 ms in these single runs. CPU submission excludes GPU completion/presentation, and GPU timestamps exclude CPU staging/upload copies. Logs: `/private/tmp/bloxgloom-compact-default-perf-{voxel,bounced,lod}.log`. These normal-renderer measurements do not improve or supersede the roughly nine-second complete-GI result.
+
+
+## Current priority: MacBook raster renderer (October 6)
+
+Full path-traced GI is deprioritized. Preserve the opt-in actor-free experiment,
+with its existing scope and acceptance limits. Finish these three tasks in the
+normal GI-off renderer:
+
+1. Saved Performance/Balanced/Quality presets, a truthful Custom state, and world
+   render resolution independent of native UI resolution. Preserve old settings
+   and player identity. Validate the actual Retina workload, rather than infer
+   live performance from the historical 1280×720 headless benchmark.
+2. Remove distracting coarse distant terrain steps and ocean tonal seams while
+   preserving shorelines, real cliffs, cave mouths, tree support, and residency
+   coverage. Keep added mesh/setup cost measured separately from frame cost.
+3. Correct raster-water grain and depth response. Keep wave/shading normals
+   separate from geometric receiver planes; account for half-float depth
+   precision. Use consistent near/distant water absorption so deep coarse beds
+   do not remain as transparent as shallow banks.
+
+The local M1 Pro has a 3456×2234 display (8.38 times 720p pixels). At task start,
+its saved config used fullscreen, high 4096-pixel sun shadows, view radius six,
+60-step parallax out to 80 metres, and bounced voxel lighting. Full GI is a
+separate environment opt-in and is disabled for this task's measurements. The
+user confirms an M1 Pro release build at about 12 FPS. Resolution/settings are
+concrete performance leads; final isolated measurements are recorded below.
+
+Initial raster-water regression: the old mapped-normal plane rejection loses
+constant reflected radiance in 2,641 of 6,144 distant rippled-water pixels. The
+corrected geometric-plane/precision-aware reconstruction retains all 6,144
+within the existing half-float output bound. This addresses raster SSR holes,
+not the stochastic variance of the deferred complete-GI experiment.
+
+The goal service refused to create this new goal because the previous paused
+full-overhaul goal is unfinished. These priorities are tracked here without
+falsely marking that older objective complete. An initial Retina benchmark was
+terminated when a separate user release build started; its partial output is
+not accepted performance evidence.
+
+### Implemented presets and raster corrections
+
+Choose **Settings → Graphics → Quality preset → MacBook** for the M1 Pro test.
+Existing configurations remain Custom until a preset is selected; changing a
+budget manually reports Custom again. Config writes stay on the existing worker.
+Preset changes preserve profile/save identity, controls, exposure, artwork depth,
+and color grading. Full path-traced GI is not enabled by any preset.
+
+| Preset | World scale / Retina extent | Near radius / distant horizon | Main budgets |
+| --- | --- | --- | --- |
+| MacBook (`performance` in config) | 35% / 1210×782 | 3 / 512 m, coarse | 1024px Sun shadows; POM, SSR, local shadows and bloom off |
+| Balanced | 50% / 1728×1117 | 4 / 512 m, medium | 2048px Sun shadows; 16-step POM within 20 m; SSR; one 256px local map; bloom |
+| Quality | 100% / 3456×2234 | 6 / 512 m, fine | 4096px Sun shadows; 32-step POM within 32 m; SSR; two 512px local maps; bloom |
+
+All bundles use ordinary voxel lighting. World depth, temporal history, water,
+sky and camera projections follow the world extent; menus/HUD remain native.
+The BSL reference presentation now correctly upscales the whole viewport.
+Block outlines are drawn in HDR before display upscaling, so they also receive
+tone mapping/bloom rather than remaining a display-space overlay.
+
+Distant dry natural terrain reconstructs gentle shared corners in the upper
+solid shell at coarse levels. Unknown/mixed-level seams, wet shores, constructed
+blocks, tree roots, thin cave roofs and real cliffs retain voxel geometry.
+Underground geometry below the deformation depth remains unchanged. The final
+77-tile coast fixture grows from 58,952,304 to 59,290,856 mesh bytes (+0.574%) and
+from 1,174,764 to 1,175,350 opaque triangles (+0.0499%); water triangles remain
+2,278. Near terrain is still voxel-shaped.
+
+Water reflections now intersect geometric water-face planes instead of wave
+shading normals and allow the projected binary16 distance error. Distant fluid
+color uses RGB9E5 without increasing the 20-byte vertex stride; phantom
+translucent faces at unknown residency frontiers no longer double-blend. Near
+and distant enhanced water share depth-dependent RGB absorption using the
+opaque background/depth snapshot. This adds 12 bytes per world pixel and one
+fullscreen snapshot pass, with no additional rays. BSL reference water retains
+its separate treatment; unsupported GL and underwater-exit cases retain the
+legacy fallback. Multiple overlapping water layers retain existing draw-order
+limitations.
+
+Actual coast material probes attribute the remaining shallow green/blue patches
+to generated grass, moss and coarse dirt under different water depths, including
+near geometry, rather than a LOD color-boundary defect. These corrections do not
+remove intentional wave highlights, visible shallow bed steps, or the deferred
+path-traced water variance. No texture artwork, world generator, save format or
+network protocol changes are included.
+
+### Isolated M1 Pro measurements
+
+The user kept the game closed. Final preset runs use frozen release SHA256
+`b6bc1d293f478bee5af157b0bc497a572edb0790f5e2f883e005a4c46abbe4ee`,
+3456×2234 native output, TAA on, full GI explicitly off, and 300 steady frames
+after upload ramp. CLI radius/horizon match each preset. The starting-config
+control uses the earlier frozen raster release and saved starting settings;
+this is a settings/renderer comparison, not an isolated shader optimization.
+
+| Settings | CPU submission p50 / p95 (ms) | GPU p50 / p95 (ms) | GPU frame capacity |
+| --- | ---: | ---: | ---: |
+| Starting settings, native, radius 6, bounced | 84.976 / 92.322 | 98.332 / 105.402 | 10.2 FPS |
+| MacBook, radius 3, 512 m | 8.049 / 10.386 | 15.373 / 16.400 | 65.0 FPS |
+| Balanced, radius 4, 512 m | 22.839 / 26.118 | 25.775 / 27.550 | 38.8 FPS |
+| Quality, radius 6, 512 m | 88.772 / 92.556 | 103.204 / 106.376 | 9.7 FPS |
+
+MacBook trades world sharpness and effects for roughly 6.4× lower GPU frame
+time. Quality remains unsuitable for native Retina M1 Pro performance; it is a
+comparison preset for faster hardware/lower output resolutions. These are
+headless rendering measurements, including Sun shadows and final HUD but
+excluding presentation, live server/network/gameplay and local shadow-map
+passes. They are not a promised live FPS. CPU submission excludes GPU completion.
+Scene setup/mesh storage are separate from frame timing. Exact logs are
+`/private/tmp/bloxgloom-raster-retina-custom.log` and
+`/private/tmp/bloxgloom-macbook-final-{performance,balanced,quality}.log`.
+
+Final fixed-wave GI-off previews were inspected at
+`/private/tmp/bloxgloom-macbook-final-previews/` (meadow, coast, cherry grove,
+mountains). The matched terrain-shaping-off control is at
+`/private/tmp/bloxgloom-macbook-terrain-control/04-mountains.png`. The native-output
+MacBook benchmark capture is
+`/private/tmp/bloxgloom-macbook-final-performance.png`; its canned test HUD FPS
+is not a measurement. Live visual/performance acceptance remains the user's
+play-test.
+
+The standard 1280×720, TAA/GI-off `perf 300 6` regressions also complete on the
+same final release. Ordinary voxel GPU p50/p95 is 11.977/12.746 ms and bounced
+is 12.017/12.836 ms, versus the preceding checkpoint's 12.276/13.370 and
+12.143/13.411 ms. Near worker payloads are unchanged at 61,150,260/63,489,540
+bytes, with 160,650/166,758 visible triangles. Setup is separately
+5,765.4/5,786.0 ms. These single-run comparisons establish no performance
+regression in this fixture, not an isolated water or LOD speedup (horizon is
+zero). Logs: `/private/tmp/bloxgloom-macbook-final-{voxel,bounced}.log`.
+
+Native graphics-menu previews were generated and inspected at 1280×720 and
+640×360 in `/private/tmp/bloxgloom-macbook-final-ui/`. Small windows scroll;
+pointer/tab/scroll regressions exercise the newly added controls.
+
+### Verification and completion
+
+Implementation of the three raster priorities is complete; live play-test
+acceptance is pending. Full GI remains deprioritized, and the previously paused
+overhaul goal remains separate.
+
+`cargo test -- --test-threads=1` completed in 1,778.85 seconds with 2,172 passing,
+three failing and 28 intentionally ignored tests. All three failures were the
+same obsolete angular-consumer shader fixture: it constructed the production
+LOD vertex with a floating-point color after that input became packed `u32`.
+The fixture now supplies packed white (`0xffffffffu`); its independent lighting,
+foliage-motion and dark-shelter assertions are unchanged. The targeted rerun of
+all three passes in 1.16 seconds. Thus all 2,175 non-ignored tests have passing
+evidence; the entire long suite was not repeated after this test-only repair.
+Logs: `/private/tmp/bloxgloom-macbook-final-tests.log` and
+`/private/tmp/bloxgloom-macbook-angular-rerun.log`.
+
+Final `cargo fmt --all -- --check`,
+`cargo clippy --all-targets --all-features -- -D warnings`, shader/GPU
+regressions, isolated release benchmarks and `graphify update .` pass. Release
+production code did not change after the frozen measurements. The user's
+existing `.gitignore` edits are excluded from the integration commit.

@@ -44,6 +44,11 @@ impl Reflections {
                 .map_or(true, |value| value.trim() != "0"),
         }
     }
+    /// Explicit zero in the environment remains a diagnostic override.
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled
+            && std::env::var("BLOXGLOOM_REFLECTIONS").map_or(true, |value| value.trim() != "0");
+    }
     pub(crate) fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         self.targets = targets::Targets::new(device, width, height);
         self.normal = self.targets.normal.clone();
