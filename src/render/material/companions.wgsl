@@ -54,7 +54,7 @@ fn bg_material_highlight(input: VertexOutput, surface: BgSurface, specular: BgPb
     let n = select(-original,original,dot(original,v)>=0.0);
     let roughness = specular.roughness;
     let reflected = reflect(-v,n);
-    let environment = bg_pbr_prefiltered_sky(reflected,roughness,camera.horizon.xyz,camera.sky_zenith);
+    let environment = bg_surface_prefiltered_sky(reflected,roughness);
     // Explicit local transport avoids subtracting interpolated directional light:
     // custom vertex hooks may bend normals across a triangle and its terminator.
     let indirect = bg_pbr_environment(n,v,specular,

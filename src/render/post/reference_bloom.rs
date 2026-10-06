@@ -8,7 +8,7 @@ pub(super) const COMPOSITE: &str = include_str!("reference_bloom/composite.wgsl"
 
 pub(super) struct ReferenceBloom {
     mips: Vec<wgpu::TextureView>,
-    atlas: wgpu::TextureView,
+    pub(super) atlas: wgpu::TextureView,
     groups: Vec<wgpu::BindGroup>,
     pack_group: wgpu::BindGroup,
     pub composite_group: wgpu::BindGroup,

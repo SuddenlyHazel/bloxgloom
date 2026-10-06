@@ -4,6 +4,8 @@ use wgpu::util::DeviceExt;
 
 mod reference_bloom;
 mod reference_display;
+mod reference_light_shafts;
+mod reference_underwater;
 mod targets;
 pub(crate) mod temporal;
 
@@ -27,6 +29,8 @@ pub(crate) struct PostProcess {
     atmosphere: super::atmosphere::AtmospherePass,
     reference_bloom: Option<reference_bloom::ReferenceBloom>,
     reference_display: Option<reference_display::ReferenceDisplay>,
+    reference_underwater: Option<reference_underwater::Underwater>,
+    reference_light_shafts: Option<reference_light_shafts::LightShafts>,
     bloom: [wgpu::TextureView; 2],
     groups: [wgpu::BindGroup; 3],
     composite_group: wgpu::BindGroup,
@@ -174,6 +178,10 @@ impl PostProcess {
         Self {
             reference_bloom,
             reference_display,
+            reference_light_shafts: reference
+                .then(|| reference_light_shafts::LightShafts::new(device, width, height)),
+            reference_underwater: reference
+                .then(|| reference_underwater::Underwater::new(device, width, height)),
             scene: targets.scene,
             temporal: None,
             ambient: super::scene_ao::AmbientOcclusion::new(device, width, height),
@@ -213,6 +221,12 @@ impl PostProcess {
         }
         if let Some(display) = &mut self.reference_display {
             display.resize(device, width, height);
+        }
+        if let Some(underwater) = &mut self.reference_underwater {
+            underwater.resize(device, width, height);
+        }
+        if let Some(shafts) = &mut self.reference_light_shafts {
+            shafts.resize(device, width, height);
         }
         self.ambient.resize(device, width, height);
         self.reflections.resize(device, width, height);
@@ -346,7 +360,7 @@ impl PostProcess {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn resolve_atmosphere(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
@@ -356,6 +370,10 @@ impl PostProcess {
         atmosphere: super::daylight::Atmosphere,
         shadows: &super::sun_shadow::SunShadows,
     ) {
+        if let Some(shafts) = &mut self.reference_light_shafts {
+            shafts.capture(depth, matrix, eye, atmosphere, shadows);
+            return;
+        }
         if self.trace.ready() {
             return;
         }
@@ -413,6 +431,9 @@ impl PostProcess {
     }
 
     pub(crate) fn submitted(&mut self) {
+        if let Some(shafts) = &mut self.reference_light_shafts {
+            shafts.submitted();
+        }
         if let Some(display) = &mut self.reference_display {
             display.submitted();
         }
@@ -471,6 +492,34 @@ impl PostProcess {
         })
     }
 
+    pub(crate) fn configure_reference_water_depth(&mut self, depth: Option<&wgpu::TextureView>) {
+        if let Some(underwater) = &mut self.reference_underwater {
+            underwater.depth = depth.cloned();
+        }
+        if let Some(display) = &mut self.reference_display {
+            display.front_depth = depth.cloned();
+        }
+    }
+
+    pub(crate) fn configure_reference_lens(
+        &mut self,
+        matrix: glam::Mat4,
+        eye: glam::Vec3,
+        atmosphere: super::daylight::Atmosphere,
+        frame_time: f32,
+        eye_in_water: bool,
+    ) {
+        if let Some(display) = &mut self.reference_display {
+            display.configure_lens(matrix, eye, atmosphere, frame_time, eye_in_water);
+        }
+        if let Some(underwater) = &mut self.reference_underwater {
+            underwater.configure(matrix, eye, atmosphere, eye_in_water);
+        }
+        if let Some(shafts) = &mut self.reference_light_shafts {
+            shafts.medium(eye_in_water);
+        }
+    }
+
     pub fn configure(
         &mut self,
         queue: &wgpu::Queue,
@@ -521,6 +570,26 @@ impl PostProcess {
         if let Some(effect) = &self.effect {
             effect.encode(queue, encoder);
         }
+        let post_scene = self
+            .effect
+            .as_ref()
+            .map_or(&self.scene, |effect| effect.output());
+        if let Some(underwater) = &self.reference_underwater {
+            underwater.resolve(_device, queue, encoder, post_scene, self.enabled);
+        }
+        if let Some(shafts) = &mut self.reference_light_shafts {
+            shafts.encode(
+                _device,
+                queue,
+                encoder,
+                post_scene,
+                self.reference_underwater
+                    .as_ref()
+                    .and_then(|water| water.depth.as_ref()),
+                &self.ambient.indirect,
+                self.enabled,
+            );
+        }
         if self.enabled
             && self.bloom_strength > 0.0
             && let Some(reference) = &self.reference_bloom
@@ -568,18 +637,35 @@ impl PostProcess {
                 &self.bloom[0],
             );
         }
-        draw(
-            "HDR display mapping",
-            &self.composite,
-            self.reference_bloom
+        let distorted = self.enabled
+            && self
+                .reference_underwater
                 .as_ref()
-                .map_or(&self.composite_group, |reference| {
-                    &reference.composite_group
-                }),
-            self.reference_display
-                .as_ref()
-                .map_or(output, |display| &display.linear),
-        );
+                .is_some_and(|underwater| {
+                    underwater.composite(
+                        _device,
+                        encoder,
+                        post_scene,
+                        &self.reference_bloom.as_ref().unwrap().atlas,
+                        &self.settings,
+                        &self.reference_display.as_ref().unwrap().linear,
+                    )
+                });
+        if !distorted {
+            reference_display::draw(
+                encoder,
+                &self.composite,
+                self.reference_bloom
+                    .as_ref()
+                    .map_or(&self.composite_group, |reference| {
+                        &reference.composite_group
+                    }),
+                &[self
+                    .reference_display
+                    .as_ref()
+                    .map_or(output, |display| &display.linear)],
+            );
+        }
         if let Some(display) = &mut self.reference_display {
             display.encode(
                 _device,

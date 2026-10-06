@@ -41,7 +41,7 @@ fn vertex(input: Input, shadow: bool) -> Output {
     out.world = vec3f(local.x*co+local.z*si, local.y, local.z*co-local.x*si) + input.origin;
     out.normal = vec3f(normal.x*co+normal.z*si,normal.y,normal.z*co-normal.x*si);
     out.clip = camera.view_projection * vec4f(out.world,1.0);
-    if shadow { out.clip = bg_shadow.view_projection * vec4f(out.world,1.0); }
+    if shadow { out.clip = bg_shadow_project(out.world); }
     out.uv=input.uv; out.part=input.offsets.y+input.part;
     out.light_levels=input.light_levels; out.bounce=input.bounce;
     out.glow_bounce=input.glow_bounce; out.tint=input.tint;
@@ -66,7 +66,7 @@ fn color(input: Output) -> vec4f {
     let local_light = bg_shadowed_local_light(input.world, normal, packed_color * glow * glow, unpack4x8snorm(input.light_levels.y).yzw);
     let light=bg_surface_light(normal,camera.sun,sky,local_light,vec3f(input.bounce.xyz)/255.0,vec3f(input.glow_bounce.xyz)/255.0,1.0);
     let direct=bg_direct_light(normal,camera.sun,sky);
-    let visibility=bg_sun_visibility(receiver)*bg_primary_sun_transmittance(input.world);
+    let visibility=bg_sun_visibility_material(receiver,normal,sky,0.0)*bg_primary_sun_transmittance(input.world);
     let shaded=(light-direct*(1.0-visibility))*input.tint;
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world, normal, packed_color * glow * glow, unpack4x8snorm(input.light_levels.y).yzw);

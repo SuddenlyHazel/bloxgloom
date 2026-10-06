@@ -6,5 +6,6 @@ struct Output { @builtin(position) position:vec4f,@location(0) world:vec3f,@loca
 @vertex fn vs(v:Input)->Output { return Output(camera.view_projection*vec4f(v.position,1.0),v.position,v.normal,v.color,v.light); }
 @fragment fn fs(v:Output,@builtin(front_facing) front:bool)->BgSceneOutput {
     let receiver = bg_shadow_receiver(v.world);
-    return bg_water_surface(v.color, v.normal, v.light.x, v.light.y, v.world, v.world-camera.eye.xyz, front, clock.x, bg_sun_visibility(receiver));
+    let footprint=vec4f(dpdx(v.world.xz),dpdy(v.world.xz));
+    return bg_water_surface(v.color, v.normal, v.light.x, v.light.y, v.world, v.world-camera.eye.xyz, front, clock.x, bg_sun_visibility(receiver),footprint);
 }

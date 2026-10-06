@@ -1,7 +1,10 @@
 use super::*;
 #[test]
 fn reference_display_production_shaders_validate() {
-    for source in [format!("{STAGES}\n{FXAA}"), TAA.to_owned()] {
+    for source in [
+        format!("{}\n{STAGES}\n{FXAA}", lens::SHADER),
+        TAA.to_owned(),
+    ] {
         let module = wgpu::naga::front::wgsl::parse_str(&source).unwrap();
         wgpu::naga::valid::Validator::new(
             wgpu::naga::valid::ValidationFlags::all(),
@@ -12,7 +15,12 @@ fn reference_display_production_shaders_validate() {
     }
 }
 
-fn output(device: &wgpu::Device, w: u32, h: u32, format: wgpu::TextureFormat) -> wgpu::Texture {
+pub(super) fn output(
+    device: &wgpu::Device,
+    w: u32,
+    h: u32,
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: wgpu::Extent3d {
@@ -31,7 +39,11 @@ fn output(device: &wgpu::Device, w: u32, h: u32, format: wgpu::TextureFormat) ->
         view_formats: &[],
     })
 }
-fn clear(encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, color: wgpu::Color) {
+pub(super) fn clear(
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    color: wgpu::Color,
+) {
     let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: None,
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -46,7 +58,7 @@ fn clear(encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, color: wg
         ..Default::default()
     });
 }
-fn read(
+pub(super) fn read(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     mut encoder: wgpu::CommandEncoder,

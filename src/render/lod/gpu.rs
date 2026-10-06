@@ -48,6 +48,7 @@ pub(crate) struct Gpu {
     near: super::near_coverage::NearCoverage,
     horizon: u16,
     jitter: glam::Vec2,
+    eye_in_water: bool,
 }
 impl Gpu {
     pub(crate) fn new(
@@ -82,6 +83,7 @@ impl Gpu {
             near: super::near_coverage::NearCoverage::default(),
             horizon: 512,
             jitter: glam::Vec2::ZERO,
+            eye_in_water: false,
         }
     }
     pub(crate) fn enqueue(&mut self, mut mesh: Mesh) -> Result<(), UploadError> {
@@ -232,6 +234,9 @@ impl Gpu {
     pub(crate) fn set_jitter(&mut self, jitter: glam::Vec2) {
         self.jitter = jitter;
     }
+    pub(crate) fn set_eye_in_water(&mut self, value: bool) {
+        self.eye_in_water = value;
+    }
     pub(crate) fn prepare(
         &mut self,
         queue: &wgpu::Queue,
@@ -252,6 +257,9 @@ impl Gpu {
         let vp = super::super::visibility::view_projection(relative, width, height);
         let vp = super::super::post::temporal::jitter_matrix(vp, self.jitter, width, height);
         let mut data = atmosphere.camera_data(vp, Vec3::ZERO);
+        if super::super::bsl_reference::enabled() && self.eye_in_water {
+            data[31] = -1.0;
+        }
         if super::super::bsl_reference::enabled() {
             data[28] = camera.position.y;
         } else if self.horizon > 0 {
@@ -312,6 +320,7 @@ impl Gpu {
     pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
         let mut triangles = 0;
         pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(3, &self.shadow_group, &[]);
         pass.set_bind_group(0, &self.group, &[]);
         pass.set_bind_group(2, &self.materials, &[]);
         for key in &self.visible {
@@ -323,6 +332,35 @@ impl Gpu {
             triangles += tile.count as usize / 3;
         }
         triangles
+    }
+    pub(crate) fn set_reference_water_inputs(
+        &mut self,
+        device: &wgpu::Device,
+        inputs: Option<&super::super::water::reference::Inputs>,
+    ) {
+        let Some(inputs) = inputs else {
+            return;
+        };
+        let mut resources = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.camera.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: self.coverage.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: self.options.as_entire_binding(),
+            },
+        ];
+        resources.extend(inputs.entries(3));
+        self.group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("LOD source water shared noise/frame"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &resources,
+        });
     }
     pub(crate) fn set_sun_shadows(&mut self, group: wgpu::BindGroup) {
         self.shadow_group = group;

@@ -73,7 +73,9 @@ pub use mesh::{ChunkMesh, mesh_chunk_lit_with_neighbors};
 pub(crate) use pipeline::{MaterialPreviewMode, create_material_preview_pipeline};
 pub(crate) use pipeline::{create_custom_voxel_pipeline, create_voxel_pipeline};
 pub(crate) use pipeline::{create_sun_shadow_pipelines, create_voxel_pipeline_with_catalog};
-pub(crate) use sky::{SkyRenderer, sky_camera_data, sky_camera_data_at_sample};
+pub(crate) use sky::{
+    SkyRenderer, sky_camera_data, sky_camera_data_at_sample, sky_camera_data_at_sample_in_medium,
+};
 pub(crate) use target::{create_target_pipeline, target_outline_vertices};
 pub(crate) use visibility::{chunk_visible, view_projection};
 
@@ -323,6 +325,7 @@ impl Renderer {
         let mut lod = lod::Gpu::new(&device, post::HDR_FORMAT, &pipeline, &texture_group);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let mut water = water::WaterRenderer::new(&device, &camera_buffer);
+        lod.set_reference_water_inputs(&device, water.reference_inputs());
         let rain =
             fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
         let mut avatars = avatars::AvatarRenderer::new(
@@ -697,6 +700,8 @@ impl Renderer {
         &mut self,
         camera: Camera,
         ui_frame: &UiFrame<'_>,
+        eye_in_water: bool,
+        frame_time: f32,
     ) -> Result<RenderStats, RendererError> {
         let uploaded_chunks = self.upload_pending();
         self.post.trace.install(&self.device);
@@ -718,6 +723,7 @@ impl Renderer {
         }
         let (view_projection, jitter) = self.post.prepare_temporal(&self.queue, camera);
         self.lod.set_jitter(jitter);
+        self.lod.set_eye_in_water(eye_in_water);
         self.lod.prepare(
             &self.queue,
             camera,
@@ -743,16 +749,20 @@ impl Renderer {
         self.queue.write_buffer(
             &self.sky.camera,
             0,
-            bytemuck::cast_slice(&sky_camera_data_at_sample(
+            bytemuck::cast_slice(&sky_camera_data_at_sample_in_medium(
                 camera,
                 self.config.width,
                 self.config.height,
                 atmosphere,
                 self.sky_sample,
+                eye_in_water,
             )),
         );
         self.post.reflections.configure(camera.position, atmosphere);
         let mut camera_data = atmosphere.camera_data(view_projection, camera.position);
+        if bsl_reference::enabled() && eye_in_water {
+            camera_data[31] = -1.0;
+        }
         if self.lod_horizon > 0 && !bsl_reference::enabled() {
             camera_data[28] = f32::from(self.lod_horizon) * 0.65;
             camera_data[29] = f32::from(self.lod_horizon);
@@ -914,9 +924,30 @@ impl Renderer {
             &self.depth,
             view_projection,
         );
+        self.water.prepare_frame(
+            &self.queue,
+            water::Frame {
+                atmosphere,
+                eye_in_water,
+                sample: self.sky_sample,
+                camera,
+                size: [self.config.width, self.config.height],
+                view_projection,
+            },
+        );
+        let water_target =
+            self.water
+                .begin_frame(&self.device, &mut encoder, &self.post.scene, &self.depth);
+        self.lod
+            .set_reference_water_inputs(&self.device, self.water.reference_inputs());
+        let water_depth = self
+            .water
+            .reference_front_depth()
+            .cloned()
+            .unwrap_or_else(|| self.depth.clone());
         {
             let mut attachments = scene_ao::attachments(
-                &self.post.scene,
+                &water_target,
                 &self.post.ambient.indirect,
                 &self.post.reflections.normal,
                 &self.post.reflections.response,
@@ -929,7 +960,7 @@ impl Renderer {
                 label: Some("translucent particles after ambient occlusion"),
                 color_attachments: &attachments,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
+                    view: &water_depth,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -950,7 +981,6 @@ impl Renderer {
                     .then_with(|| a.cmp(b))
             });
             stats.drawn_triangles += self.lod.draw_water(&mut pass);
-            self.water.prepare(&self.queue);
             for (_, mesh) in water {
                 stats.drawn_triangles +=
                     self.water
@@ -958,6 +988,10 @@ impl Renderer {
             }
         }
 
+        self.water
+            .finish_frame(&self.device, &mut encoder, &self.post.scene);
+        self.post
+            .configure_reference_water_depth(self.water.reference_front_depth());
         self.post.resolve_transport(
             &self.device,
             &self.queue,
@@ -1010,6 +1044,13 @@ impl Renderer {
             .draw_motion(&self.queue, &mut encoder, &self.depth, Some(&self.avatars));
         self.post
             .resolve_temporal(&self.device, &mut encoder, &self.depth);
+        self.post.configure_reference_lens(
+            visibility::view_projection(camera, self.config.width, self.config.height),
+            camera.position,
+            atmosphere,
+            frame_time,
+            eye_in_water,
+        );
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &view);
         if ui_frame.target.is_some() {

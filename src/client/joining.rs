@@ -246,7 +246,12 @@ impl JoinApp {
             pitch: 0.0,
             fov_y_radians: 1.2,
         };
-        if let Err(error) = self.renderer.as_mut().unwrap().render(camera, &frame) {
+        if let Err(error) = self
+            .renderer
+            .as_mut()
+            .unwrap()
+            .render(camera, &frame, false, 0.0)
+        {
             self.failure = Some(error.to_string());
             event_loop.exit();
             return;

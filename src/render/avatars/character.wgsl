@@ -48,7 +48,7 @@ fn character_vertex(input: Input, shadow: bool) -> Output {
     let world = vec3f(local.x*c+local.z*s, local.y, local.z*c-local.x*s) + input.origin;
     let normal = vec3f(n.x*c+n.z*s, n.y, n.z*c-n.x*s);
     output.clip = camera.view_projection * vec4f(world, 1.0);
-    if shadow { output.clip = bg_shadow.view_projection * vec4f(world, 1.0); }
+    if shadow { output.clip = bg_shadow_project(world); }
     let surface = input.surface & 255u;
     let head = input.joint == 5u || (input.joint >= 15u && input.joint <= 17u) || input.joint >= 27u;
     if first_person && head { output.clip = vec4f(2.0, 2.0, 2.0, 1.0); }
@@ -118,7 +118,7 @@ fn character_albedo(input: Output) -> vec4f {
     // Evaluate local shadows after interpolation; indirect/bounce stays intact.
     let local_light = bg_shadowed_local_light(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
     let tint = vec3f(input.light.w, input.indirect.w, input.world_position.w);
-    let visibility = bg_sun_visibility(receiver)*bg_primary_sun_transmittance(input.world_position.xyz);
+    let visibility = bg_sun_visibility_material(receiver,normalize(input.normal_sky.xyz),input.normal_sky.w,0.0)*bg_primary_sun_transmittance(input.world_position.xyz);
     let light = input.light.xyz + tint * local_light - input.direct.xyz * (1.0 - visibility);
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);

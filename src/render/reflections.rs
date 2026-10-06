@@ -140,6 +140,7 @@ impl Reflections {
         data[52] = self.atmosphere.rain_strength;
         data[53] = self.atmosphere.moon_multiplier();
         data[54] = f32::from(self.artistic);
+        data[55] = f32::from(super::sky::style_enabled() && !super::bsl_reference::enabled());
         queue.write_buffer(&gpu.uniform, 0, bytemuck::cast_slice(&data));
         let group = |replacement: &wgpu::TextureView| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -355,8 +356,9 @@ impl Gpu {
 }
 fn shader_source() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}",
         super::sky::STYLE_SHADER,
+        include_str!("material/sky_prefilter.wgsl"),
         super::bsl_reference::REFLECTION_SHADER,
         include_str!("material/pbr.wgsl"),
         include_str!("reflections/normal.wgsl"),

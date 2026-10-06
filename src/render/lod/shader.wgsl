@@ -6,6 +6,7 @@ struct Tile { relative: vec4f, origin: vec4i };
 @group(1) @binding(0) var<uniform> tile: Tile;
 @group(2) @binding(0) var material: texture_2d_array<f32>;
 @group(2) @binding(1) var material_sampler: sampler;
+@group(2) @binding(2) var<storage,read> material_emission:array<f32>;
 struct MaterialMetadata { flags: u32, layer: u32 };
 @group(2) @binding(5) var<storage, read> material_metadata: array<MaterialMetadata>;
 struct In { @location(0) position: vec3f, @location(1) color: vec4f, @location(2) surface: u32 };
@@ -57,14 +58,32 @@ fn bg_lod_coverage(v: Out) {
     if axis == 1u { uv = vec2f(v.local.z, v.local.x); }
     let dx = dpdx(uv);
     let dy = dpdy(uv);
-    let encoded_layer = v.surface >> 13u;
+    let encoded_layer = (v.surface >> 13u)&0x3ffffu;
     var albedo = v.color.rgb;
-    if encoded_layer != 0u && options.y > 0.5 {
+    if encoded_layer != 0u && (v.surface&0x80000000u)==0u && options.y > 0.5 {
         let texel = textureSampleGrad(material, material_sampler, uv, i32(material_metadata[encoded_layer-1u].layer), dx, dy);
         // Continuous fade to linear texture averages as texels become distant.
         let detail = 1.0-smoothstep(96.0, 240.0, length(v.relative));
         albedo = mix(albedo, texel.rgb, detail);
         if (v.surface & 4096u) != 0u && mix(1.0, texel.a, detail) < 0.5 { discard; }
+    }
+    if BG_BSL_REFERENCE || BG_BSL_ADVANCED_REFERENCE {
+        // Coarse summaries retain the authoritative face material identity,
+        // while only transition levels sample the original texture artwork.
+        let source_albedo=bg_reference_texture_albedo(vec4f(albedo,1.0)).rgb;
+        var basic=0.0;
+        var emission=0.0;
+        if encoded_layer!=0u {
+            let flags=material_metadata[encoded_layer-1u].flags;
+            if (flags&64u)!=0u {basic=select(1.0,0.5,v.normal.y>0.9999);}
+            emission=material_emission[encoded_layer-1u];
+        }
+        let receiver=bg_shadow_receiver(v.local+vec3f(tile.origin.xyz));
+        let visibility=bg_bsl_reference_sun_visibility(receiver,v.normal,camera.sun.xyz,basic,v.sky);
+        let glow=f32((v.surface>>7u)&15u)/15.0;
+        let color=bg_bsl_default_surface(source_albedo,v.normal,normalize(-v.relative),
+            vec2f(glow,v.sky),1.0,basic,emission,visibility,bg_bsl_reference_frame());
+        return bg_scene_output(color,vec3f(0.0),v.relative,max(v.sky,camera.eye.w),1.0);
     }
     let cloud_visibility=bg_primary_sun_transmittance(v.local+vec3f(tile.origin.xyz));
     let light=max(v.light-bg_direct_light(v.normal,camera.sun,v.sky)*(1.0-cloud_visibility),vec3f(0.0));
@@ -74,5 +93,6 @@ fn bg_lod_coverage(v: Out) {
     let receiver = bg_shadow_receiver(v.local+vec3f(tile.origin.xyz));
     bg_lod_coverage(v);
     let glow = f32((v.surface >> 7u)&15u)/15.0;
-    return bg_water_surface(v.color, v.normal, v.sky, glow, v.local+vec3f(tile.origin.xyz), v.relative, front, options.x, bg_sun_visibility(receiver));
+    let footprint=vec4f(dpdx(v.local.xz),dpdy(v.local.xz));
+    return bg_water_surface(v.color, v.normal, v.sky, glow, v.local+vec3f(tile.origin.xyz), v.relative, front, options.x, bg_sun_visibility(receiver),footprint);
 }

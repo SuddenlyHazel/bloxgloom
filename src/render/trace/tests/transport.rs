@@ -110,7 +110,8 @@ fn source(bounces: u32) -> String {
         "vertex-count fixture must instrument the real path loop"
     );
     format!(
-        "const RAY_NEAR_FIRST:bool=false;\nvar<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{transport}\n{}\n{}\n{}\n{}\n{FIXTURE}",
+        "const RAY_MATERIAL_FAST:bool={};\nconst RAY_NEAR_FIRST:bool=false;\nvar<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{transport}\n{}\n{}\n{}\n{}\n{FIXTURE}",
+        super::super::optimizations::material_fast(),
         render::sky::environment_shader(),
         include_str!("../../material/pbr.wgsl"),
         include_str!("../../material/foliage.wgsl"),

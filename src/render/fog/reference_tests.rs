@@ -27,6 +27,7 @@ var<private> camera:Camera;
     var world=vec3f(0.0,48.0,135.0);
     if i==15u {camera.eye.y=0.0;world.y=0.0;}
     if i==16u {camera.fog_range.w=1.0;}
+    if i==17u {camera.fog_range.w=-1.0;}
     rows[i]=vec4f(bg_apply_fog(vec3f(0.2),world,0.0),bg_fog_transmittance(world,0.0));
 }
 "#;
@@ -70,12 +71,12 @@ fn gpu_reference_air_fog_matches_source_defaults_and_relative_lod() {
     });
     let output = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: &[0; 272],
+        contents: &[0; 288],
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
     });
     let read = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 272,
+        size: 288,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -92,9 +93,9 @@ fn gpu_reference_air_fog_matches_source_defaults_and_relative_lod() {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(17, 1, 1);
+        pass.dispatch_workgroups(18, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 272);
+    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 288);
     queue.submit([encoder.finish()]);
     read.slice(..)
         .map_async(wgpu::MapMode::Read, |result| result.unwrap());
@@ -137,6 +138,11 @@ fn gpu_reference_air_fog_matches_source_defaults_and_relative_lod() {
             "relative LOD changed fog altitude"
         );
     }
+    assert_eq!(
+        rows[17],
+        [0.2, 0.2, 0.2, 1.0],
+        "actual reference water eye bypasses normal-air fog before composite absorption"
+    );
     assert_eq!(
         rows[16],
         [0.2, 0.2, 0.2, 1.0],

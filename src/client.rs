@@ -2219,6 +2219,13 @@ impl ClientApp {
                 Some(block)
             },
         );
+        // Classify the actual view eye from authoritative streamed chunk data.
+        // Missing coverage is not guessed from the procedural fallback.
+        let eye_in_water = self.block_at(
+            camera.position.x.floor() as i32,
+            camera.position.y.floor() as i32,
+            camera.position.z.floor() as i32,
+        ) == Some(crate::world::WATER);
         let first_person_eye_height = self.camera().position.y - self.position.y;
         if let Some(renderer) = &mut self.renderer {
             renderer.set_world_time(self.world_time.now());
@@ -2248,7 +2255,7 @@ impl ClientApp {
                     0.0
                 },
             );
-            match renderer.render(camera, &ui) {
+            match renderer.render(camera, &ui, eye_in_water, dt) {
                 Ok(stats) => {
                     self.last_visible_chunks = stats.visible_chunks;
                     self.frame_count += 1;

@@ -248,6 +248,38 @@ fn generated_bvh_traversal_profile() {
             key: None,
         })]);
         let sah_build = start.elapsed();
+        let tight = Scene::build_with_bounds(
+            [Arc::new(Chunk {
+                triangles: median.triangles.clone(),
+                key: None,
+            })],
+            true,
+        );
+        for reject in [false, true] {
+            let mut a = Work::default();
+            let mut b = Work::default();
+            for &(o, d) in &rays {
+                let (expected, w) = cast(&sah, o, d, reject);
+                let (actual, v) = cast(&tight, o, d, reject);
+                assert!(
+                    (actual - expected).abs() < 0.0001,
+                    "tight bounds nearest mismatch {actual} vs {expected}"
+                );
+                a.nodes += w.nodes;
+                a.candidates += w.candidates;
+                b.nodes += v.nodes;
+                b.candidates += v.candidates;
+            }
+            println!(
+                "{name} static bounds reject={reject}: nodes={}→{} boxes/ray={:.1}→{:.1} triangles/ray={:.1}→{:.1}",
+                sah.nodes.len(),
+                tight.nodes.len(),
+                a.nodes as f64 / rays.len() as f64,
+                b.nodes as f64 / rays.len() as f64,
+                a.candidates as f64 / rays.len() as f64,
+                b.candidates as f64 / rays.len() as f64
+            );
+        }
         println!(
             "{name}: triangles={}, nodes median={} sah={}, build median={median_build:?} sah={sah_build:?}",
             median.triangles.len(),

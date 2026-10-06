@@ -1,3 +1,5 @@
+mod waves;
+
 #[test]
 fn water_shader_validates_with_production_lighting_fog_and_reactivity() {
     let source = super::shader(include_str!("../water.wgsl"));
@@ -25,7 +27,7 @@ struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f
     let visibility = f32(id.x%2u);
     let sky = select(1.0,0.0,id.x>=2u);
     let result = bg_water_surface(vec4f(0.1,0.25,0.3,0.5),vec3f(0.0,1.0,0.0),sky,0.0,
-        vec3f(0.0),vec3f(0.0,-10.0,0.0),true,0.0,visibility);
+        vec3f(0.0),vec3f(0.0,-10.0,0.0),true,0.0,visibility,vec4f(0.0));
     colors[id.x] = result.color;
     colors[id.x+4u] = result.indirect;
 }

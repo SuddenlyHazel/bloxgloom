@@ -21,9 +21,11 @@ pub(super) fn surface_shader(source: &str) -> String {
         )
     };
     super::fog::shader(&format!(
-        "{}\n{}\n{}\n{}\n{}\n{source}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{source}",
         super::bsl_reference::shader(),
         super::sky::CLOUD_SHADER,
+        include_str!("material/sky_prefilter.wgsl"),
+        include_str!("daylight/prefilter.wgsl"),
         daylight,
         include_str!("daylight/primary_cloud.wgsl"),
         include_str!("scene_ao_output.wgsl")
@@ -33,9 +35,10 @@ pub(super) fn surface_shader(source: &str) -> String {
 /// Near opaque surfaces additionally sample the camera-local sun shadow map.
 pub(super) fn shader(source: &str) -> String {
     surface_shader(&format!(
-        "{}\n{}\n{}\n{source}",
+        "{}\n{}\n{}\n{}\n{source}",
         include_str!("local_shadow.wgsl"),
         super::sun_shadow::SHADER,
+        super::sun_shadow::reference_shader(),
         include_str!("scene_contact.wgsl")
     ))
 }

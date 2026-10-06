@@ -146,7 +146,8 @@ impl Gpu {
             ],
         });
         let source = format!(
-            "const RAY_NEAR_FIRST:bool={};\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            "const RAY_MATERIAL_FAST:bool={};\nconst RAY_NEAR_FIRST:bool={};\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            super::optimizations::material_fast(),
             std::env::var("BLOXGLOOM_GI_NEAR_FIRST").as_deref() == Ok("1"),
             crate::render::sky::environment_shader(),
             include_str!("../material/pbr.wgsl"),
@@ -166,7 +167,9 @@ impl Gpu {
             label: Some("ray radiance reconstruction"),
             source: wgpu::ShaderSource::Wgsl(
                 format!(
-                    "{}\n{}\n{}\n{}",
+                    "{}\n{}\n{}\n{}\n{}\n{}",
+                    crate::render::sky::STYLE_SHADER,
+                    include_str!("../material/sky_prefilter.wgsl"),
                     include_str!("../material/pbr.wgsl"),
                     include_str!("denoise.wgsl"),
                     include_str!("filter.wgsl"),

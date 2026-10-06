@@ -105,6 +105,7 @@ fn sun_light_visible(p:vec3f,sky:f32)->vec3f {
     for(var i=0u;i<8u;i++) {
         let hit=ray_cast(origin,direction,512.0);
         if hit.triangle==0xffffffffu {clear=true;break;}
+        if RAY_MATERIAL_FAST && (ray_materials[u32(ray_triangles[hit.triangle].a.w)].flags&64u)==0u {return vec3f(0.0);}
         let sheet=ray_surface(hit);
         if sheet.transmission<=0.0 {return vec3f(0.0);}
         transmission*=sheet.transmittance*(vec3f(1.0)-sheet.pbr.f0);
@@ -121,13 +122,17 @@ fn ray_surface(hit:RayHit)->RaySurface {
     let triangle=ray_triangles[hit.triangle];let id=u32(triangle.a.w);let metadata=ray_materials[id];
     let color=textureSampleLevel(ray_albedo,ray_sampler,hit.uv,i32(metadata.layer),1.0).rgb;
     let filtered=textureSampleLevel(ray_specular,ray_sampler,hit.uv,i32(metadata.layer),1.0);
-    let size=textureDimensions(ray_specular,0);
-    let pixel=min(vec2i(floor(fract(hit.uv)*vec2f(size))),vec2i(size)-vec2i(1));
-    let categorical=textureLoad(ray_specular,pixel,i32(metadata.layer),0);
-    let texel=select(filtered,vec4f(filtered.r,categorical.g,categorical.b,filtered.a),(metadata.flags&16u)!=0u);
+    var texel=filtered;
+    if !RAY_MATERIAL_FAST||(metadata.flags&16u)!=0u {
+        let size=textureDimensions(ray_specular,0);
+        let pixel=min(vec2i(floor(fract(hit.uv)*vec2f(size))),vec2i(size)-vec2i(1));
+        let categorical=textureLoad(ray_specular,pixel,i32(metadata.layer),0);
+        texel=select(filtered,vec4f(filtered.r,categorical.g,categorical.b,filtered.a),(metadata.flags&16u)!=0u);
+    }
     let pbr=bg_decode_pbr(texel,color,(metadata.flags&16u)!=0u,(metadata.flags&2u)!=0u);
     let glow=select(ray_emission[id],pbr.emission*max(1.0,ray_emission[id]),(metadata.flags&18u)==18u);
     let botanical=(metadata.flags&64u)!=0u;
+    if RAY_MATERIAL_FAST&&!botanical {return RaySurface(color,pbr,color*glow,triangle.b.w,0.0,color,vec3f(0.0));}
     let optics=bg_foliage_optics(color,pbr.subsurface,metadata.flags);
     let thin=select(0.0,optics.share,botanical);
     return RaySurface(color,pbr,color*glow,triangle.b.w,thin,

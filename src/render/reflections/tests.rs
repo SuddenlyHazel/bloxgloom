@@ -266,12 +266,9 @@ fn fixture(
             view_formats: &[],
         })
         .create_view(&Default::default());
-    let source = format!(
-        "{}\n{}\n{}\n{}\n{}",
-        super::super::sky::STYLE_SHADER,
-        super::super::bsl_reference::REFLECTION_SHADER,
-        include_str!("../material/pbr.wgsl"),
-        include_str!("normal.wgsl"),
+    let fixture = format!(
+        "const BG_FIXTURE_SOURCE:bool={};\n{}",
+        super::super::sky::style_enabled() && !super::super::bsl_reference::enabled(),
         r#"
 struct Parameters {inverse:mat4x4f,projection:mat4x4f,eye:vec4f,options:vec4f,sun:vec4f,climate:vec4f};
 @group(0) @binding(0) var<uniform> params:Parameters;
@@ -292,7 +289,7 @@ struct Out {@location(0) color:vec4f,@location(1) indirect:vec4f,@location(2) no
  if floor {
   let receiver_t=(params.options.z-origin.y)/ray.y;
   let reflected=reflect(ray,vec3f(0.0,1.0,0.0));
-  var sky=bg_pbr_prefiltered_sky(reflected,params.options.y,vec3f(0.59,0.72,0.82),vec4f(0.20,0.45,0.75,params.climate.w));
+  var sky=bg_prefiltered_environment(reflected,params.options.y,vec3f(0.59,0.72,0.82),vec4f(0.20,0.45,0.75,params.climate.w),params.sun,params.climate.xy,BG_FIXTURE_SOURCE);
   if params.climate.z>0.5 && params.options.z<=0.0 {
    sky=bg_bsl_artistic_environment(reflected,params.sun,params.climate.xy);
   }
@@ -301,6 +298,15 @@ struct Out {@location(0) color:vec4f,@location(1) indirect:vec4f,@location(2) no
  return Out(vec4f(vec3f(2.0,0.05,0.02)*params.options.x,1.0),vec4f(0.0),vec4f(0.0),vec4f(0.0),clip.z/clip.w);
 }
 "#
+    );
+    let source = format!(
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        super::super::sky::STYLE_SHADER,
+        include_str!("../material/sky_prefilter.wgsl"),
+        super::super::bsl_reference::REFLECTION_SHADER,
+        include_str!("../material/pbr.wgsl"),
+        include_str!("normal.wgsl"),
+        fixture
     );
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("reflection synthetic geometry fixture"),

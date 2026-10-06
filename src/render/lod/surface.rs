@@ -8,6 +8,7 @@ use crate::{
 pub(super) struct Surface {
     pub color: [f32; 4],
     pub layer: Option<u32>,
+    pub sample_texture: bool,
     pub fluid: bool,
     pub cutout: bool,
 }
@@ -44,7 +45,8 @@ impl Surface {
             color,
             fluid,
             cutout: flags & content::CUTOUT != 0,
-            layer: (level <= 2 && !fluid)
+            sample_texture: level <= 2,
+            layer: ((level <= 2 || super::super::bsl_reference::enabled()) && !fluid)
                 .then(|| super::super::material::material_layer_for(catalog, state, axis, side)),
         }
     }

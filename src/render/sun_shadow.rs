@@ -7,14 +7,19 @@ use super::{Camera, DEPTH_FORMAT, daylight::Atmosphere};
 use crate::config::SunShadowQuality;
 
 mod draw;
+mod reference;
 mod softness;
 use softness::Softness;
 #[cfg(test)]
 mod tests;
 
 pub(super) const SHADER: &str = include_str!("sun_shadow/shader.wgsl");
+pub(super) fn reference_shader() -> String {
+    reference::shader()
+}
 const SOFTNESS_OFFSET: u64 = 96 + super::scene_contact::UNIFORM_BYTES;
-pub(super) const UNIFORM_BYTES: u64 = SOFTNESS_OFFSET + 16;
+const REFERENCE_OFFSET: u64 = SOFTNESS_OFFSET + 16;
+pub(super) const UNIFORM_BYTES: u64 = REFERENCE_OFFSET + 16;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Settings {
@@ -22,6 +27,7 @@ pub(crate) struct Settings {
     pub distance: f32,
     pub filter: f32,
     softness: Softness,
+    reference: bool,
 }
 
 impl Settings {
@@ -40,6 +46,7 @@ impl Settings {
             distance: if resolution < 512 { 0.0 } else { distance },
             filter,
             softness: Softness::default(),
+            reference: false,
         }
     }
 }
@@ -58,9 +65,20 @@ impl Projection {
         // Fade grazing-angle shadows before skipping their expensive map. The
         // atmosphere still has twilight energy here, so a boolean cutoff pops.
         let horizon = ((atmosphere.light_direction().y - 0.01) / 0.09).clamp(0.0, 1.0);
-        let horizon_weight = horizon * horizon * (3.0 - 2.0 * horizon);
-        let enabled = settings.distance > 0.0 && horizon_weight > 0.0 && atmosphere.strength > 0.0;
-        let radius = settings.distance.max(1.0) * 1.25;
+        let horizon_weight = if settings.reference {
+            1.0
+        } else {
+            horizon * horizon * (3.0 - 2.0 * horizon)
+        };
+        // Reference forward lighting applies the source shadowFade itself;
+        // enhanced grazing-light fading must not attenuate it a second time.
+        let enabled = settings.distance > 0.0
+            && if settings.reference {
+                atmosphere.reference_shadow_fade > 0.0
+            } else {
+                horizon_weight > 0.0 && atmosphere.strength > 0.0
+            };
+        let radius = settings.distance.max(1.0) * if settings.reference { 1.0 } else { 1.25 };
         let sun = atmosphere.light_direction().normalize_or_zero();
         let up = if sun.dot(Vec3::Y).abs() > 0.98 {
             Vec3::Z
@@ -132,7 +150,11 @@ impl SunShadows {
         camera: &wgpu::Buffer,
         quality: SunShadowQuality,
     ) -> Self {
-        let mut settings = Settings::for_quality(quality, device.limits().max_texture_dimension_2d);
+        let mut settings = reference::configure(
+            Settings::for_quality(quality, device.limits().max_texture_dimension_2d),
+            super::bsl_reference::enabled(),
+            device.limits().max_texture_dimension_2d,
+        );
         settings.softness = Softness::configured();
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("nearby sun projection"),
@@ -208,6 +230,11 @@ impl SunShadows {
             &self.uniform,
             SOFTNESS_OFFSET,
             bytemuck::cast_slice(&self.projection.settings.softness.data()),
+        );
+        queue.write_buffer(
+            &self.uniform,
+            REFERENCE_OFFSET,
+            bytemuck::cast_slice(&reference::data(self.projection.settings)),
         );
     }
 

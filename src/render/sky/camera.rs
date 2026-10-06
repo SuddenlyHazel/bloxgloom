@@ -18,6 +18,21 @@ pub(crate) fn sky_camera_data_at_sample(
     atmosphere: Atmosphere,
     sample: u32,
 ) -> [f32; 40] {
+    sky_camera_data_at_sample_in_medium(camera, width, height, atmosphere, sample, false)
+}
+
+/// Reference normal-water flag and explicit eye-brightness proxy share the
+/// otherwise disabled scene-transport scalar: -1-eBS. Enhanced0/1 and the
+/// 160-byte sky/water ABI retain their original meanings.
+pub(crate) fn sky_camera_data_at_sample_in_medium(
+    camera: Camera,
+    width: u32,
+    height: u32,
+    atmosphere: Atmosphere,
+    sample: u32,
+    eye_in_water: bool,
+) -> [f32; 40] {
+    let medium = super::super::bsl_reference::enabled() && eye_in_water;
     let forward = camera.direction();
     let right = Vec3::new(-camera.yaw.sin(), 0.0, camera.yaw.cos());
     let up = right.cross(forward).normalize();
@@ -44,7 +59,11 @@ pub(crate) fn sky_camera_data_at_sample(
         atmosphere.sun.x,
         atmosphere.sun.y,
         atmosphere.sun.z,
-        f32::from(atmosphere.scene_transport),
+        if medium {
+            -1.0 - atmosphere.fog_exposure.clamp(0.0, 1.0)
+        } else {
+            f32::from(atmosphere.scene_transport)
+        },
         atmosphere.horizon.x,
         atmosphere.horizon.y,
         atmosphere.horizon.z,

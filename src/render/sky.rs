@@ -7,7 +7,9 @@ mod pipeline;
 mod reference_clouds;
 pub(crate) use reference_clouds::Noise as ReferenceNoise;
 
-pub(crate) use camera::{sky_camera_data, sky_camera_data_at_sample};
+pub(crate) use camera::{
+    sky_camera_data, sky_camera_data_at_sample, sky_camera_data_at_sample_in_medium,
+};
 pub(crate) const CLOUD_SHADER: &str = include_str!("sky/clouds.wgsl");
 pub(crate) const STYLE_SHADER: &str = include_str!("sky/bsl.wgsl");
 

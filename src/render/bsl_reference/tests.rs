@@ -49,3 +49,6 @@ fn reference_palettes_match_checked_in_noon_moon_and_rain_defaults() {
 
 #[path = "gpu.rs"]
 mod gpu;
+
+#[path = "albedo/tests.rs"]
+mod albedo;

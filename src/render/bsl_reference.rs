@@ -5,6 +5,8 @@ use super::daylight::Atmosphere;
 use glam::Vec3;
 pub(crate) use orbit::{Celestial, shadow_fade};
 
+pub(crate) const ALBEDO_SHADER: &str = include_str!("bsl_reference/albedo.wgsl");
+
 pub(crate) const LIGHTING_SHADER: &str = include_str!("bsl_reference/lighting.wgsl");
 pub(crate) const REFLECTION_SHADER: &str = include_str!("bsl_reference/reflection.wgsl");
 
@@ -24,7 +26,7 @@ pub(crate) fn advanced_materials() -> bool {
 
 pub(crate) fn shader() -> String {
     format!(
-        "const BG_BSL_REFERENCE: bool = {};\nconst BG_BSL_ADVANCED_REFERENCE: bool = {};\n{LIGHTING_SHADER}\n{REFLECTION_SHADER}\n{}",
+        "const BG_BSL_REFERENCE: bool = {};\nconst BG_BSL_ADVANCED_REFERENCE: bool = {};\n{ALBEDO_SHADER}\n{LIGHTING_SHADER}\n{REFLECTION_SHADER}\n{}",
         default_materials(),
         advanced_materials(),
         include_str!("bsl_reference/camera.wgsl")

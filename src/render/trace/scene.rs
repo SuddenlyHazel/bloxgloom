@@ -34,7 +34,7 @@ pub(crate) struct Scene {
     pub coverage: Vec<u32>,
 }
 impl Chunk {
-    pub fn from_mesh(mesh: &ChunkMesh) -> Self {
+    pub fn from_mesh(mesh: &ChunkMesh, catalog: &crate::content::Catalog) -> Self {
         let mut triangles =
             Vec::with_capacity((mesh.indices.len() + mesh.cutout_indices.len()) / 3);
         for (vertices, indices, cutout) in [
@@ -44,7 +44,14 @@ impl Chunk {
             for indices in indices.chunks_exact(3) {
                 let v = [indices[0], indices[1], indices[2]]
                     .map(|i| &vertices[i as usize * VERTEX_FLOATS..][..VERTEX_FLOATS]);
-                let normal = [v[0][3], v[0][4], v[0][5], 0.0];
+                let stationary =
+                    bounds::stationary(catalog.textures().get(v[0][8].floor() as usize));
+                let normal = [
+                    v[0][3],
+                    v[0][4],
+                    v[0][5],
+                    if stationary { -1.0 } else { 0.0 },
+                ];
                 triangles.push(Triangle {
                     a: [v[0][0], v[0][1], v[0][2], v[0][8].floor()],
                     b: [v[1][0], v[1][1], v[1][2], v[0][9]],
@@ -71,6 +78,12 @@ impl Scene {
             && (self.coverage.len() * 4) as u64 <= limit
     }
     pub fn build(chunks: impl IntoIterator<Item = std::sync::Arc<Chunk>>) -> Self {
+        Self::build_with_bounds(chunks, super::optimizations::tight_bounds())
+    }
+    pub(super) fn build_with_bounds(
+        chunks: impl IntoIterator<Item = std::sync::Arc<Chunk>>,
+        tight: bool,
+    ) -> Self {
         let chunks: Vec<_> = chunks.into_iter().collect();
         let mut result = Self {
             coverage: coverage::build(chunks.iter().filter_map(|c| c.key)),
@@ -80,23 +93,23 @@ impl Scene {
             result.triangles.extend_from_slice(&chunk.triangles);
         }
         if !result.triangles.is_empty() {
-            result.partition(0, result.triangles.len());
+            result.partition(0, result.triangles.len(), tight);
         }
         result
     }
-    fn partition(&mut self, first: usize, count: usize) {
+    fn partition(&mut self, first: usize, count: usize, tight: bool) {
         let mut low = Vec3::splat(f32::INFINITY);
         let mut high = Vec3::splat(f32::NEG_INFINITY);
         for triangle in &self.triangles[first..first + count] {
             for p in [triangle.a, triangle.b, triangle.c] {
                 let position = Vec3::new(p[0], p[1], p[2]);
-                low = low.min(position);
-                high = high.max(position);
+                let padding = Vec3::splat(bounds::padding(triangle, tight));
+                low = low.min(position - padding);
+                high = high.max(position + padding);
             }
         }
-        // All botanical geometry may move by at most .12m in the shared wind.
-        low -= Vec3::splat(0.12);
-        high += Vec3::splat(0.12);
+        // Unknown/botanical triangles retain the full .12m allowance; only
+        // worker-classified stationary builtin triangles use numerical padding.
         let index = self.nodes.len();
         self.nodes.push(Node {
             min: low.to_array(),
@@ -107,10 +120,10 @@ impl Scene {
             padding: [0; 3],
         });
         if count > 8 {
-            let split = bvh::split(&mut self.triangles[first..first + count]);
+            let split = bvh::split(&mut self.triangles[first..first + count], tight);
             self.nodes[index].count = 0;
-            self.partition(first, split);
-            self.partition(first + split, count - split);
+            self.partition(first, split, tight);
+            self.partition(first + split, count - split, tight);
         }
         self.nodes[index].escape = self.nodes.len() as u32;
     }
@@ -125,3 +138,5 @@ mod bvh;
 mod coverage;
 #[cfg(test)]
 mod tests;
+
+mod bounds;

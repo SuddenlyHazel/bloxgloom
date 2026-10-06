@@ -1,6 +1,8 @@
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
+const SKY: &str = crate::render::sky::STYLE_SHADER;
+const PREFILTER: &str = include_str!("../../material/sky_prefilter.wgsl");
 const PBR: &str = include_str!("../../material/pbr.wgsl");
 const HELPERS: &str = include_str!("../denoise.wgsl");
 const FILTER: &str = include_str!("../filter.wgsl");
@@ -9,7 +11,7 @@ const COMPOSITE: &str = include_str!("../composite.wgsl");
 #[test]
 fn denoising_shader_modules_validate() {
     for source in [
-        format!("{PBR}\n{HELPERS}\n{FILTER}\n{COMPOSITE}"),
+        format!("{SKY}\n{PREFILTER}\n{PBR}\n{HELPERS}\n{FILTER}\n{COMPOSITE}"),
         format!("{HELPERS}\n{HISTORY_FIXTURE}"),
     ] {
         let module = wgpu::naga::front::wgsl::parse_str(&source).expect("denoising WGSL parses");
@@ -241,20 +243,25 @@ fn gpu_temporal_rejection_uses_radial_depth_and_true_geometry() {
 
 #[test]
 fn gpu_spatial_denoise_preserves_albedo_detail_and_parallel_depth_edges() {
-    spatial_denoise_fixture(2);
+    spatial_denoise_fixture(2, false);
 }
 
 #[test]
 fn gpu_quarter_resolution_preserves_receiver_color_and_depth_edges() {
-    spatial_denoise_fixture(4);
+    spatial_denoise_fixture(4, false);
 }
 
 #[test]
 fn gpu_eighth_resolution_preserves_receiver_color_and_depth_edges() {
-    spatial_denoise_fixture(8);
+    spatial_denoise_fixture(8, false);
 }
 
-fn spatial_denoise_fixture(scale: u32) {
+#[test]
+fn gpu_source_sky_full_compositor_preserves_center_color_extinction_and_unknown_fallback() {
+    spatial_denoise_fixture(4, true);
+}
+
+fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
     let (device, queue) = device();
     let width = 32u32;
     let height = 16u32;
@@ -375,6 +382,13 @@ fn spatial_denoise_fixture(scale: u32) {
         uniform_data[16..32].copy_from_slice(&Mat4::IDENTITY.to_cols_array());
         uniform_data[44..47].fill(1.0);
         uniform_data[48..52].fill(1.0);
+        if source_sky {
+            let atmosphere = crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS);
+            uniform_data[36..39].copy_from_slice(&atmosphere.sun.to_array());
+            uniform_data[39] = atmosphere.time_brightness();
+            uniform_data[55] = 1.0;
+            uniform_data[57] = atmosphere.moon_multiplier();
+        }
         uniform_data[62] = scale as f32;
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -556,7 +570,7 @@ fn spatial_denoise_fixture(scale: u32) {
             })
         };
         let filtering = group_for(&views[0]);
-        let source = format!("{PBR}\n{HELPERS}\n{FILTER}\n{COMPOSITE}");
+        let source = format!("{SKY}\n{PREFILTER}\n{PBR}\n{HELPERS}\n{FILTER}\n{COMPOSITE}");
         let draw_filtered = || {
             // The production filter/reconstruction shader runs in two ordered
             // GPU passes, with no CPU readback of the intermediate irradiance.
@@ -630,7 +644,8 @@ fn spatial_denoise_fixture(scale: u32) {
                     for channel in 0..3 {
                         let removed = output[at][channel] - colored[at][channel];
                         assert!(
-                            (removed / responses[at][channel] - scalar).abs() < 0.00002,
+                            source_sky
+                                || (removed / responses[at][channel] - scalar).abs() < 0.00002,
                             "specular subtraction must preserve center color"
                         );
                         assert!(
@@ -644,7 +659,10 @@ fn spatial_denoise_fixture(scale: u32) {
                     }
                 }
             }
-            assert!(largest > 0.02, "specular fallback must actually be removed");
+            assert!(
+                largest > if source_sky { 0.00001 } else { 0.02 },
+                "specular fallback must actually be removed"
+            );
             // A raster-visible reactive leaf whose primary ray misses keeps its
             // existing specular. Negative age isolates its medium-only signal;
             // signed T distinguishes fallback retention from true traced GI.

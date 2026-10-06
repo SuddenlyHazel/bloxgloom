@@ -4,6 +4,8 @@
 @group(0) @binding(3) var noise_sampler: sampler;
 // temporal enabled, effects enabled, output sRGB attachment, local noise available
 @group(0) @binding(4) var<uniform> options: vec4f;
+@group(0) @binding(5) var<uniform> lens:BgReferenceLens;
+@group(0) @binding(6) var lens_visibility:texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) id:u32)->@builtin(position) vec4f {
     let p=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));return vec4f(p[id],0.0,1.0);
 }
@@ -12,8 +14,16 @@ fn bg_decode_srgb(color:vec3f)->vec3f {return select(pow((color+0.055)/1.055,vec
 fn sample_color(uv:vec2f)->vec3f {return textureSampleLevel(source,linear_sampler,uv,0.0).rgb;}
 fn luma(color:vec3f)->f32 {return dot(color,vec3f(0.299,0.587,0.114));}
 @fragment fn gamma_grain(@builtin(position) p:vec4f)->@location(0) vec4f {
-    let color=max(textureLoad(source,vec2i(p.xy),0).rgb,vec3f(0.0));
+    var color=max(textureLoad(source,vec2i(p.xy),0).rgb,vec3f(0.0));
     if options.y<0.5 {return vec4f(bg_encode_srgb(color),1.0);}
+    if lens.night.w>0.5 {
+        let old=textureLoad(lens_visibility,vec2i(0),0).r*lens.state.x;
+        let factor=pow(old*(length(color)*0.25+0.25),2.0);
+        if factor>0.0001 {
+            let size=vec2f(textureDimensions(source));let uv=vec2f(p.x/size.x,1.0-p.y/size.y);
+            color=mix(color,vec3f(1.0),bg_lens_flare(uv,size.x/size.y,lens,factor));
+        }
+    }
     var encoded=pow(color,vec3f(1.0/2.2));
     if options.w>0.5 {
         let height=f32(textureDimensions(source).y);

@@ -22,7 +22,7 @@ fn bg_fog_air_radiance(world:vec3f)->vec3f {
     return air;
 }
 fn bg_apply_fog(color: vec3f, world: vec3f, sky: f32) -> vec3f {
-    if camera.fog_range.w>0.5 {return color;}
+    if camera.fog_range.w>0.5 || (BG_FOG_REFERENCE && camera.fog_range.w< -0.5) {return color;}
     if BG_FOG_REFERENCE {
         return mix(color,bg_fog_air_radiance(world),bg_reference_fog_amount(world));
     }
@@ -45,7 +45,7 @@ fn bg_apply_fog(color: vec3f, world: vec3f, sky: f32) -> vec3f {
 // Only surface radiance is extinguished. AO must never remove the in-scattered
 // horizon/weather color added by bg_apply_fog.
 fn bg_fog_transmittance(world: vec3f, sky: f32) -> f32 {
-    if camera.fog_range.w>0.5 {return 1.0;}
+    if camera.fog_range.w>0.5 || (BG_FOG_REFERENCE && camera.fog_range.w< -0.5) {return 1.0;}
     if BG_FOG_REFERENCE {return 1.0-bg_reference_fog_amount(world);}
     let distance = length(world-camera.eye.xyz);
     let background = smoothstep(camera.fog_range.x,camera.fog_range.y,distance);

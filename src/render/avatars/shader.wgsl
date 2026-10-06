@@ -56,7 +56,7 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     let world = rotated + input.origin;
     normal = normalize(normal);
     output.clip = camera.view_projection * vec4<f32>(world, 1.0);
-    if shadow { output.clip = bg_shadow.view_projection * vec4f(world, 1.0); }
+    if shadow { output.clip = bg_shadow_project(world); }
     var albedo = SKINS[min(input.cosmetics.x, 31u)];
     if input.part == 1u { albedo = SHIRTS[min(input.cosmetics.y, 31u)]; }
     if input.part == 2u { albedo = PANTS[min(input.cosmetics.z, 31u)]; }
@@ -93,7 +93,7 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     let receiver = bg_shadow_receiver(input.world_position);
     // Local visibility is evaluated per fragment, retaining voxel scattering.
     let local_light = bg_shadowed_local_light(input.world_position, normalize(input.normal), input.local_radiance, input.local_direction);
-    let visibility = bg_sun_visibility(receiver)*bg_primary_sun_transmittance(input.world_position);
+    let visibility = bg_sun_visibility_material(receiver,normalize(input.normal),input.sky,0.0)*bg_primary_sun_transmittance(input.world_position);
     let color = input.color + input.surface_color * local_light - input.direct * (1.0 - visibility);
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world_position, normalize(input.normal), input.local_radiance, input.local_direction);

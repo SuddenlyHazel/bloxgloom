@@ -4,6 +4,7 @@ use crate::render::{VERTEX_FLOATS, pipeline};
 
 const SIZE: u32 = 128;
 mod banding;
+mod reference;
 mod softness;
 
 struct Fixture {

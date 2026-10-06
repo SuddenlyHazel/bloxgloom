@@ -1,11 +1,11 @@
 struct BgSceneContact { bounds: vec4f, center: vec4f, light: vec4f };
-struct BgShadow { view_projection: mat4x4f, params: vec4f, center: vec4f, contact_params: vec4f, contacts: array<BgSceneContact, 32>, soft_params: vec4f };
+struct BgShadow { view_projection: mat4x4f, params: vec4f, center: vec4f, contact_params: vec4f, contacts: array<BgSceneContact, 32>, soft_params: vec4f, reference_params:vec4f };
 @group(0) @binding(1) var<uniform> bg_shadow: BgShadow;
 @group(0) @binding(2) var bg_shadow_depth: texture_depth_2d;
 @group(0) @binding(3) var bg_shadow_sampler: sampler_comparison;
 // Shadow only direct sunlight. No receiver bias is baked into geometry and
 // emissive/voxel portal light remains unchanged when the map is disabled.
-struct BgShadowReceiver { world: vec3f, projected: vec3f, uv: vec2f, slope: vec2f };
+struct BgShadowReceiver { world: vec3f, projected: vec3f, uv: vec2f, slope: vec2f, geometric:vec3f };
 // Call before any alpha discard. Derivatives describe the actual geometric
 // receiver, independent of normal maps and camera-dependent parallax UVs.
 fn bg_shadow_receiver(world: vec3f) -> BgShadowReceiver {
@@ -20,7 +20,9 @@ fn bg_shadow_receiver(world: vec3f) -> BgShadowReceiver {
     if abs(determinant) > 0.00000000000000000001 {
         slope = vec2f(dx.z * uy.y - dy.z * ux.y, dy.z * ux.x - dx.z * uy.x) / determinant;
     }
-    return BgShadowReceiver(world, p.xyz, uv, slope);
+    var geometric=vec3f(0.0,1.0,0.0);
+    if bg_shadow.reference_params.x>0.5 {geometric=normalize(cross(dpdx(world),dpdy(world)));}
+    return BgShadowReceiver(world, p.xyz, uv, slope,geometric);
 }
 // Estimate a blocker depth using comparison samples only. Naga's GL backend
 // cannot textureLoad depth or sample it with a non-comparison sampler. A fixed
@@ -92,7 +94,7 @@ fn bg_soft_sun_filter(receiver: BgShadowReceiver, bias: f32, radius: f32) -> f32
     return visibility / 16.0;
 }
 
-fn bg_sun_visibility(receiver: BgShadowReceiver) -> f32 {
+fn bg_enhanced_sun_visibility(receiver: BgShadowReceiver) -> f32 {
     if bg_shadow.params.z <= 0.0 { return 1.0; }
     let p = receiver.projected;
     let uv = receiver.uv;

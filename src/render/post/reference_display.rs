@@ -2,6 +2,7 @@
 //! Enhanced HDR temporal accumulation and post processing remain independent.
 use super::{HDR_FORMAT, temporal::Temporal};
 use wgpu::util::DeviceExt;
+mod lens;
 mod targets;
 #[cfg(test)]
 mod tests;
@@ -11,6 +12,7 @@ const TAA: &str = include_str!("reference_display/taa.wgsl");
 
 pub(super) struct ReferenceDisplay {
     pub linear: wgpu::TextureView,
+    lens: lens::Lens,
     gamma: wgpu::TextureView,
     fxaa: wgpu::TextureView,
     colors: [wgpu::TextureView; 2],
@@ -28,6 +30,7 @@ pub(super) struct ReferenceDisplay {
     index: usize,
     resolved: bool,
     pub depth: Option<wgpu::TextureView>,
+    pub front_depth: Option<wgpu::TextureView>,
 }
 impl ReferenceDisplay {
     pub fn new(
@@ -70,6 +73,8 @@ impl ReferenceDisplay {
                 sampler(2),
                 sampler(3),
                 uniform(4),
+                uniform(5),
+                texture(6, false),
             ],
         });
         let temporal_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -96,7 +101,7 @@ impl ReferenceDisplay {
         });
         let stages = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("source display gamma grain FXAA"),
-            source: wgpu::ShaderSource::Wgsl(format!("{STAGES}\n{FXAA}").into()),
+            source: wgpu::ShaderSource::Wgsl(format!("{}\n{STAGES}\n{FXAA}", lens::SHADER).into()),
         });
         let taa = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("source display Catmull-Rom temporal"),
@@ -105,6 +110,7 @@ impl ReferenceDisplay {
         let targets = targets::Targets::new(device, width, height);
         Self {
             linear: targets.linear,
+            lens: lens::Lens::new(device),
             gamma: targets.gamma,
             fxaa: targets.fxaa,
             colors: targets.colors,
@@ -152,6 +158,7 @@ impl ReferenceDisplay {
             index: 0,
             resolved: false,
             depth: None,
+            front_depth: None,
         }
     }
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -163,17 +170,32 @@ impl ReferenceDisplay {
         self.depths = t.depths;
         self.reset();
     }
+    pub fn configure_lens(
+        &mut self,
+        matrix: glam::Mat4,
+        eye: glam::Vec3,
+        atmosphere: crate::render::daylight::Atmosphere,
+        frame_time: f32,
+        eye_in_water: bool,
+    ) {
+        self.lens
+            .configure(matrix, eye, atmosphere, frame_time, eye_in_water);
+    }
     pub fn reset(&mut self) {
+        self.lens.reset();
         self.index = 0;
         self.resolved = false;
         self.depth = None;
+        self.front_depth = None;
     }
     pub fn submitted(&mut self) {
+        self.lens.submitted();
         if self.resolved {
             self.index = 1 - self.index;
             self.resolved = false;
         }
         self.depth = None;
+        self.front_depth = None;
     }
     fn group(&self, device: &wgpu::Device, source: &wgpu::TextureView) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -194,6 +216,11 @@ impl ReferenceDisplay {
                     binding: 4,
                     resource: self.options.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.lens.uniform.as_entire_binding(),
+                },
+                texture_entry(6, &self.lens.visibility[self.lens.index]),
             ],
         })
     }
@@ -223,6 +250,13 @@ impl ReferenceDisplay {
             ]),
         );
         self.noise.upload(encoder);
+        self.lens.prepare(
+            device,
+            queue,
+            encoder,
+            self.front_depth.as_ref().or(self.depth.as_ref()),
+            effects,
+        );
         draw(
             encoder,
             &self.gamma_pipeline,
@@ -280,7 +314,7 @@ impl ReferenceDisplay {
         );
     }
 }
-fn texture_entry(binding: u32, view: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
+pub(super) fn texture_entry(binding: u32, view: &wgpu::TextureView) -> wgpu::BindGroupEntry<'_> {
     wgpu::BindGroupEntry {
         binding,
         resource: wgpu::BindingResource::TextureView(view),
@@ -330,7 +364,7 @@ fn pipeline(
         cache: None,
     })
 }
-fn draw(
+pub(super) fn draw(
     encoder: &mut wgpu::CommandEncoder,
     pipeline: &wgpu::RenderPipeline,
     group: &wgpu::BindGroup,

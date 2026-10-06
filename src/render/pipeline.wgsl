@@ -89,7 +89,7 @@ fn voxel_vertex(input: VertexInput) -> VertexOutput {
 @vertex fn vs_main(input: VertexInput) -> VertexOutput { return voxel_vertex(input); }
 @vertex fn vs_shadow(input: VertexInput) -> VertexOutput {
     var output = voxel_vertex(input);
-    output.position = bg_shadow.view_projection * vec4f(output.world_position, 1.0);
+    output.position = bg_shadow_project(output.world_position);
     return output;
 }
 struct MaterialSurface { shaded: BgSurface, light: vec3f, direct: vec3f, indirect: vec3f, visibility: f32, occlusion: f32, relief_visibility: f32 };
@@ -142,7 +142,7 @@ fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr
         let emission=max(material_emission[u32(input.layer)],specular.emission);
         var color=bg_bsl_default_surface(surface.albedo.rgb,normalize(surface.normal),view,
             vec2f(input.block_level,input.sky_level),max(input.indirect_bounce.w,0.0),basic,
-            emission,bg_sun_visibility(receiver),bg_bsl_reference_frame());
+            emission,bg_bsl_reference_sun_visibility(receiver,normalize(surface.normal),camera.sun.xyz,basic,input.sky_level),bg_bsl_reference_frame());
         if BG_BSL_REFERENCE || !specular.present {
             return bg_scene_output(color,vec3f(0.0),input.world_position,input.sky_level,input.history_sign);
         }
@@ -193,7 +193,7 @@ fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr
 @fragment fn fs_main(input: VertexOutput) -> BgSceneOutput {
     let receiver = bg_shadow_receiver(input.world_position);
     let coordinates = bg_material_coordinates(input, true);
-    let albedo = textureSampleGrad(material, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy);
+    let albedo = bg_reference_texture_albedo(textureSampleGrad(material, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy));
     let specular = bg_material_specular(input, coordinates, albedo.rgb);
     return shade(input, surface(input, albedo, coordinates, specular), specular, receiver);
 }
@@ -201,7 +201,7 @@ fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr
     let receiver = bg_shadow_receiver(input.world_position);
     // Keep camera-dependent height offsets away from cutout alpha and casters.
     let coordinates = bg_material_coordinates(input, false);
-    let texel = textureSampleGrad(material, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy);
+    let texel = bg_reference_texture_albedo(textureSampleGrad(material, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy));
     let specular = bg_material_specular(input, coordinates, texel.rgb);
     let shaded = surface(input, texel, coordinates, specular);
     if shaded.shaded.albedo.a < 0.5 { discard; }
@@ -216,7 +216,7 @@ fn bg_discard_local_emitter(world: vec3f) {
 @fragment fn fs_shadow_opaque(input: VertexOutput) { bg_discard_local_emitter(input.world_position); }
 @fragment fn fs_shadow(input: VertexOutput) {
     let coordinates = bg_material_coordinates(input, false);
-    let albedo = textureSampleGrad(material, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy);
+    let albedo = bg_reference_texture_albedo(textureSampleGrad(material, material_sampler, coordinates.uv, bg_material_layer(input.layer), coordinates.dx, coordinates.dy));
     let specular = bg_material_specular(input, coordinates, albedo.rgb);
     let shaded = surface(input, albedo, coordinates, specular);
     bg_discard_local_emitter(input.world_position);

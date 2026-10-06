@@ -136,3 +136,6 @@ fn scene_transport_cloud_uniform_preserves_sun_energy_and_legacy_offsets() {
 
 #[path = "tests/sky_diffuse.rs"]
 mod sky_diffuse;
+
+#[path = "tests/sky_prefilter.rs"]
+mod sky_prefilter;

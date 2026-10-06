@@ -106,3 +106,19 @@ fn bg_bsl_stars(direction:vec3f,origin:vec3f,sun:vec3f,time:f32,rain:f32,moon_mu
     let night=vec3f(96.0,192.0,255.0)*(0.3/255.0)*moon_multiplier;
     return star*pow(night,vec3f(0.8));
 }
+// lightShafts.glsl / sunmoon.glsl checked-in Overworld defaults. The source
+// phases are shared by camera shafts and the underwater-only sky SunGlare.
+fn bg_bsl_shaft_falloff(cosine:f32,brightness:f32,sun_visibility:f32,rain:f32,exterior:f32)->f32 {
+    var factor=mix(0.25,0.10,brightness);
+    factor=mix(0.50,factor,sun_visibility)*mix(1.0,8.0,rain)*0.1;
+    factor=min(factor,0.999);let reverse=1.0-factor;
+    var falloff=clamp(cosine*0.5+0.5,0.0,1.0);
+    falloff=factor/(1.0-reverse*falloff)-factor;
+    falloff=clamp(falloff*1.015/reverse-0.015,0.0,1.0);
+    return mix(1.0,falloff,0.03125*exterior+0.96875);
+}
+fn bg_bsl_underwater_sun_glare(ray:vec3f,light_direction:vec3f,light_color:vec3f,brightness:f32,sun_visibility:f32,rain:f32,exterior:f32,shadow_fade:f32,eye_y:f32)->vec3f {
+    let visibility=bg_bsl_shaft_falloff(dot(ray,light_direction),brightness,sun_visibility,rain,exterior)
+        *(1.0-rain*exterior*0.875)*shadow_fade*clamp((eye_y+70.0)/8.0,0.0,1.0);
+    return light_color*(0.25*visibility);
+}

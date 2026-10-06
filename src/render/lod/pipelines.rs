@@ -26,31 +26,41 @@ pub(super) fn new(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
+    let reference_inputs =
+        super::super::bsl_reference::enabled().then(|| water::reference::Inputs::fallback(device));
+    let mut camera_entries = vec![
+        entry(0, wgpu::BufferBindingType::Uniform),
+        entry(1, wgpu::BufferBindingType::Storage { read_only: true }),
+        entry(2, wgpu::BufferBindingType::Uniform),
+    ];
+    if reference_inputs.is_some() {
+        camera_entries.extend(water::reference::Inputs::layout_entries(3));
+    }
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("LOD camera coverage"),
-        entries: &[
-            entry(0, wgpu::BufferBindingType::Uniform),
-            entry(1, wgpu::BufferBindingType::Storage { read_only: true }),
-            entry(2, wgpu::BufferBindingType::Uniform),
-        ],
+        entries: &camera_entries,
     });
+    let mut resources = vec![
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: coverage.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: options.as_entire_binding(),
+        },
+    ];
+    if let Some(inputs) = &reference_inputs {
+        resources.extend(inputs.entries(3));
+    }
     let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("LOD scene"),
         layout: &layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: coverage.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: options.as_entire_binding(),
-            },
-        ],
+        entries: &resources,
     });
     let tile_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("LOD tile origin"),
@@ -62,12 +72,7 @@ pub(super) fn new(
         source: wgpu::ShaderSource::Wgsl(water::lod_shader(include_str!("shader.wgsl")).into()),
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("LOD pipeline"),
-        bind_group_layouts: &[Some(&layout), Some(&tile_layout), Some(&texture_layout)],
-        immediate_size: 0,
-    });
-    let water_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("LOD water shadows"),
+        label: Some("LOD material and water shadows"),
         bind_group_layouts: &[
             Some(&layout),
             Some(&tile_layout),
@@ -84,14 +89,14 @@ pub(super) fn new(
             } else {
                 "distant terrain"
             }),
-            layout: Some(if fluid {
-                &water_layout
-            } else {
-                &pipeline_layout
-            }),
+            layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: Some("vs_main"),
+                entry_point: Some(if fluid && super::super::bsl_reference::enabled() {
+                    "vs_water"
+                } else {
+                    "vs_main"
+                }),
                 compilation_options: Default::default(),
                 buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<super::vertex::Vertex>() as u64,
@@ -103,16 +108,16 @@ pub(super) fn new(
                 cull_mode: if fluid { None } else { Some(wgpu::Face::Back) },
                 ..Default::default()
             },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(!fluid),
-                depth_compare: Some(if fluid {
-                    wgpu::CompareFunction::LessEqual
-                } else {
-                    wgpu::CompareFunction::Less
-                }),
-                stencil: Default::default(),
-                bias: Default::default(),
+            depth_stencil: Some(if fluid {
+                water::depth_state(super::super::bsl_reference::enabled())
+            } else {
+                wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {

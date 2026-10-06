@@ -24,9 +24,11 @@ fn ray_box(origin:vec3f,inverse:vec3f,node:RayNode,limit:f32)->bool {
 // One accepted triangle path shared by the reference and near-first walks.
 // Smaller triangle IDs win exact ties, matching contiguous stackless DFS order.
 fn ray_triangle_hit(origin:vec3f,direction:vec3f,limit:f32,i:u32,current:RayHit)->RayHit {
-    let t=ray_triangles[i];let flags=ray_materials[u32(t.a.w)].flags;
+    let t=ray_triangles[i];var flags=0u;
+    if !RAY_MATERIAL_FAST {flags=ray_materials[u32(t.a.w)].flags;}
     var a=t.a.xyz;var b=t.b.xyz;var c=t.c.xyz;
     if ray_frame.parameters.y<0.5 {
+        if RAY_MATERIAL_FAST {flags=ray_materials[u32(t.a.w)].flags;}
         a=ray_wind(a,t.normal.xyz,t.uv_ab.xy,flags);
         b=ray_wind(b,t.normal.xyz,t.uv_ab.zw,flags);
         c=ray_wind(c,t.normal.xyz,t.uv_c.xy,flags);

@@ -4,6 +4,7 @@ fn appearance_bits_do_not_corrupt_normals_light_or_vertex_stride() {
     let v = Vertex::new([0.0; 3], 1, 1, [0.2; 3], 15, 7).material(super::super::surface::Surface {
         color: [0.2, 0.2, 0.2, 0.62],
         layer: Some(511),
+        sample_texture: true,
         fluid: true,
         cutout: true,
     });
@@ -45,4 +46,20 @@ fn compact_layout_preserves_positions_cardinal_normals_and_voxel_light() {
             }
         }
     }
+}
+
+#[test]
+fn coarse_reference_material_identity_does_not_enable_texture_sampling() {
+    let v = Vertex::new([0.0; 3], 1, 1, [0.2; 3], 15, 7).material(super::super::surface::Surface {
+        color: [0.2, 0.2, 0.2, 1.0],
+        layer: Some(4095),
+        sample_texture: false,
+        fluid: false,
+        cutout: true,
+    });
+    assert_eq!((v.surface >> 13) & 0x3ffff, 4096);
+    assert_ne!(v.surface & 0x80000000, 0);
+    assert_eq!(v.unpack()[4], 1.0);
+    assert_eq!(v.unpack()[9], 1.0);
+    assert_eq!(v.unpack()[10], 7.0 / 15.0);
 }

@@ -1,4 +1,8 @@
 // Shared inputs, vertex entry point and world_position are in filter.wgsl.
+fn ray_specular_fallback(direction:vec3f,roughness:f32)->vec3f {
+    return bg_prefiltered_environment(direction,roughness,ray_frame.horizon.xyz,ray_frame.zenith,
+        ray_frame.sun,ray_frame.climate.xy,ray_frame.cloud.w>0.5);
+}
 struct RayCandidate { radiance:vec4f,geometry:vec4f,position:vec3f,bilinear:f32,sky:bool };
 @fragment fn fs_main(@builtin(position) frag:vec4f)->@location(0) vec4f {
     let p=vec2i(frag.xy);var center=textureLoad(receiver,p,0);
@@ -68,7 +72,7 @@ struct RayCandidate { radiance:vec4f,geometry:vec4f,position:vec3f,bilinear:f32,
     if !media_only && primary_t>0.0 {
         let v=normalize(ray_frame.eye.xyz-center_position);
         var mapped=oct_decode(center.xy);if dot(mapped,v)<0.0 {mapped=-mapped;}
-        let fallback=bg_pbr_prefiltered_sky(reflect(-v,mapped),center.z,ray_frame.horizon.xyz,ray_frame.zenith);
+        let fallback=ray_specular_fallback(reflect(-v,mapped),center.z);
         let specular=textureLoad(response,p,0);
         correction-=fallback*specular.rgb*specular.w*primary_t;
     }

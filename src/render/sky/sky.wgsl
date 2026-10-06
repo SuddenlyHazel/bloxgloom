@@ -31,6 +31,11 @@ struct SkyOutput {@location(0) color:vec4f,@location(1) indirect:vec4f,@location
     let atlas_uv=(clamp(moon_uv,vec2f(0.0),vec2f(1.0))+tile)/vec2f(4.0,2.0);
     let moon_color=textureSampleLevel(moon_art,cloud_sampler,atlas_uv,0.0).rgb;
     color+=moon_color*bg_sky_celestial_inside(moon_uv,-alignment)*night*vec3f(0.55,0.65,0.85);
+    if abs(sky_camera.reference.w)>0.5 && sky_camera.sun.w< -0.5 {
+        let active_light=sun_direction*select(1.0,-1.0,sky_camera.reference.w<0.0);
+        let exterior=clamp(-sky_camera.sun.w-1.0,0.0,1.0);
+        color+=bg_bsl_underwater_sun_glare(ray,active_light,sky_camera.sun_radiance.xyz,sky_camera.sun_radiance.w,clamp(sun_direction.y*10.0+0.5,0.0,1.0),sky_camera.climate.x,exterior,sky_camera.reference.x,sky_camera.eye.y);
+    }
     if sky_camera.sun.w<0.5 {
         let volume=textureSampleLevel(clouds,cloud_sampler,vec2f(input.uv.x,1.0-input.uv.y),0.0);
         color=volume.rgb+color*clamp(volume.a,0.0,1.0);

@@ -262,6 +262,7 @@ pub(super) async fn run_perf_benchmark_async(
         render::lod::Gpu::new(&device, render::post::HDR_FORMAT, &pipeline, &texture_group);
     lod_gpu.set_horizon(lod_horizon);
     lod_gpu.set_sun_shadows(camera_group.clone());
+    lod_gpu.set_reference_water_inputs(&device, water_renderer.reference_inputs());
     let (lod_meshes, lod_summary_bytes) = if lod_horizon > 0 {
         super::lod::terrain_meshes(camera, lod_horizon)?
     } else {
@@ -408,8 +409,15 @@ pub(super) async fn run_perf_benchmark_async(
                 return Err("LOD benchmark upload stalled".into());
             }
         }
+        let eye_voxel = camera.position.floor().as_ivec3();
+        let (eye_key, eye_local) = world::world_to_chunk(eye_voxel.x, eye_voxel.y, eye_voxel.z);
+        let eye_in_water = chunks
+            .get(&eye_key)
+            .and_then(|chunk| chunk.block(eye_local))
+            == Some(world::WATER);
         let (matrix, jitter) = post.prepare_temporal(&queue, camera);
         lod_gpu.set_jitter(jitter);
+        lod_gpu.set_eye_in_water(eye_in_water);
         lod_gpu.prepare(
             &queue,
             camera,
@@ -468,12 +476,13 @@ pub(super) async fn run_perf_benchmark_async(
         queue.write_buffer(
             &sky.camera,
             0,
-            bytemuck::cast_slice(&render::sky_camera_data_at_sample(
+            bytemuck::cast_slice(&render::sky_camera_data_at_sample_in_medium(
                 camera,
                 PERF_WIDTH,
                 PERF_HEIGHT,
                 atmosphere,
                 u32::try_from(samples.len())?,
+                eye_in_water,
             )),
         );
         queue.write_buffer(
@@ -481,6 +490,9 @@ pub(super) async fn run_perf_benchmark_async(
             0,
             bytemuck::cast_slice(&{
                 let mut data = atmosphere.camera_data(matrix, camera.position);
+                if render::bsl_reference::enabled() && eye_in_water {
+                    data[31] = -1.0;
+                }
                 if lod_horizon > 0 && !render::bsl_reference::enabled() {
                     data[28] = f32::from(lod_horizon) * 0.65;
                     data[29] = f32::from(lod_horizon);
@@ -598,9 +610,27 @@ pub(super) async fn run_perf_benchmark_async(
         }
         post.reflections.configure(camera.position, atmosphere);
         post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
+        water_renderer.prepare_frame(
+            &queue,
+            render::water::Frame {
+                atmosphere,
+                eye_in_water,
+                sample: u32::try_from(samples.len())?,
+                camera,
+                size: [PERF_WIDTH, PERF_HEIGHT],
+                view_projection: matrix,
+            },
+        );
+        let water_target =
+            water_renderer.begin_frame(&device, &mut encoder, &post.scene, &depth_view);
+        lod_gpu.set_reference_water_inputs(&device, water_renderer.reference_inputs());
+        let water_depth = water_renderer
+            .reference_front_depth()
+            .cloned()
+            .unwrap_or_else(|| depth_view.clone());
         {
             let mut attachments = render::scene_ao::attachments(
-                &post.scene,
+                &water_target,
                 &post.ambient.indirect,
                 &post.reflections.normal,
                 &post.reflections.response,
@@ -613,7 +643,7 @@ pub(super) async fn run_perf_benchmark_async(
                 label: Some("perf water"),
                 color_attachments: &attachments,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view,
+                    view: &water_depth,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -623,7 +653,6 @@ pub(super) async fn run_perf_benchmark_async(
                 ..Default::default()
             });
             final_triangles += lod_gpu.draw_water(&mut pass);
-            water_renderer.prepare(&queue);
             let mut water = gpu_meshes
                 .iter()
                 .filter_map(|(key, m)| m.water.as_ref().map(|m| (*key, m)))
@@ -638,6 +667,8 @@ pub(super) async fn run_perf_benchmark_async(
                 final_triangles += water_renderer.draw(&mut pass, &m.vertex, &m.index, m.indices);
             }
         }
+        water_renderer.finish_frame(&device, &mut encoder, &post.scene);
+        post.configure_reference_water_depth(water_renderer.reference_front_depth());
         post.trace
             .profile_active(matches!(phase, PerfPhase::Steady));
         post.resolve_transport(
@@ -663,6 +694,13 @@ pub(super) async fn run_perf_benchmark_async(
         );
         post.draw_motion(&queue, &mut encoder, &depth_view, None);
         post.resolve_temporal(&device, &mut encoder, &depth_view);
+        post.configure_reference_lens(
+            render::view_projection(camera, PERF_WIDTH, PERF_HEIGHT),
+            camera.position,
+            atmosphere,
+            1.0 / 60.0,
+            eye_in_water,
+        );
         post.encode(&device, &queue, &mut encoder, &color_view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

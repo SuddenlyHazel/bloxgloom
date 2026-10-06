@@ -11,7 +11,8 @@ impl Vertex {
         self.color[3] = (surface.color[3].clamp(0.0, 1.0) * 255.0).round() as u8;
         self.surface |= (u32::from(surface.fluid) << 11)
             | (u32::from(surface.cutout) << 12)
-            | (surface.layer.map_or(0, |layer| layer + 1) << 13);
+            | (surface.layer.map_or(0, |layer| layer + 1) << 13)
+            | (u32::from(surface.layer.is_some() && !surface.sample_texture) << 31);
         self
     }
     pub(super) fn new(

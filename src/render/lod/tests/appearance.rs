@@ -88,7 +88,11 @@ fn only_transition_levels_receive_actual_face_textures() {
     let colors = FaceColors::new(catalog);
     for level in 0..=4 {
         let surface = super::super::surface::Surface::new(catalog, &colors, STONE, 1, 1, level);
-        assert_eq!(surface.layer.is_some(), level <= 2);
+        assert_eq!(surface.sample_texture, level <= 2);
+        assert_eq!(
+            surface.layer.is_some(),
+            level <= 2 || crate::render::bsl_reference::enabled()
+        );
         let water = super::super::surface::Surface::new(catalog, &colors, WATER, 1, 1, level);
         assert!(water.fluid && water.layer.is_none() && water.color[3] < 1.0);
     }

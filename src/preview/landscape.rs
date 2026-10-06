@@ -1,6 +1,8 @@
 //! Fixed, unedited generated landscapes, rendered through production paths.
 use super::*;
 
+pub(super) mod horizon;
+
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Shot {
     Meadow,
@@ -10,7 +12,7 @@ pub(super) enum Shot {
 }
 impl Shot {
     pub(super) fn site(self) -> (i32, i32) {
-        // Generator version 7, seed 0xB10C6100. Unlike the authored showcase,
+        // Generator version 8, seed 0xB10C6100. Unlike the authored showcase,
         // every block in these views comes from ordinary world generation.
         match self {
             Self::Meadow => (-2000, -2048),
@@ -63,8 +65,17 @@ impl Shot {
 
 pub fn render_landscape_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
+    let selected = std::env::var("BLOXGLOOM_LANDSCAPE_VIEW").ok();
+    if selected
+        .as_deref()
+        .is_some_and(|view| !["meadow", "coast", "cherry-grove", "mountains"].contains(&view))
+    {
+        return Err(
+            "BLOXGLOOM_LANDSCAPE_VIEW must be meadow, coast, cherry-grove, or mountains".into(),
+        );
+    }
     let mut settings = format!(
-        "Generated landscapes; generator {}; seed {SEED:#x}; production voxel/water/shadow/postprocess paths\n1280x800; noon; installed material artwork; no terrain edits or saved world\nTemporal AA requested: {}\nGI requested: {}; target scale: {}; BSL reference mode: {}\n",
+        "Generated landscapes; generator {}; seed {SEED:#x}; production voxel/water/shadow/postprocess paths; distant terrain horizon 512m\n1280x800; noon; installed material artwork; no terrain edits or saved world\nTemporal AA requested: {}\nGI requested: {}; target scale: {}; BSL reference mode: {}\n",
         world::TERRAIN_GENERATOR_VERSION,
         render::post::temporal_requested(),
         std::env::var("BLOXGLOOM_GI").unwrap_or_else(|_| "0".into()),
@@ -77,6 +88,9 @@ pub fn render_landscape_previews(directory: &Path) -> Result<(), Box<dyn Error>>
         ("03-cherry-grove", Shot::Grove),
         ("04-mountains", Shot::Mountains),
     ] {
+        if selected.as_deref().is_some_and(|view| &name[3..] != view) {
+            continue;
+        }
         let (x, z) = shot.site();
         let (eye, target) = shot.camera();
         settings.push_str(&format!(

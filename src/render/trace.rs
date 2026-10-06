@@ -1,6 +1,7 @@
 //! Scene-space light transport independent of screen visibility.
 mod deformation;
 mod gpu;
+mod optimizations;
 pub(crate) mod profiling;
 pub(crate) mod scene;
 #[cfg(test)]
