@@ -1182,9 +1182,9 @@
     "semantic_hash": ""
   },
   "src/preview/perf.rs": {
-    "mtime": 1791291217.68833,
-    "seen": 1791291431.975661,
-    "ast_hash": "b3655cfebeec3a440bb69cea747d344f",
+    "mtime": 1791296033.3466513,
+    "seen": 1791296177.6202722,
+    "ast_hash": "0f4c09fdf7e1bb223de37b4eedfbbc37",
     "semantic_hash": ""
   },
   "src/preview/visuals.rs": {
@@ -1440,9 +1440,9 @@
     "semantic_hash": ""
   },
   "src/render/post.rs": {
-    "mtime": 1791275234.2477279,
-    "seen": 1791277290.131915,
-    "ast_hash": "0db6bcae3228b81e2330f90f8b423bf3",
+    "mtime": 1791295647.9746854,
+    "seen": 1791296177.620529,
+    "ast_hash": "418090f7fc48ae9101b4abb316dbbc4d",
     "semantic_hash": ""
   },
   "src/render/post/targets.rs": {
@@ -10122,15 +10122,15 @@
     "semantic_hash": ""
   },
   "src/render/post/temporal.rs": {
-    "mtime": 1791258580.5024312,
-    "seen": 1791258932.63017,
-    "ast_hash": "b3be0be9c7cdaf9d8f6b0d7c0b492c26",
+    "mtime": 1791295811.527502,
+    "seen": 1791296177.620555,
+    "ast_hash": "091f35326b749c741b83416ca45ca890",
     "semantic_hash": ""
   },
   "src/render/post/temporal/tests.rs": {
-    "mtime": 1791256736.1189928,
-    "seen": 1791257364.858565,
-    "ast_hash": "b6bd2ec18bb599c6934c0740c5679e76",
+    "mtime": 1791295809.3727043,
+    "seen": 1791296177.6205618,
+    "ast_hash": "acb9e72e816c21e9e1a025cdbf824d09",
     "semantic_hash": ""
   },
   "src/render/scene_ao.rs": {
@@ -16944,9 +16944,9 @@
     "semantic_hash": ""
   },
   "PBR-ISSUES.md": {
-    "mtime": 1791291893.4212928,
-    "seen": 1791291926.7002509,
-    "ast_hash": "dd02c8fe986431b2c243ebcb801fb79f",
+    "mtime": 1791296136.9887424,
+    "seen": 1791296177.621493,
+    "ast_hash": "c87dc705523717a427120e69dffa3c61",
     "semantic_hash": ""
   },
   "src/render/material/color.rs": {
@@ -18462,9 +18462,9 @@
     "semantic_hash": ""
   },
   "src/render/quality.rs": {
-    "mtime": 1791291196.3379314,
-    "seen": 1791291431.975988,
-    "ast_hash": "f79fbbb7792f8a79c021a1cef7d45d6a",
+    "mtime": 1791295647.9809341,
+    "seen": 1791296177.6205661,
+    "ast_hash": "d4e842b5cdc080bbaaaa17b6c2e3b07b",
     "semantic_hash": ""
   },
   "src/render/reflections/tests/water.rs": {
@@ -18501,6 +18501,18 @@
     "mtime": 1791290905.4503934,
     "seen": 1791290921.8059871,
     "ast_hash": "451324e16632cd6e4e3463069bf712d1",
+    "semantic_hash": ""
+  },
+  "src/preview/perf/capture_frames.rs": {
+    "mtime": 1791296033.331348,
+    "seen": 1791296177.6202738,
+    "ast_hash": "ce6bcd3994b1a5cc828a867443345dcc",
+    "semantic_hash": ""
+  },
+  "src/render/post/temporal/stability_tests.rs": {
+    "mtime": 1791296107.180628,
+    "seen": 1791296177.62056,
+    "ast_hash": "34e3d71e745bcbd16383a81707e102ac",
     "semantic_hash": ""
   }
 }

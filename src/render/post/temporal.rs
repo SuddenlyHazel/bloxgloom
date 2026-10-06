@@ -29,6 +29,7 @@ pub(crate) struct Temporal {
     frame: u32,
     index: usize,
     valid: bool,
+    reduced_resolution: bool,
 }
 
 pub(crate) fn jitter(frame: u32) -> Vec2 {
@@ -63,8 +64,9 @@ fn continuous(previous: crate::render::Camera, current: crate::render::Camera) -
 impl Temporal {
     fn shader() -> String {
         format!(
-            "{}\n{}",
+            "{}\n{}\n{}",
             include_str!("temporal/sky.wgsl"),
+            include_str!("temporal/spatial.wgsl"),
             include_str!("temporal.wgsl")
         )
     }
@@ -182,7 +184,7 @@ impl Temporal {
             pipeline,
             settings: device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("temporal camera"),
-                size: 160,
+                size: 176,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
@@ -197,6 +199,7 @@ impl Temporal {
             frame: 0,
             index: 0,
             valid: false,
+            reduced_resolution: false,
         }
     }
 
@@ -207,13 +210,21 @@ impl Temporal {
         width: u32,
         height: u32,
     ) -> (Mat4, Vec2) {
-        let offset = jitter(self.frame);
+        // Reactive wind/water deliberately reject history. Jittering those
+        // samples and magnifying them produces a periodic crawl even at rest.
+        // Reduced-resolution rendering uses stable sampling plus spatial AA;
+        // opaque surfaces still retain camera/object-reprojected history.
+        let offset = if self.reduced_resolution {
+            Vec2::ZERO
+        } else {
+            jitter(self.frame)
+        };
         let stable = crate::render::view_projection(camera, width, height);
         let matrix = jitter_matrix(stable, offset, width, height);
         let (previous, valid) = self.previous.map_or((stable, false), |(matrix, old)| {
             (matrix, self.valid && continuous(old, camera))
         });
-        let mut data = Vec::with_capacity(40);
+        let mut data = Vec::with_capacity(44);
         // Reconstruct the actual raster sample. The shader adds current jitter
         // back after projecting to previous stable coordinates, so a stationary
         // camera has zero output motion and can accumulate different samples.
@@ -231,6 +242,7 @@ impl Temporal {
             offset.x / width.max(1) as f32,
             offset.y / height.max(1) as f32,
         ]);
+        data.extend([f32::from(self.reduced_resolution), 0.0, 0.0, 0.0]);
         queue.write_buffer(&self.settings, 0, bytemuck::cast_slice(&data));
         self.motion_frame = Some(crate::render::avatars::motion::Frame {
             previous: previous.to_cols_array(),
@@ -245,6 +257,15 @@ impl Temporal {
         self.pending = Some((stable, camera));
         self.resolved = false;
         (matrix, offset)
+    }
+
+    pub(super) fn reduced_resolution(&mut self, enabled: bool) {
+        if self.reduced_resolution != enabled {
+            self.reduced_resolution = enabled;
+            self.reference_reset();
+            self.pending = None;
+            self.frame = 0;
+        }
     }
 
     pub(crate) fn resolve(

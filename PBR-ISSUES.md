@@ -778,3 +778,94 @@ Final `cargo fmt --all -- --check`,
 regressions, isolated release benchmarks and `graphify update .` pass. Release
 production code did not change after the frozen measurements. The user's
 existing `.gitignore` edits are excluded from the integration commit.
+
+## Reduced-resolution shimmer follow-up
+
+The user reports shimmer in MacBook/Balanced even with a stationary camera.
+The earlier static preview and frame-time acceptance did not exercise temporal
+stability adequately. Enhanced water (`-2`) and wind-reactive foliage (`-1`)
+deliberately reject temporal history, and silhouette depth rejection also keeps
+many edges current-only. Their eight-phase raster jitter is then magnified by
+35%/50% world-resolution upscaling. The fullscreen sky is already unjittered;
+it is not the source of this geometric sampling defect.
+
+Enhanced reduced-resolution rendering now uses an unjittered sample grid and
+edge-directed spatial AA within the existing world-resolution temporal pass.
+Current-only surfaces receive spatial AA without borrowing history; ordinary
+opaque camera/object history, disocclusion and reactive rejection stay active.
+The filter operates on linear HDR before upscaling, preserves constant black
+and HDR regions, and uses perceptual luma only to select edges. It adds no
+textures, passes, native-resolution filter, rays or changed material artwork.
+Filtering trades some edge sharpness for stability; it cannot recover detail
+lost to rendering fewer pixels.
+
+Native-resolution and source BSL reference AA retain their previous sampling.
+Budget changes invalidate history, and resize/AA toggles retain the correct
+sampling mode. `BLOXGLOOM_LOW_RES_AA=0` is the previous-path diagnostic control.
+Explicit `BLOXGLOOM_TAA=0` still disables the temporal/spatial pass; unsupported
+GL retains the existing fallback.
+
+An actual GPU eight-frame reactive wind/water fixture reproduces 2,148 old-path
+pixel changes across seven stationary transitions and zero with the fix.
+Moving-edge squared error versus independent 32×32-per-pixel area integration
+falls from 379.139672 to 257.034566 (32.2%). The CPU point-coverage oracle checks
+all samples away from analytic discontinuities; numerically ambiguous edge
+samples are excluded because CPU/GPU contraction can classify them differently. Constant black and
+2.0 HDR regions remain exact. Fixtures and actual display-upscaled PNGs are at
+`/private/tmp/bloxgloom-shimmer-fixture/`; the proof log is
+`/private/tmp/bloxgloom-shimmer-regression.log`.
+
+`BLOXGLOOM_PERF_CAPTURE_FRAMES=<directory>` optionally saves the first eight
+steady frames with the production render/resolve/display path. These bounded
+readbacks explicitly invalidate that run's performance comparison; normal
+benchmarks have no captures or added GPU work.
+
+### Follow-up acceptance evidence
+
+Frozen release SHA256:
+`1c6a9a82b607ccfc1276f3fea30def8010662cf8dfeadaba45d08bc6c368ba21`.
+Eight matched real MacBook-preset frames at 3456×2234 output / 1210×782 world
+use one camera, the same scene, GI off, TAA on and a fixed 19.75-second
+wave/foliage clock. Both sequences were inspected:
+`/private/tmp/bloxgloom-shimmer-real-{old,fixed}/`. In the foreground crop
+(x 10–90%, y 20–85%, avoiding HUD and most sky), mean absolute per-channel
+8-bit RGB change between frames falls from 0.513485 to 0.000129 (99.97%). The
+fraction of pixels changing by more than two codes in any channel falls from
+5.3515% to zero. This isolates stationary sampling instability; live wind/waves
+still animate, and moving subpixel detail can still alias. Raw metrics are in
+`/private/tmp/bloxgloom-shimmer-real-metrics.json`. Capture-run timings are not
+performance evidence; the canned HUD FPS is not a measurement.
+
+Separate serial 300-steady-frame benchmarks run without readbacks, the game,
+compiler or another benchmark. GI remains explicitly off. MacBook Retina
+old/fixed/old GPU p50 is 15.400 / 15.562 / 15.539 ms; CPU submission p50 is
+8.027 / 8.057 / 8.033 ms. The fixed cost is approximately 0.09 ms (+0.6%)
+against the bracketed control mean, with 0.9% baseline drift. Fixed GPU p95 is
+15.768 ms. This retains roughly 64 FPS headless GPU capacity; it is not live
+gameplay FPS. Matched near/distant mesh payloads and scene geometry are unchanged.
+
+Balanced Retina fixed/control/fixed GPU p50 is
+28.166 / 27.958 / 26.396 ms; p95 is 30.474 / 30.628 / 27.825 ms. That run-to-run
+variation does not establish a precise Balanced overhead; the fixed path
+retains similar frame cost under the same budget (about 35–38 FPS GPU capacity).
+Logs: `/private/tmp/bloxgloom-shimmer-perf-{control-a,fixed,control-b,balanced,balanced-control,balanced-repeat}.log`.
+
+Standard 1280×720, TAA/GI-off `perf 300 6` and `perf 300 6 bounced` complete:
+new voxel/bounced GPU p50/p95 is 13.143/14.263 and 11.896/12.177 ms;
+CPU p50/p95 is 11.701/12.672 and 10.826/11.490 ms. Voxel/bounced setup is
+5,343.8/5,693.8 ms,
+with unchanged 61,150,260 worker bytes / 160,650 visible triangles; bounced
+retains 63,489,540 bytes / 166,758 triangles. The previous release's native
+voxel control in this session measures 13.230/14.632 ms GPU and
+11.544/14.087 ms CPU. This supports no native regression versus that
+contemporaneous control; historical 12 ms numbers cannot isolate changes across
+measurement conditions. Logs: `/private/tmp/bloxgloom-shimmer-perf-{voxel,bounced,old-binary-voxel}.log`.
+
+All 31 relevant `cargo test render::post -- --test-threads=1` tests pass, including
+the new stationary/moving coverage and mode/resize regressions, existing
+disocclusion/object motion, HDR/black preservation, and exact reference display
+checks. The entire unrelated 30-minute suite was not repeated after this
+focused follow-up. Release build, formatting, all-target/all-feature strict
+Clippy, and AST graph update pass. Logs:
+`/private/tmp/bloxgloom-shimmer-{post-tests,release-build,fmt,clippy,graph}.log`.
+Live acceptance remains the user's play-test.

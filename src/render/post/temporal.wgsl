@@ -7,6 +7,8 @@ struct Settings {
     // history weight, history valid, relative depth tolerance, reference sky history
     params: vec4f,
     depth_range: vec4f,
+    // Stable sample grid / spatial edge AA for reduced-resolution output.
+    spatial: vec4f,
 };
 @group(0) @binding(0) var current: texture_2d<f32>;
 @group(0) @binding(1) var depth: texture_depth_2d;
@@ -29,7 +31,7 @@ fn linear_depth(z: f32) -> f32 { return settings.depth_range.x / max(1.0 - z * (
     let size = vec2i(textureDimensions(current));
     let pixel = vec2i(input.position.xy);
     let uv = input.position.xy / vec2f(size);
-    let color = textureLoad(current, pixel, 0).rgb;
+    let color = bg_temporal_current(uv, pixel, size);
     let z = textureLoad(depth, pixel, 0);
     var out: Output;
     out.color = vec4f(color, 1.0);

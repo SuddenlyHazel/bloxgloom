@@ -23,6 +23,7 @@ impl Renderer {
         self.post.reflections.set_enabled(reflections);
         if self.render_scale != scale {
             self.render_scale = scale;
+            self.post.configure_reduced_resolution(scale < 1.0);
             self.resize_scene();
         }
     }

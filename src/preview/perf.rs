@@ -1,3 +1,4 @@
+mod capture_frames;
 pub(crate) mod characters;
 mod clock;
 mod quality;
@@ -53,6 +54,7 @@ pub(super) async fn run_perf_benchmark_async(
         return Err("view radius must be in 1..=6".into());
     }
     let quality = quality::Options::from_env()?;
+    let capture_frames = capture_frames::Capture::from_env()?;
     let (perf_width, perf_height) = quality.dimensions;
     let (output_width, output_height) = quality.native;
     let water_clock = clock::WaterClock::from_env()?;
@@ -177,6 +179,7 @@ pub(super) async fn run_perf_benchmark_async(
 
     let mut post = render::post::PostProcess::new(&device, perf_width, perf_height, FORMAT);
     post.trace.set_water_reconstruction_adapter(&adapter);
+    post.configure_reduced_resolution((perf_width, perf_height) != (output_width, output_height));
     if let Some(config) = &quality.config {
         post.reflections.set_enabled(config.reflections_enabled);
         post.configure(
@@ -247,7 +250,7 @@ pub(super) async fn run_perf_benchmark_async(
         dimension: wgpu::TextureDimension::D2,
         format: FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | if capture_path.is_some() {
+            | if capture_path.is_some() || capture_frames.enabled() {
                 wgpu::TextureUsages::COPY_SRC
             } else {
                 wgpu::TextureUsages::empty()
@@ -830,6 +833,7 @@ pub(super) async fn run_perf_benchmark_async(
         });
         if matches!(phase, PerfPhase::Steady) {
             steady_done += 1;
+            capture_frames.save(&device, &queue, &color, steady_done - 1)?;
         }
         if post.trace.ready() && gi_inflight > 0 && samples.len().is_multiple_of(gi_inflight) {
             // Completion waits are excluded from the CPU time captured above.

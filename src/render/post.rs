@@ -24,6 +24,7 @@ pub(crate) fn temporal_requested() -> bool {
 pub(crate) struct PostProcess {
     pub scene: wgpu::TextureView,
     temporal: Option<temporal::Temporal>,
+    reduced_resolution: bool,
     pub(crate) ambient: super::scene_ao::AmbientOcclusion,
     pub(crate) reflections: super::reflections::Reflections,
     pub(crate) trace: super::trace::TraceLighting,
@@ -187,6 +188,7 @@ impl PostProcess {
                 .then(|| reference_underwater::Underwater::new(device, width, height)),
             scene: targets.scene,
             temporal: None,
+            reduced_resolution: false,
             ambient: super::scene_ao::AmbientOcclusion::new(device, width, height),
             reflections: super::reflections::Reflections::new(device, width, height),
             trace: super::trace::TraceLighting::new(device),
@@ -220,7 +222,9 @@ impl PostProcess {
             self.effect.as_mut(),
         );
         if self.temporal.is_some() {
-            self.temporal = Some(temporal::Temporal::new(device, width, height));
+            let mut temporal = temporal::Temporal::new(device, width, height);
+            temporal.reduced_resolution(self.reduced_resolution);
+            self.temporal = Some(temporal);
         }
         if let Some(display) = &mut self.reference_display {
             display.resize(device, width, height);
@@ -269,6 +273,9 @@ impl PostProcess {
         }
         let size = self.scene.texture().size();
         self.temporal = enabled.then(|| temporal::Temporal::new(device, size.width, size.height));
+        if let Some(temporal) = &mut self.temporal {
+            temporal.reduced_resolution(self.reduced_resolution);
+        }
         if let Some(display) = &mut self.reference_display {
             display.reset();
         }
@@ -276,6 +283,17 @@ impl PostProcess {
 
     pub(crate) fn temporal_enabled(&self) -> bool {
         self.temporal.is_some()
+    }
+
+    /// Preserve source-reference AA; enhanced low-resolution output uses a
+    /// stable sample grid and spatial edge AA for surfaces that reject history.
+    pub(crate) fn configure_reduced_resolution(&mut self, reduced: bool) {
+        self.reduced_resolution = reduced
+            && self.reference_display.is_none()
+            && std::env::var("BLOXGLOOM_LOW_RES_AA").as_deref() != Ok("0");
+        if let Some(temporal) = &mut self.temporal {
+            temporal.reduced_resolution(self.reduced_resolution);
+        }
     }
 
     pub(crate) fn prepare_temporal(

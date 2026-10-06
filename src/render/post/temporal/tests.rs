@@ -413,3 +413,6 @@ fn gpu_temporal_history_rejects_disocclusion_and_offscreen_motion() {
 
 #[path = "sky_tests.rs"]
 mod sky;
+
+#[path = "stability_tests.rs"]
+mod stability;
