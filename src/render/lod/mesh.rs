@@ -243,6 +243,26 @@ pub(crate) fn mesh(
             }
         }
     }
+    for tree in &tile.trees {
+        let Some(base) = super::forest::root_base(tile, tree, catalog) else {
+            continue;
+        };
+        if base < tree.anchor[1] + 1 {
+            // The continued metre-wide stem is drawable geometry too. A
+            // partially known finer family cannot retire this support gap.
+            let x = (i64::from(tree.anchor[0]) - i64::from(ox)).div_euclid(i64::from(w));
+            let z = (i64::from(tree.anchor[2]) - i64::from(oz)).div_euclid(i64::from(w));
+            if (0..32).contains(&x) && (0..32).contains(&z) {
+                m.coverage.occupied[(x + 32 * z) as usize].push(crate::lod::Interval {
+                    bottom: base,
+                    top: tree.anchor[1] + 1,
+                });
+            }
+            super::forest::append_supported(&mut m, tree, base, catalog, colors)?;
+        } else {
+            super::forest::append(&mut m, tree, catalog, colors)?;
+        }
+    }
     m.bounds = m.bounds();
     Ok(m)
 }

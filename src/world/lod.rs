@@ -3,6 +3,7 @@
 //! their center. Saved deltas anywhere in a cell override the approximation.
 //! Coverage describes the authoritative builtin domain,
 //! not a claim that every fine voxel was enumerated.
+mod forest;
 mod sampling;
 mod snapshots;
 
@@ -26,7 +27,7 @@ impl World {
     pub(crate) fn lod_cache_identity(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hash = Sha256::new();
-        hash.update(b"bloxgloom-lod-summary-v2");
+        hash.update(b"bloxgloom-lod-summary-v3-forest");
         hash.update(self.seed.to_le_bytes());
         hash.update(super::TERRAIN_GENERATOR_VERSION.to_le_bytes());
         hash.update(self.catalog.fingerprint().to_le_bytes());
@@ -63,11 +64,17 @@ fn build(
     let bottom = BEDROCK_Y;
     let top = ((MAX_GENERATED_HEIGHT / CHUNK_SIZE as i32) + 1) * CHUNK_SIZE as i32;
     let mut sampler = LodSampler::new(seed);
+    let proxy_forest = key.level > 0 && !forest::has_edits(&mut sampler, key, overlays)?;
+    let mut trees = if proxy_forest {
+        forest::features(&mut sampler, key)?
+    } else {
+        Vec::new()
+    };
     let mut cells: Vec<BTreeMap<i32, BlockId>> = Vec::with_capacity(TILE_COLUMNS);
     let mut coverages = vec![vec![Interval { bottom, top }]; TILE_COLUMNS];
     for z in 0..TILE_SIZE {
         for x in 0..TILE_SIZE {
-            cells.push(sampling::cell(
+            cells.push(sampling::cell_for_forest(
                 &mut sampler,
                 minx + x as i32 * width,
                 minz + z as i32 * width,
@@ -75,6 +82,7 @@ fn build(
                 bottom,
                 top,
                 catalog,
+                proxy_forest,
             )?);
         }
     }
@@ -152,7 +160,9 @@ fn build(
         let column = sampling::column(states, joined, catalog)?;
         columns.push(column);
     }
+    forest::assign_support(&mut sampler, key, catalog, &columns, &mut trees)?;
     let tile = LodTile {
+        trees,
         key,
         revision,
         columns,

@@ -3,6 +3,8 @@
 use crate::content::{BlockStateId, Catalog};
 
 mod extract;
+mod forest;
+pub use forest::{MAX_TREE_FEATURES, TreeFeature};
 pub(crate) mod loading;
 mod reduce;
 pub(crate) mod skylight;
@@ -16,9 +18,11 @@ pub const TILE_SIZE: usize = 32;
 pub const TILE_COLUMNS: usize = TILE_SIZE * TILE_SIZE;
 pub const MAX_LEVEL: u8 = 20;
 pub const MAX_SPANS_PER_COLUMN: usize = 32;
-pub const MAX_TILE_SPANS: usize = 3072;
 pub const MAX_TILE_COVERAGE: usize = 2048;
 pub const MAX_TILE_BYTES: usize = 60 * 1024;
+// Allocation is bounded by the unchanged packet cap, not an unrelated lower
+// occupancy limit. Coverage and forest bytes further reduce admission capacity.
+pub const MAX_TILE_SPANS: usize = (MAX_TILE_BYTES - 34 - 4 * TILE_COLUMNS) / 14;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TileKey {
@@ -122,16 +126,18 @@ pub struct LodTile {
     /// Publication revision; dependency generations belong to the owning scheduler.
     pub revision: u64,
     pub columns: Vec<Column>,
+    pub trees: Vec<TreeFeature>,
     pub geometric_error: u32,
 }
 impl LodTile {
     /// Canonical uncompressed wire size including conservative tile header allowance.
     pub fn encoded_bytes(&self) -> usize {
-        32 + self
-            .columns
-            .iter()
-            .map(|c| 4 + c.coverage.len() * 8 + c.spans.len() * 14)
-            .sum::<usize>()
+        34 + self.trees.len() * TreeFeature::WIRE_BYTES
+            + self
+                .columns
+                .iter()
+                .map(|c| 4 + c.coverage.len() * 8 + c.spans.len() * 14)
+                .sum::<usize>()
     }
     pub fn validate(&self, catalog: &Catalog) -> Result<(), String> {
         self.validate_structure(catalog)?;
@@ -179,13 +185,43 @@ impl LodTile {
                 column.spans = spans;
             }
         }
-        self.validate(catalog)?;
+        self.validate(catalog).map_err(|error| {
+            format!(
+                "{error}: spans={}, coverage={}, trees={}, bytes={}",
+                self.columns.iter().map(|c| c.spans.len()).sum::<usize>(),
+                self.columns.iter().map(|c| c.coverage.len()).sum::<usize>(),
+                self.trees.len(),
+                self.encoded_bytes()
+            )
+        })?;
         Ok(self)
     }
 
     fn validate_structure(&self, catalog: &Catalog) -> Result<(), String> {
         if self.key.bounds().is_none() || self.columns.len() != TILE_COLUMNS {
             return Err("invalid LOD tile bounds or column count".into());
+        }
+        if self.trees.len() > MAX_TREE_FEATURES
+            || self
+                .trees
+                .windows(2)
+                .any(|pair| pair[0].anchor >= pair[1].anchor)
+        {
+            return Err("invalid forest descriptor count or order".into());
+        }
+        for feature in &self.trees {
+            feature.validate(self.key, catalog)?;
+            let (min, max) = feature.bounds().ok_or("forest coverage overflow")?;
+            let [x, z, mx, mz] = feature
+                .column_bounds(self.key)
+                .ok_or("forest sample bounds")?;
+            for zz in z..mz {
+                for xx in x..mx {
+                    if !self.columns[xx + 32 * zz].known(min[1], max[1]) {
+                        return Err("forest descriptor crosses unknown coverage".into());
+                    }
+                }
+            }
         }
         for c in &self.columns {
             if c.coverage.iter().any(|v| v.bottom >= v.top)

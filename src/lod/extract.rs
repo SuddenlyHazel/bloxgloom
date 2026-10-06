@@ -147,6 +147,7 @@ pub fn extract(
         })
         .collect();
     let tile = LodTile {
+        trees: Vec::new(),
         key,
         revision,
         columns,

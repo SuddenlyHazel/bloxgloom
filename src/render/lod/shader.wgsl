@@ -60,12 +60,14 @@ fn bg_lod_coverage(v: Out) {
     let dy = dpdy(uv);
     let encoded_layer = (v.surface >> 13u)&0x3ffffu;
     var albedo = v.color.rgb;
-    if encoded_layer != 0u && (v.surface&0x80000000u)==0u && options.y > 0.5 {
-        let texel = textureSampleGrad(material, material_sampler, uv, i32(material_metadata[encoded_layer-1u].layer), dx, dy);
-        // Continuous fade to linear texture averages as texels become distant.
-        let detail = 1.0-smoothstep(96.0, 240.0, length(v.relative));
-        albedo = mix(albedo, texel.rgb, detail);
-        if (v.surface & 4096u) != 0u && mix(1.0, texel.a, detail) < 0.5 { discard; }
+    let cutout=(v.surface&4096u)!=0u;
+    if encoded_layer!=0u && (cutout||((v.surface&0x80000000u)==0u&&options.y>0.5)) {
+        let texel=textureSampleGrad(material,material_sampler,uv,i32(material_metadata[encoded_layer-1u].layer),dx,dy);
+        // Coverage remains botanical at every distance, including averaged-color
+        // mode; only opaque RGB detail fades to the admitted linear average.
+        if cutout && texel.a<0.5 {discard;}
+        let detail=1.0-smoothstep(96.0,240.0,length(v.relative));
+        albedo=mix(albedo,texel.rgb,detail);
     }
     if BG_BSL_REFERENCE || BG_BSL_ADVANCED_REFERENCE {
         // Coarse summaries retain the authoritative face material identity,

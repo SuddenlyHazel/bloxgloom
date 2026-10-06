@@ -8,6 +8,7 @@ use crate::{
 use std::collections::HashSet;
 fn fixture(key: TileKey) -> LodTile {
     LodTile {
+        trees: Vec::new(),
         key,
         revision: 1,
         columns: vec![Column::default(); TILE_COLUMNS],

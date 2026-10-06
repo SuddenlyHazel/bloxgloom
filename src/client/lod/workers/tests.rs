@@ -9,6 +9,7 @@ fn pooled_meshes_preserve_identity_trace_and_release_catalog_after_completion() 
     for x in 0..4 {
         let key = TileKey { level: 1, x, z: -1 };
         let tile = Arc::new(LodTile {
+            trees: Vec::new(),
             key,
             revision: 9,
             geometric_error: 0,

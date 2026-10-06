@@ -423,6 +423,7 @@ fn structure_tile() -> LodTile {
         }
     }
     LodTile {
+        trees: Vec::new(),
         key: TileKey {
             level: 0,
             x: 0,

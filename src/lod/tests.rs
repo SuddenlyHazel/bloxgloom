@@ -165,6 +165,7 @@ fn parent_maps_child_quadrants_and_rejects_wrong_children() {
     let mut children: Vec<_> = keys
         .into_iter()
         .map(|key| LodTile {
+            trees: Vec::new(),
             key,
             revision: 1,
             columns: vec![Column::default(); TILE_COLUMNS],
@@ -203,6 +204,7 @@ fn excessive_geometry_and_illegal_states_are_rejected() {
         z: 0,
     };
     let mut tile = LodTile {
+        trees: Vec::new(),
         key,
         revision: 1,
         columns: vec![Column::default(); TILE_COLUMNS],
@@ -281,6 +283,7 @@ fn snapshot_order_preserves_trees_bridges_and_unknown_vertical_gaps() {
 fn hostile_vertical_extent_cannot_overflow_mesh_dimensions() {
     let catalog = Catalog::builtins();
     let mut tile = LodTile {
+        trees: Vec::new(),
         key: TileKey {
             level: 0,
             x: 0,
@@ -377,6 +380,7 @@ fn composed_contributor_bridge_survives_bounded_render_extraction() {
 fn render_budget_simplification_cannot_erase_invalid_data_or_air_gaps() {
     let catalog = Catalog::builtins();
     let mut tile = LodTile {
+        trees: Vec::new(),
         key: TileKey {
             level: 0,
             x: 0,
@@ -441,6 +445,7 @@ fn budget_reduction_preserves_water_and_solid_boundaries() {
         .to_vec(),
     };
     let tile = LodTile {
+        trees: Vec::new(),
         key: TileKey {
             level: 0,
             x: 0,

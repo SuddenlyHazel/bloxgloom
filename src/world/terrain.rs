@@ -1,4 +1,5 @@
 //! Deterministic terrain generation, biome sampling, and chunk decoration.
+mod forest;
 mod hydrology;
 mod landforms;
 mod materials;
@@ -466,6 +467,36 @@ impl LodSampler {
             trees: HashMap::new(),
             hydrology: hydrology::Sampler::new(seed),
         }
+    }
+    pub(super) fn tree_feature(&mut self, cx: i64, cz: i64) -> Option<crate::lod::TreeFeature> {
+        let tree = (*self
+            .trees
+            .entry((cx, cz))
+            .or_insert_with(|| tree_anchor(cx, cz, self.seed)))?;
+        forest::feature(tree)
+    }
+    pub(super) fn ground_column(&mut self, x: i64, z: i64, bottom: i32, top: i32) -> Vec<BlockId> {
+        let column = self.hydrology.column(x, z);
+        let pattern = surface_pattern(x, z, self.seed, &mut self.patterns);
+        (bottom..top)
+            .map(|y| {
+                let y = i64::from(y);
+                let ground = generated_block_with_pattern(x, y, z, column, pattern, self.seed);
+                if ground == AIR && y == column.height + 1 {
+                    let soil = generated_block_with_pattern(
+                        x,
+                        column.height,
+                        z,
+                        column,
+                        pattern,
+                        self.seed,
+                    );
+                    ground_plant(x, z, self.seed, column.biome, soil)
+                } else {
+                    ground
+                }
+            })
+            .collect()
     }
     pub(super) fn column(&mut self, x: i64, z: i64, bottom: i32, top: i32) -> Vec<BlockId> {
         let column = self.hydrology.column(x, z);

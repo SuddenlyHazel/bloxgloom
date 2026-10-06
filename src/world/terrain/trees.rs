@@ -21,6 +21,16 @@ pub(in crate::world) struct Tree {
 }
 
 impl Tree {
+    pub(in crate::world) fn presentation_shape(self) -> (u8, u8) {
+        let bits = ((self.shape >> 48) & 3)
+            | ((self.shape & 1) << 2)
+            | (((self.shape >> 3) & 1) << 3)
+            | (((self.shape >> 6) & 1) << 4);
+        (self.species as u8, bits as u8)
+    }
+    pub(in crate::world) fn presentation_bark(self) -> (BlockId, BlockId) {
+        (self.log_x, self.log_z)
+    }
     pub(in crate::world) fn is_log(self, block: BlockId) -> bool {
         block == self.log || block == self.log_x || block == self.log_z
     }

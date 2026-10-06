@@ -109,7 +109,24 @@ pub fn reduce_parent(
         .max()
         .unwrap_or(0)
         .saturating_add(key.sample_width().unwrap_or(1) as u32);
+    let mut trees: Vec<_> = children
+        .iter()
+        .flat_map(|child| child.trees.iter().copied())
+        .collect();
+    trees.sort_by_key(|tree| tree.anchor);
+    trees.dedup();
+    for tree in &trees {
+        let (min, max) = tree.bounds().ok_or("forest reduction bounds overflow")?;
+        for child in &children {
+            let [x, z, mx, mz] = child.key.bounds().ok_or("forest reduction child bounds")?;
+            if min[0] < mx && max[0] > x && min[2] < mz && max[2] > z && !child.trees.contains(tree)
+            {
+                return Err("forest refinement metadata incomplete".into());
+            }
+        }
+    }
     let tile = LodTile {
+        trees,
         key,
         revision,
         columns,

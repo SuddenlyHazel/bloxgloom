@@ -12,6 +12,7 @@ fn fixture() -> (State, Mesh) {
     state.wanted.push(key);
     state.builds.insert(key, 5);
     let tile = LodTile {
+        trees: Vec::new(),
         key,
         revision: 1,
         geometric_error: 0,

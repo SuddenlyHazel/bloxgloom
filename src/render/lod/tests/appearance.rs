@@ -97,3 +97,61 @@ fn only_transition_levels_receive_actual_face_textures() {
         assert!(water.fluid && water.layer.is_none() && water.color[3] < 1.0);
     }
 }
+
+#[test]
+fn generated_ocean_peers_share_source_height_and_have_no_surface_sidewall() {
+    let catalog = crate::content::catalog();
+    let colors = FaceColors::new(catalog);
+    let a = crate::world::lod::builtin_lod_tile(
+        TileKey {
+            level: 2,
+            x: -6,
+            z: -18,
+        },
+        1,
+        0xB10C_6100,
+        catalog,
+    )
+    .unwrap();
+    let b = crate::world::lod::builtin_lod_tile(
+        TileKey {
+            level: 2,
+            x: -5,
+            z: -18,
+        },
+        1,
+        0xB10C_6100,
+        catalog,
+    )
+    .unwrap();
+    let mesh = mesh(&a, &[&b], catalog, &colors).unwrap();
+    let wet = |c: &Column| {
+        c.spans
+            .iter()
+            .any(|s| s.state == WATER && s.top == 17 && s.bottom <= 16)
+    };
+    let rows: Vec<_> = (0..32)
+        .filter(|z| wet(&a.columns[31 + 32 * z]) && wet(&b.columns[32 * z]))
+        .collect();
+    assert!(rows.len() >= 8, "real ocean peer seam fixture");
+    let mut caps = 0;
+    for triangle in mesh.water_indices.chunks_exact(3) {
+        let points: Vec<_> = triangle
+            .iter()
+            .map(|i| mesh.vertices[*i as usize].unpack())
+            .collect();
+        if points.iter().all(|p| p[4] > 0.5 && p[1] == 17.0) {
+            caps += 1;
+        }
+        if points.iter().all(|p| p[3] > 0.5 && p[0] == 128.0) {
+            let z = (points.iter().map(|p| p[2]).sum::<f32>() / 3.0 / 4.0).floor() as usize;
+            if rows.contains(&z) {
+                assert!(
+                    points.iter().all(|p| p[1] <= 16.0),
+                    "known ocean peers cannot manufacture a surface sidewall"
+                );
+            }
+        }
+    }
+    assert!(caps > 0);
+}

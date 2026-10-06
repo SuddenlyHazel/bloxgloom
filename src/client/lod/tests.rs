@@ -9,6 +9,7 @@ fn state() -> State {
 }
 fn tile(key: TileKey, revision: u64) -> LodTile {
     LodTile {
+        trees: Vec::new(),
         key,
         revision,
         columns: vec![Column::default(); TILE_COLUMNS],

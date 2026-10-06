@@ -22,7 +22,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-pub(crate) const WIRE_VERSION: u8 = 33;
+pub(crate) const WIRE_VERSION: u8 = 34;
 mod chat;
 #[path = "protocol/health.rs"]
 mod health_protocol;
@@ -1233,6 +1233,9 @@ impl<'a> Cursor<'a> {
     }
     fn u64(&mut self) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+    fn i16(&mut self) -> io::Result<i16> {
+        Ok(self.u16()? as i16)
     }
     fn u16(&mut self) -> io::Result<u16> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))

@@ -6,6 +6,7 @@ use crate::{
     world::{AIR, BlockId},
 };
 use std::collections::BTreeMap;
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn cell(
     sampler: &mut LodSampler,
@@ -16,9 +17,26 @@ pub(super) fn cell(
     top: i32,
     catalog: &Catalog,
 ) -> Result<BTreeMap<i32, BlockId>, String> {
+    cell_for_forest(sampler, x, z, width, bottom, top, catalog, false)
+}
+#[allow(clippy::too_many_arguments)]
+pub(super) fn cell_for_forest(
+    sampler: &mut LodSampler,
+    x: i32,
+    z: i32,
+    width: i32,
+    bottom: i32,
+    top: i32,
+    catalog: &Catalog,
+    proxy_forest: bool,
+) -> Result<BTreeMap<i32, BlockId>, String> {
     let sample = |sampler: &mut LodSampler, dx, dz| {
         (bottom..top)
-            .zip(sampler.column(i64::from(x) + dx, i64::from(z) + dz, bottom, top))
+            .zip(if proxy_forest {
+                sampler.ground_column(i64::from(x) + dx, i64::from(z) + dz, bottom, top)
+            } else {
+                sampler.column(i64::from(x) + dx, i64::from(z) + dz, bottom, top)
+            })
             .collect::<BTreeMap<_, _>>()
     };
     if width != 2 {
