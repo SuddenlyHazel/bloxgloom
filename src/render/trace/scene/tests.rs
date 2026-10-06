@@ -255,6 +255,7 @@ fn generated_bvh_traversal_profile() {
             sah.nodes.len()
         );
         for reject in [false, true] {
+            traversal::profile(name, &sah, &rays, reject);
             for (label, scene) in [("median", &median), ("sah16", &sah)] {
                 let start = Instant::now();
                 let mut work = Work::default();
@@ -282,3 +283,6 @@ fn generated_bvh_traversal_profile() {
         }
     }
 }
+
+#[path = "tests/traversal.rs"]
+mod traversal;

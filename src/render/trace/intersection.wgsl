@@ -21,7 +21,33 @@ fn ray_box(origin:vec3f,inverse:vec3f,node:RayNode,limit:f32)->bool {
     let low=min(a,b);let high=max(a,b);
     return max(max(max(low.x,low.y),low.z),0.0001)<=min(min(min(high.x,high.y),high.z),limit);
 }
-fn ray_cast(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
+// One accepted triangle path shared by the reference and near-first walks.
+// Smaller triangle IDs win exact ties, matching contiguous stackless DFS order.
+fn ray_triangle_hit(origin:vec3f,direction:vec3f,limit:f32,i:u32,current:RayHit)->RayHit {
+    let t=ray_triangles[i];let flags=ray_materials[u32(t.a.w)].flags;
+    var a=t.a.xyz;var b=t.b.xyz;var c=t.c.xyz;
+    if ray_frame.parameters.y<0.5 {
+        a=ray_wind(a,t.normal.xyz,t.uv_ab.xy,flags);
+        b=ray_wind(b,t.normal.xyz,t.uv_ab.zw,flags);
+        c=ray_wind(c,t.normal.xyz,t.uv_c.xy,flags);
+    }
+    let e1=b-a;let e2=c-a;let p=cross(direction,e2);let determinant=dot(e1,p);
+    if abs(determinant)<0.0000001 {return current;}
+    let inverse_det=1.0/determinant;let offset=origin-a;
+    let u=dot(offset,p)*inverse_det;
+    if u<0.0||u>1.0 {return current;}
+    let q=cross(offset,e1);let v=dot(direction,q)*inverse_det;
+    if v<0.0||u+v>1.0 {return current;}
+    let distance=dot(e2,q)*inverse_det;
+    if distance<=0.003||distance>=limit||distance>current.distance {return current;}
+    if distance==current.distance&&i>=current.triangle {return current;}
+    let uv=t.uv_ab.xy*(1.0-u-v)+t.uv_ab.zw*u+t.uv_c.xy*v;
+    if t.c.w>0.5 && textureSampleLevel(ray_albedo,ray_sampler,uv,i32(ray_materials[u32(t.a.w)].layer),0.0).a<0.5 {return current;}
+    var normal=normalize(cross(e1,e2));
+    if dot(normal,direction)>0.0 {normal=-normal;}
+    return RayHit(distance,i,uv,normal);
+}
+fn ray_cast_stackless(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
     var hit=RayHit(limit,0xffffffffu,vec2f(0.0),vec3f(0.0));
     let inverse=1.0/select(direction,vec3f(0.0000001),abs(direction)<vec3f(0.0000001));
     var index=0u;
@@ -31,33 +57,61 @@ fn ray_cast(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
         if !ray_box(origin,inverse,node,hit.distance) {index=node.escape;continue;}
         if node.count==0u {index++;continue;}
         for(var i=node.first;i<node.first+node.count;i++) {
-            let t=ray_triangles[i];let flags=ray_materials[u32(t.a.w)].flags;
-            var a=t.a.xyz;var b=t.b.xyz;var c=t.c.xyz;
-            // Production buffers are deformed once by the compute pass. Raw
-            // shader fixtures retain this path to check caster/ray agreement.
-            if ray_frame.parameters.y<0.5 {
-                a=ray_wind(a,t.normal.xyz,t.uv_ab.xy,flags);
-                b=ray_wind(b,t.normal.xyz,t.uv_ab.zw,flags);
-                c=ray_wind(c,t.normal.xyz,t.uv_c.xy,flags);
-            }
-            let e1=b-a;let e2=c-a;let p=cross(direction,e2);let determinant=dot(e1,p);
-            if abs(determinant)<0.0000001 {continue;}
-            let inverse_det=1.0/determinant;let offset=origin-a;
-            let u=dot(offset,p)*inverse_det;
-            if u<0.0||u>1.0 {continue;}
-            let q=cross(offset,e1);let v=dot(direction,q)*inverse_det;
-            if v<0.0||u+v>1.0 {continue;}
-            let distance=dot(e2,q)*inverse_det;
-            if distance<=0.003||distance>=hit.distance {continue;}
-            let uv=t.uv_ab.xy*(1.0-u-v)+t.uv_ab.zw*u+t.uv_c.xy*v;
-            if t.c.w>0.5 && textureSampleLevel(ray_albedo,ray_sampler,uv,i32(ray_materials[u32(t.a.w)].layer),0.0).a<0.5 {continue;}
-            var normal=normalize(cross(e1,e2));
-            if dot(normal,direction)>0.0 {normal=-normal;}
-            hit=RayHit(distance,i,uv,normal);
+            hit=ray_triangle_hit(origin,direction,limit,i,hit);
         }
         index=node.escape;
     }
     return hit;
+}
+fn ray_box_near(origin:vec3f,inverse:vec3f,node:RayNode,limit:f32)->f32 {
+    let a=(node.low-origin)*inverse;let b=(node.high-origin)*inverse;
+    let low=min(a,b);let high=max(a,b);
+    let near=max(max(max(low.x,low.y),low.z),0.0001);
+    let far=min(min(min(high.x,high.y),high.z),limit);
+    return select(-1.0,near,near<=far);
+}
+struct RayPending {index:u32,near:f32};
+fn ray_cast_near_first(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
+    var hit=RayHit(limit,0xffffffffu,vec2f(0.0),vec3f(0.0));
+    if ray_frame.counts.x==0u {return hit;}
+    let inverse=1.0/select(direction,vec3f(0.0000001),abs(direction)<vec3f(0.0000001));
+    let root=ray_box_near(origin,inverse,ray_nodes[0],hit.distance);
+    if root<0.0 {return hit;}
+    var pending:array<RayPending,16>;
+    var length=0u;var index=0u;var near=root;
+    loop {
+        if near<=hit.distance {
+            let node=ray_nodes[index];
+            if node.count==0u {
+                let left=index+1u;let right=ray_nodes[left].escape;
+                let a=ray_box_near(origin,inverse,ray_nodes[left],hit.distance);
+                let b=ray_box_near(origin,inverse,ray_nodes[right],hit.distance);
+                if a>=0.0&&b>=0.0 {
+                    // Restart the original traversal on overflow; never drop a
+                    // pending subtree, including exact equal-distance hits.
+                    if length==16u {return ray_cast_stackless(origin,direction,limit);}
+                    let left_first=a<=b;
+                    pending[length]=RayPending(select(left,right,left_first),select(a,b,left_first));
+                    length++;
+                    index=select(right,left,left_first);near=select(b,a,left_first);
+                    continue;
+                }
+                if a>=0.0 {index=left;near=a;continue;}
+                if b>=0.0 {index=right;near=b;continue;}
+            } else {
+                for(var i=node.first;i<node.first+node.count;i++) {
+                    hit=ray_triangle_hit(origin,direction,limit,i,hit);
+                }
+            }
+        }
+        if length==0u {break;}
+        length--;index=pending[length].index;near=pending[length].near;
+    }
+    return hit;
+}
+fn ray_cast(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
+    if RAY_NEAR_FIRST {return ray_cast_near_first(origin,direction,limit);}
+    return ray_cast_stackless(origin,direction,limit);
 }
 
 // Visibility only: an accepted nonbotanical hit anywhere on the finite sun

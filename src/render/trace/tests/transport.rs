@@ -110,7 +110,7 @@ fn source(bounces: u32) -> String {
         "vertex-count fixture must instrument the real path loop"
     );
     format!(
-        "var<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{transport}\n{}\n{}\n{}\n{}\n{FIXTURE}",
+        "const RAY_NEAR_FIRST:bool=false;\nvar<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{transport}\n{}\n{}\n{}\n{}\n{FIXTURE}",
         render::sky::environment_shader(),
         include_str!("../../material/pbr.wgsl"),
         include_str!("../../material/foliage.wgsl"),
@@ -495,3 +495,7 @@ mod sky_escape;
 #[path = "transport/opaque_visibility.rs"]
 mod opaque_visibility;
 
+mod secondary_air;
+
+#[path = "transport/traversal.rs"]
+mod traversal;

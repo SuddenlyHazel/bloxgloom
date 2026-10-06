@@ -38,6 +38,16 @@ fn medium_density(p:vec3f)->f32 {
 fn medium_event(origin:vec3f,direction:vec3f,limit:f32)->f32 {
     var distance=0.0;
     let cloud=bg_cloud_interval(origin,direction,limit);
+    if cloud.y<=cloud.x {
+        let depth=ray_air_depth(origin.y,direction.y,limit);
+        if depth<=0.0 {return limit;}
+        // Optical distance is exponentially distributed even in nonuniform
+        // air. Exact inversion replaces rejected majorant events, retaining
+        // every real scattering event and its subsequent path continuation.
+        let optical=ray_negative_log_one_minus(random());
+        if optical>=depth {return limit;}
+        return ray_air_distance(origin.y,direction.y,limit,optical);
+    }
     // Air and the bounded cloud slab use separate majorants. Empty air must
     // not spend hundreds of rejected cloud-density samples per path.
     for(var i=0u;i<256u;i++) {
@@ -55,6 +65,22 @@ fn medium_event(origin:vec3f,direction:vec3f,limit:f32)->f32 {
         if random()*majorant<medium_density(origin+direction*distance) {return distance;}
     }
     return limit;
+}
+// Air extinction is analytic; only the bounded cloud interval needs density
+// quadrature. Keep the original32m nominal spacing (at most16 shadow samples),
+// rather than spending the whole budget on a narrow slab or sampling empty air.
+fn ray_segment_optical_depth(origin:vec3f,direction:vec3f,limit:f32)->f32 {
+    var depth=ray_air_depth(origin.y,direction.y,limit);
+    let cloud=bg_cloud_interval(origin,direction,limit);
+    if cloud.y>cloud.x {
+        let count=u32(clamp(ceil((cloud.y-cloud.x)/32.0),1.0,16.0));
+        let step=(cloud.y-cloud.x)/f32(count);
+        for(var i=0u;i<count;i++) {
+            let point=origin+direction*(cloud.x+(f32(i)+0.5)*step);
+            depth+=bg_cloud_density(point,ray_frame.cloud.x,ray_frame.cloud.yz)*step;
+        }
+    }
+    return depth;
 }
 fn medium_anisotropy(p:vec3f)->f32 {
     return select(0.0,0.60,bg_cloud_density(p,ray_frame.cloud.x,ray_frame.cloud.yz)>ray_frame.parameters.x);
@@ -86,8 +112,7 @@ fn sun_light_visible(p:vec3f,sky:f32)->vec3f {
     }
     if !clear {return vec3f(0.0);}
     // Extinction includes air and clouds on the same bounded shadow segment.
-    var optical_depth=0.0;
-    for(var i=0u;i<16u;i++) {optical_depth+=medium_density(p+direction*((f32(i)+0.5)*32.0))*32.0;}
+    let optical_depth=ray_segment_optical_depth(p,direction,512.0);
     return transmission*ray_frame.solar.xyz*exp(-optical_depth);
 }
 fn sun_light(p:vec3f)->vec3f {return sun_light_visible(p,1.0);}

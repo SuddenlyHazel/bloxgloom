@@ -146,7 +146,8 @@ impl Gpu {
             ],
         });
         let source = format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            "const RAY_NEAR_FIRST:bool={};\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            std::env::var("BLOXGLOOM_GI_NEAR_FIRST").as_deref() == Ok("1"),
             crate::render::sky::environment_shader(),
             include_str!("../material/pbr.wgsl"),
             include_str!("../material/foliage.wgsl"),
