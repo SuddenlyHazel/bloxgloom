@@ -22,6 +22,7 @@ struct Fixture {
     depth: wgpu::TextureView,
     readback: wgpu::Buffer,
     cast_floor: bool,
+    studio_light: Option<(f32, f32)>,
 }
 
 impl Fixture {
@@ -89,6 +90,7 @@ impl Fixture {
             depth,
             readback,
             cast_floor: false,
+            studio_light: None,
         }
     }
 
@@ -154,11 +156,12 @@ impl Fixture {
         let atmosphere = Atmosphere::at(time);
         let view = rh::view::look_at_mat4(camera.position, Vec3::ZERO, Vec3::Z);
         let matrix = rh::proj::directx::orthographic(-4.0, 4.0, -4.0, 4.0, 0.1, 20.0) * view;
-        self.queue.write_buffer(
-            &self.camera,
-            0,
-            bytemuck::cast_slice(&atmosphere.camera_data(matrix, camera.position)),
-        );
+        let mut camera_data = atmosphere.camera_data(matrix, camera.position);
+        if let Some((diffuse, directional)) = self.studio_light {
+            crate::render::tests::studio::light(&mut camera_data, diffuse, directional);
+        }
+        self.queue
+            .write_buffer(&self.camera, 0, bytemuck::cast_slice(&camera_data));
         self.shadows.update(&self.queue, camera, atmosphere);
         let mut encoder = self.device.create_command_encoder(&Default::default());
         if let Some(mut pass) = self.shadows.begin(&mut encoder)
@@ -333,6 +336,18 @@ fn gpu_terrain_shadow_edits_cutouts_and_sky_glow_invariance() {
 /// graphics harness details outside test builds.
 pub(in crate::render) fn verify_custom_alpha(prepared: &crate::render::custom::Prepared) {
     let mut scene = Fixture::new();
+    // Unshadowed light must exceed the hook's .7 alpha threshold while fully
+    // shadowed light stays below it. Passing shadowed light into the alpha hook
+    // would then remove covered receiver pixels, rather than merely dim them.
+    scene.studio_light = Some((0.50, 2.4));
+    let shadowed_hook_light = 0.012 + 0.50;
+    let noon = Atmosphere::at(crate::daylight::INITIAL_MS);
+    let unshadowed_hook_light =
+        shadowed_hook_light + 2.4 * noon.light_direction().y.max(0.0) / std::f32::consts::PI;
+    assert!(
+        shadowed_hook_light < 0.7 && unshadowed_hook_light > 0.7,
+        "custom-alpha fixture must straddle its light threshold: {shadowed_hook_light}..{unshadowed_hook_light}"
+    );
     let ((opaque, cutout, _, _, _), mut gpu) = pipeline::create_custom_voxel_pipeline(
         &scene.device,
         &scene.queue,

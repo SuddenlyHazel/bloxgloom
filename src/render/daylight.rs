@@ -4,6 +4,10 @@ use glam::{Mat4, Vec3};
 
 mod sky_diffuse;
 
+/// Existing camera offsets retain their meanings; six compact SH9 vec4s append.
+pub(crate) const CAMERA_FLOATS: usize = 80;
+pub(crate) const CAMERA_BYTES: u64 = (CAMERA_FLOATS * 4) as u64;
+
 /// Compose calibrated lighting and fog without reserving shadow bindings.
 /// Distant terrain shares this basis but owns a separate coverage bind group.
 pub(super) fn surface_shader(source: &str) -> String {
@@ -184,8 +188,8 @@ impl Atmosphere {
         }
     }
 
-    pub(crate) fn camera_data(self, matrix: Mat4, eye: Vec3) -> [f32; 56] {
-        let mut data = [0.0; 56];
+    pub(crate) fn camera_data(self, matrix: Mat4, eye: Vec3) -> [f32; CAMERA_FLOATS] {
+        let mut data = [0.0; CAMERA_FLOATS];
         data[..16].copy_from_slice(&matrix.to_cols_array());
         let direction = self.light_direction();
         data[16..20].copy_from_slice(&[
@@ -242,6 +246,18 @@ impl Atmosphere {
             self.drift[1],
             f32::from(self.scene_transport),
         ]);
+        if super::sky::style_enabled() && !super::bsl_reference::enabled() {
+            let terms = sky_diffuse::angular_coefficients(
+                self.sun.y,
+                self.rain_strength,
+                self.moon_multiplier(),
+            );
+            for (index, term) in terms.into_iter().enumerate() {
+                data[56 + index * 4..59 + index * 4]
+                    .copy_from_slice(&(term * self.lighting.ambient_intensity).to_array());
+            }
+            data[59] = 1.0;
+        }
         data
     }
 }

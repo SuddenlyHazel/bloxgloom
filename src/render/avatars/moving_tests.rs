@@ -111,6 +111,10 @@ fn gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformati
                 }
             }
         }
+        assert!(
+            max[0] >= min[0] && max[1] >= min[1],
+            "rigid moving-model fixture drew no foreground pixels"
+        );
         [max[0] - min[0], max[1] - min[1]]
     };
     let h = bounds(&horizontal);

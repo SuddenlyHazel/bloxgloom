@@ -42,7 +42,7 @@ fn atmosphere_drives_surface_color_energy_and_keeps_legacy_uniform_offsets() {
     assert!(night.ambient().1.length() < upper.length() * 0.05);
     assert!(storm.ambient().1.length() < upper.length());
     let data = noon.camera_data(Mat4::IDENTITY, Vec3::new(1.0, 2.0, 3.0));
-    assert_eq!(std::mem::size_of_val(&data), 224);
+    assert_eq!(std::mem::size_of_val(&data), 320);
     assert_eq!(&data[24..27], &[1.0, 2.0, 3.0]);
     assert_eq!(
         &data[32..36],
@@ -139,3 +139,9 @@ mod sky_diffuse;
 
 #[path = "tests/sky_prefilter.rs"]
 mod sky_prefilter;
+
+#[path = "tests/angular.rs"]
+mod angular;
+
+#[path = "tests/angular_consumers.rs"]
+mod angular_consumers;

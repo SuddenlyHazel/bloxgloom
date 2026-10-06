@@ -1,6 +1,6 @@
 const BG_MATERIAL_HISTORY_SIGN: f32 = 1.0;
 
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f, ambient_sh:array<vec4f,6> };
 @group(0) @binding(0) var<uniform> camera: Camera;
 struct VertexInput {
     @location(0) position: vec3<f32>,

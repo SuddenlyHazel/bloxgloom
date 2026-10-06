@@ -4,9 +4,14 @@
 //! clouds, scene occlusion, solar NEE or presentation. Runtime interpolation is
 //! bounded and allocation-free. Lunar dependence is exactly quadratic in the
 //! source equations; solar elevation and rain use piecewise linear interpolation.
-//! Up/down endpoints share the source units. The existing normal-Y interpolation
-//! remains a broad two-hemisphere approximation, not an azimuth-resolved sky.
+//! Up/down endpoints retain an explicit fallback in the source units. Enhanced
+//! surfaces use compact real SH9 from the angular submodule, retaining sun azimuth.
 use glam::Vec3;
+mod angular;
+
+pub(super) fn angular_coefficients(sun_y: f32, rain: f32, moon: f32) -> [Vec3; 6] {
+    angular::coefficients(sun_y, rain, moon)
+}
 
 const DATA: &[u8] = include_bytes!("sky_diffuse.bin");
 const RAIN_LEVELS: usize = 9;

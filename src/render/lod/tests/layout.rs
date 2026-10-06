@@ -27,7 +27,7 @@ fn production_distant_terrain_and_water_layouts_accept_reference_receivers() {
         &device,
         &device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 224,
+            size: crate::render::daylight::CAMERA_BYTES,
             usage: wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: false,
         }),

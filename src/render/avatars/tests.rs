@@ -179,12 +179,15 @@ pub(super) fn render_avatars_with_view(
 ) -> Vec<u8> {
     let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
         * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
+    let mut camera_data = crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+        .camera_data(camera, Vec3::new(0.0, 0.0, 4.0));
+    // This harness verifies artwork, palette selection and deformed geometry
+    // directly in a linear target. Outdoor lighting has its own angular tests;
+    // a known neutral studio fill keeps these assertions independent of it.
+    crate::render::tests::studio::light(&mut camera_data, 0.75, 0.0);
     let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: bytemuck::cast_slice(
-            &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                .camera_data(camera, Vec3::new(0.0, 0.0, 4.0)),
-        ),
+        contents: bytemuck::cast_slice(&camera_data),
         usage: wgpu::BufferUsages::UNIFORM,
     });
     let mut renderer = AvatarRenderer::new(

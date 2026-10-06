@@ -25,7 +25,7 @@ pub(in crate::preview) fn build(
     Ok(gpu)
 }
 
-pub(in crate::preview) fn configure_camera(data: &mut [f32; 56]) {
+pub(in crate::preview) fn configure_camera(data: &mut [f32]) {
     if !render::bsl_reference::enabled() {
         data[28] = f32::from(DISTANCE) * 0.65;
         data[29] = f32::from(DISTANCE);

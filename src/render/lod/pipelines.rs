@@ -16,7 +16,7 @@ pub(super) fn new(
 ) -> Pipelines {
     let camera = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("LOD camera"),
-        size: 224,
+        size: super::super::daylight::CAMERA_BYTES,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });

@@ -1,5 +1,7 @@
 use glam::Vec3;
 
+pub(super) mod studio;
+
 use crate::items::{SAPLING, SEEDS, STICK};
 use crate::world::{
     AIR, CHUNK_SIZE, Chunk, ChunkKey, DIRT, FERN, GLOWSTONE, GRASS, GRAVEL, LEAVES, MOSS,

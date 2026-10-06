@@ -22,7 +22,22 @@ fn bg_environment_radiance(direction: vec3f) -> vec3f {
 fn bg_direct_light(normal: vec3f, sun: vec4f, sky: f32) -> vec3f {
     return sky * max(dot(normal, normalize(sun.xyz)), 0.0) * bg_sun_irradiance() / 3.14159265359;
 }
+// Unit-Lambert SH9 convolution, compacted using sun/up-plane symmetry. No
+// per-fragment source sky evaluations and no fabricated ground/solar-disc fill.
+fn bg_directional_sky(normal:vec3f,sun:vec3f)->vec3f {
+    let n=normalize(normal);
+    let horizontal=sun.xz;
+    let azimuth=horizontal/max(length(horizontal),0.00001);
+    // Canonical table sun is -X. With exactly vertical sun the sky is azimuth
+    // invariant; choose a finite canonical axis rather than dividing by zero.
+    let axis=select(vec2f(1.0,0.0),-azimuth,length(horizontal)>0.00001);
+    let x=dot(n.xz,axis);let y=n.y;
+    let sh=camera.ambient_sh;
+    return max(sh[0].xyz+sh[1].xyz*x+sh[2].xyz*y+sh[3].xyz*(x*y)+sh[4].xyz*(y*y)+sh[5].xyz*(x*x),vec3f(0.0));
+}
+
 fn bg_indirect_daylight(normal: vec3f, sun: vec4f, sky: f32) -> vec3f {
+    if camera.ambient_sh[0].w>0.5 { return sky*bg_directional_sky(normal,sun.xyz); }
     let hemisphere = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
     return sky * mix(camera.ambient_lower.xyz, camera.ambient_upper.xyz, hemisphere);
 }

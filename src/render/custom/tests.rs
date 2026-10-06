@@ -156,14 +156,12 @@ fn material_fragment(input: BgSurface) -> BgSurface {
         &catalog,
     )
     .unwrap();
-    queue.write_buffer(
-        &camera,
-        0,
-        bytemuck::cast_slice(
-            &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                .camera_data(glam::Mat4::IDENTITY, glam::Vec3::ZERO),
-        ),
-    );
+    let mut camera_data = crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+        .camera_data(glam::Mat4::IDENTITY, glam::Vec3::ZERO);
+    // Layer selection, runtime parameters and alpha coverage use known neutral
+    // fill; the existing sky=0 patch still exercises renderer-owned darkness.
+    crate::render::tests::studio::light(&mut camera_data, 0.75, 0.0);
+    queue.write_buffer(&camera, 0, bytemuck::cast_slice(&camera_data));
 
     // Package-owned tile through the item/cutout pipeline in both sky and dark
     // light, and unselected opaque dirt. The production vertex layout is unchanged.

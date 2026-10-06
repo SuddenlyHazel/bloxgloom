@@ -162,7 +162,11 @@ fn gpu_source_sky_convolution_and_raster_environment_match_real_camera_units() {
         },
     ];
     for (case, atmosphere) in cases.into_iter().enumerate() {
-        let data = atmosphere.camera_data(Mat4::IDENTITY, Vec3::ZERO);
+        let mut data = atmosphere.camera_data(Mat4::IDENTITY, Vec3::ZERO);
+        // This existing fixture checks the retained explicit two-hemisphere
+        // fallback and source reflection units. Angular SH9 acceptance has
+        // independent source quadrature in tests/angular.rs.
+        data[59] = 0.0;
         let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&data),
