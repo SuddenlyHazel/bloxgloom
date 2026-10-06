@@ -9,7 +9,9 @@ pub(crate) struct Triangle {
     pub b: [f32; 4],
     pub c: [f32; 4],
     pub uv_ab: [f32; 4],
-    pub uv_c: [f32; 4],
+    pub uv_c: [f32; 2],
+    pub surface_color: u32,
+    pub surface_flags: u32,
     pub normal: [f32; 4],
 }
 #[repr(C)]
@@ -26,12 +28,15 @@ pub(crate) struct Node {
 pub(crate) struct Chunk {
     pub key: Option<crate::world::ChunkKey>,
     pub triangles: Vec<Triangle>,
+    pub water: Option<water::Occupancy>,
+    pub coarse_water: Option<water::CoarseTile>,
 }
 #[derive(Default, Debug)]
 pub(crate) struct Scene {
     pub triangles: Vec<Triangle>,
     pub nodes: Vec<Node>,
     pub coverage: Vec<u32>,
+    pub water_offset: u32,
 }
 impl Chunk {
     pub fn from_mesh(mesh: &ChunkMesh, catalog: &crate::content::Catalog) -> Self {
@@ -57,18 +62,38 @@ impl Chunk {
                     b: [v[1][0], v[1][1], v[1][2], v[0][9]],
                     c: [v[2][0], v[2][1], v[2][2], if cutout { 1.0 } else { 0.0 }],
                     uv_ab: [v[0][6], v[0][7], v[1][6], v[1][7]],
-                    uv_c: [v[2][6], v[2][7], 0.0, 0.0],
+                    uv_c: [v[2][6], v[2][7]],
+                    surface_color: 0,
+                    surface_flags: 0,
                     normal,
                 });
             }
         }
+        water::append(mesh, catalog, &mut triangles);
         Self {
             key: Some(mesh.key),
             triangles,
+            water: None,
+            coarse_water: None,
         }
+    }
+    pub(crate) fn from_world_mesh(
+        mesh: &ChunkMesh,
+        catalog: &crate::content::Catalog,
+        source: &crate::world::Chunk,
+    ) -> Self {
+        debug_assert_eq!(mesh.key, source.key);
+        let mut result = Self::from_mesh(mesh, catalog);
+        result.water = water::Occupancy::from_chunk(source, catalog);
+        result
     }
     pub fn byte_len(&self) -> usize {
         self.triangles.len() * std::mem::size_of::<Triangle>()
+            + self.water.as_ref().map_or(0, water::Occupancy::byte_len)
+            + self
+                .coarse_water
+                .as_ref()
+                .map_or(0, water::CoarseTile::byte_len)
     }
 }
 impl Scene {
@@ -140,3 +165,7 @@ mod coverage;
 mod tests;
 
 mod bounds;
+pub(crate) mod pages;
+pub(crate) mod surface;
+pub(crate) mod volume;
+pub(crate) mod water;

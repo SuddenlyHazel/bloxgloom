@@ -4,6 +4,7 @@ mod camera;
 mod celestial;
 mod clouds;
 mod pipeline;
+mod reference_celestial;
 mod reference_clouds;
 pub(crate) use reference_clouds::Noise as ReferenceNoise;
 
@@ -27,11 +28,12 @@ pub(crate) fn environment_shader() -> String {
         include_str!("sky/environment.wgsl")
     )
 }
-fn shader_source() -> String {
+pub(crate) fn shader_source() -> String {
     format!(
-        "{}\n{}\n{}",
+        "{}\n{}\n{}\n{}",
         environment_shader(),
         include_str!("sky/camera.wgsl"),
+        reference_celestial::SHADER,
         include_str!("sky/sky.wgsl")
     )
 }
@@ -69,7 +71,15 @@ impl SkyRenderer {
             ..Default::default()
         });
         let celestial = celestial::Celestial::new(device);
-        let group = Self::bind(device, &layout, &camera, &clouds.view, &sampler, &celestial);
+        let group = Self::bind(
+            device,
+            &layout,
+            &camera,
+            &clouds.view,
+            &sampler,
+            &celestial,
+            super::bsl_reference::enabled(),
+        );
         Self {
             pipeline,
             camera,
@@ -93,6 +103,7 @@ impl SkyRenderer {
         clouds: &wgpu::TextureView,
         sampler: &wgpu::Sampler,
         celestial: &celestial::Celestial,
+        reference: bool,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sky camera and volume clouds"),
@@ -112,11 +123,11 @@ impl SkyRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(celestial.sun()),
+                    resource: wgpu::BindingResource::TextureView(celestial.sun(reference)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(celestial.moon()),
+                    resource: wgpu::BindingResource::TextureView(celestial.moon(reference)),
                 },
             ],
         })
@@ -147,6 +158,7 @@ impl SkyRenderer {
                 &self.clouds.view,
                 &self.sampler,
                 &self.celestial,
+                super::bsl_reference::enabled(),
             );
         }
         self.celestial.upload(encoder);

@@ -76,6 +76,9 @@ mod tests {
         use std::sync::Arc;
         let key = ChunkKey { x: -1, y: 7, z: 2 };
         let scene = Scene::build([Arc::new(Chunk {
+            water: None,
+            coarse_water: None,
+
             key: Some(key),
             triangles: vec![],
         })]);

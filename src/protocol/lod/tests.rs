@@ -46,7 +46,7 @@ fn bounded_summary_wire_roundtrip_and_allocation_rejection() {
         other => panic!("unexpected {other:?}"),
     }
     // First column counts follow frame/version/tag/session/request/tile header.
-    let span_count = 4 + 2 + 16 + 9 + 8 + 4 + 2 + 2;
+    let span_count = 4 + 2 + 16 + 9 + 8 + 4 + 2 + 3 + 4 + 2;
     bytes[span_count..span_count + 2].copy_from_slice(&u16::MAX.to_le_bytes());
     assert!(crate::protocol::read_server_with_catalog(bytes.as_slice(), catalog).is_err());
     let mut bytes = Vec::new();
@@ -161,20 +161,22 @@ fn forest_descriptor_wire_roundtrip_material_coverage_and_allocation_guards() {
     excessive.extend(0u64.to_le_bytes());
     excessive.extend(0u32.to_le_bytes());
     excessive.extend(1024u16.to_le_bytes());
+    excessive.extend(1u16.to_le_bytes());
+    excessive.push(1);
+    excessive.extend(crate::world::STONE.get().to_le_bytes());
     for column in 0..1024 {
         excessive.extend(2u16.to_le_bytes());
-        excessive.extend(3u16.to_le_bytes());
-        if 34 + 4 * 1024 + (column + 1) * (2 * 8 + 3 * 14) > MAX_TILE_BYTES {
+        excessive.extend(4u16.to_le_bytes());
+        if palette::HEADER_BYTES + 4 + 4 * 1024 + (column + 1) * (2 * 8 + 4 * 10) > MAX_TILE_BYTES {
             break;
         }
         for (bottom, top) in [(-64i32, 0i32), (1, 128)] {
             excessive.extend(bottom.to_le_bytes());
             excessive.extend(top.to_le_bytes());
         }
-        for bottom in [-20i32, -18, -16] {
+        for bottom in [-20i32, -18, -16, -14] {
             excessive.extend(bottom.to_le_bytes());
             excessive.extend((bottom + 1).to_le_bytes());
-            excessive.extend(crate::world::STONE.get().to_le_bytes());
             excessive.extend([0, 0]);
         }
     }
@@ -202,3 +204,5 @@ fn forest_descriptor_wire_roundtrip_material_coverage_and_allocation_guards() {
         "proxy cannotcross unknown interval"
     );
 }
+
+mod compact;

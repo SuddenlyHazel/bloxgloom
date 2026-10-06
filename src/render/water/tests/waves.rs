@@ -21,10 +21,7 @@ fn fragment_water_waves_remove_aliases_and_preserve_unresolved_slope_energy() {
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let waves = include_str!("../../water_surface.wgsl")
-        .split("fn bg_water_surface")
-        .next()
-        .unwrap();
+    let waves = include_str!("../waves.wgsl");
     let source = format!(
         "{waves}\n{}",
         r#"

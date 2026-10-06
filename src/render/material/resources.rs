@@ -56,6 +56,10 @@ pub(crate) fn required_limits(
     }
     Ok(wgpu::Limits {
         max_texture_array_layers: adapter.max_texture_array_layers.min(MAX_ARRAY_LAYERS),
+        // Expanded scene transport uses paged static targets and a separate
+        // dynamic scene. Ordinary rendering still works on default8-buffer
+        // devices; trace admission checks its complete binding requirements.
+        max_storage_buffers_per_shader_stage: adapter.max_storage_buffers_per_shader_stage.min(12),
         ..wgpu::Limits::default()
     })
 }

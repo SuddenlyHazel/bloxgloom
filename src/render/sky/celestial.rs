@@ -7,6 +7,7 @@ struct Image {
     texture: wgpu::Texture,
     pending: Option<wgpu::Buffer>,
     pub(super) view: wgpu::TextureView,
+    encoded_view: wgpu::TextureView,
     width: u32,
     height: u32,
 }
@@ -36,9 +37,15 @@ impl Image {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         });
         let view = texture.create_view(&Default::default());
+        // GLSL filters encoded artwork before its explicit pow(rgb,2.2).
+        // A second view preserves that ordering without changing the artwork.
+        let encoded_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba8Unorm),
+            ..Default::default()
+        });
         assert_eq!((info.width * 4) % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0);
         let pending = Some(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -51,6 +58,7 @@ impl Image {
             texture,
             pending,
             view,
+            encoded_view,
             width: info.width,
             height: info.height,
         }
@@ -92,11 +100,19 @@ impl Celestial {
             moon: Image::new(device, MOON, "JG RTX lunar phase artwork"),
         }
     }
-    pub(super) fn sun(&self) -> &wgpu::TextureView {
-        &self.sun.view
+    pub(super) fn sun(&self, reference: bool) -> &wgpu::TextureView {
+        if reference {
+            &self.sun.encoded_view
+        } else {
+            &self.sun.view
+        }
     }
-    pub(super) fn moon(&self) -> &wgpu::TextureView {
-        &self.moon.view
+    pub(super) fn moon(&self, reference: bool) -> &wgpu::TextureView {
+        if reference {
+            &self.moon.encoded_view
+        } else {
+            &self.moon.view
+        }
     }
     pub(super) fn upload(&mut self, encoder: &mut wgpu::CommandEncoder) {
         self.sun.upload(encoder);

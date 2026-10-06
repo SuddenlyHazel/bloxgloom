@@ -9,7 +9,10 @@ fn gpu_native_hair_color_preserves_linear_shading_alpha_and_fixed_accessories() 
     let functions = &source
         [source.find("fn srgb_to_linear").unwrap()..source.find("fn character_albedo").unwrap()];
     let source = format!(
-        "{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(srgb_to_linear(vec3f(f32(id.x))/255.0),1.0); result[id.x+256u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),false); result[id.x+512u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),true); }}"
+        "{}\n{}\n{}\n{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(srgb_to_linear(vec3f(f32(id.x))/255.0),1.0); result[id.x+256u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),false); result[id.x+512u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),true); }}",
+        crate::render::trace::dynamic::DEFORMATION_SHADER,
+        crate::render::avatars::ray_palettes(crate::content::catalog()),
+        crate::render::trace::dynamic::MATERIAL_SHADER
     );
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,

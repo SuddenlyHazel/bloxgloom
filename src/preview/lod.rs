@@ -452,6 +452,13 @@ fn draw_image(
 ) -> Result<(), Box<dyn Error>> {
     let mut post = render::post::PostProcess::new(device, width, height, FORMAT);
     post.reflections.configure(camera.position, atmosphere);
+    post.configure_reference_ao(
+        atmosphere.camera_data(
+            render::view_projection(camera, width, height),
+            camera.position,
+        ),
+        camera.fov_y_radians,
+    );
     let color = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("LOD preview image"),
         size: wgpu::Extent3d {

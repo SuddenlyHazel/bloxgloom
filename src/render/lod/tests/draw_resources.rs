@@ -24,6 +24,7 @@ fn mesh() -> lod::Mesh {
         },
         revision: 1,
         loading: None,
+        ray: None,
         vertices,
         indices: vec![0, 2, 1, 0, 3, 2],
         water_indices: vec![4, 6, 5, 4, 7, 6],
@@ -76,8 +77,20 @@ fn gpu_lod_actual_opaque_and_water_draws_rebind_depth_and_reflections_across_fra
     let (pipeline, _, camera_buffer, _, materials) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let mut gpu = lod::Gpu::new(&device, render::post::HDR_FORMAT, &pipeline, &materials);
-    gpu.enqueue(mesh()).unwrap();
+    let mut admitted = mesh();
+    let key = admitted.key;
+    admitted.ray = Some(crate::render::lod::ray::extract(&admitted).unwrap());
+    let original_ray = admitted.ray.as_ref().unwrap().clone();
+    gpu.enqueue(admitted).unwrap();
+    assert!(
+        gpu.ray_targets().is_empty(),
+        "unuploaded geometry is not a ray target"
+    );
     assert!(gpu.upload(&device) > 0);
+    let targets = gpu.ray_targets();
+    assert_eq!(targets.len(), 1);
+    assert_eq!((targets[0].0, targets[0].1), (key, 1));
+    assert!(std::sync::Arc::ptr_eq(&targets[0].2, &original_ray));
     let mut water = render::water::WaterRenderer::new(&device, &camera_buffer);
     let shader=device.create_shader_module(wgpu::ShaderModuleDescriptor {label:Some("actualdepth and refreshedreflection readback"),source:wgpu::ShaderSource::Wgsl(r#"
 @group(0) @binding(0) var original:texture_depth_2d;@group(0) @binding(1) var front:texture_depth_2d;@group(0) @binding(2) var reflection:texture_2d<f32>;@group(0) @binding(3) var rebound:texture_depth_2d;@group(0) @binding(4) var<storage,read_write> result:array<vec4f>;
@@ -91,15 +104,27 @@ fn gpu_lod_actual_opaque_and_water_draws_rebind_depth_and_reflections_across_fra
         compilation_options: Default::default(),
         cache: None,
     });
+    let receiver_shader=device.create_shader_module(wgpu::ShaderModuleDescriptor {label:Some("actual LOD receiver MRT"),source:wgpu::ShaderSource::Wgsl(r#"
+@group(0) @binding(0) var normal:texture_2d<f32>;@group(0) @binding(1) var indirect:texture_2d<f32>;@group(0) @binding(2) var response:texture_2d<f32>;@group(0) @binding(3) var<storage,read_write> result:array<vec4f>;
+@compute @workgroup_size(1) fn inspect(){let p=vec2i(textureDimensions(normal)/2u);result[2]=textureLoad(normal,p,0);result[3]=textureLoad(indirect,p,0);result[4]=textureLoad(response,p,0);}
+"#.into())});
+    let receiver_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &receiver_shader,
+        entry_point: Some("inspect"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 32,
+        size: 80,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let read = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 32,
+        size: 80,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -155,6 +180,35 @@ fn gpu_lod_actual_opaque_and_water_draws_rebind_depth_and_reflections_across_fra
                 ..Default::default()
             });
             assert_eq!(gpu.draw(&mut pass), 2);
+        }
+        // Capture the opaque receiver before the translucent water MRT blend.
+        let receiver_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &receiver_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&normal),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&indirect),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&response),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: output.as_entire_binding(),
+                },
+            ],
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&receiver_pipeline);
+            pass.set_bind_group(0, &receiver_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
         }
         water.prepare_frame(
             &queue,
@@ -240,7 +294,7 @@ fn gpu_lod_actual_opaque_and_water_draws_rebind_depth_and_reflections_across_fra
             pass.set_bind_group(0, &group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
-        encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 32);
+        encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 80);
         queue.submit([encoder.finish()]);
         let (tx, rx) = std::sync::mpsc::channel();
         read.slice(..)
@@ -273,9 +327,53 @@ fn gpu_lod_actual_opaque_and_water_draws_rebind_depth_and_reflections_across_fra
             }
         } else {
             assert_eq!(
+                pixels[2][2], 1.0,
+                "non-PBR coarse terrain must be a diffuse GI receiver: {pixels:?}"
+            );
+            assert!(
+                (pixels[2][3] - (8.0 - camera.position.x)).abs() < 0.03,
+                "receiver must carry actual world distance: {pixels:?}"
+            );
+            assert!(
+                pixels[3][..3].iter().all(|v| *v > 0.0),
+                "retained ambient must match the material baseline: {pixels:?}"
+            );
+            assert_eq!(pixels[3][3], 1.0);
+            assert_eq!(
+                pixels[4][..3],
+                [0.0; 3],
+                "absent PBR must not invent a specular fallback"
+            );
+            assert_eq!(pixels[4][3], 1.0);
+            assert_eq!(
                 pixels[0][0], pixels[0][1],
                 "enhancedwater leavesopaquedepth unchanged"
             );
         }
     }
+    // Selection exposure is independent of frustum preparation and follows
+    // admission/removal, rather than a queued replacement's revision.
+    gpu.set_horizon(0);
+    assert!(gpu.ray_targets().is_empty());
+    gpu.set_horizon(512);
+    assert_eq!(gpu.ray_targets().len(), 1);
+    let mut replacement = mesh();
+    replacement.revision = 2;
+    replacement.ray = Some(crate::render::lod::ray::extract(&replacement).unwrap());
+    let new_ray = replacement.ray.as_ref().unwrap().clone();
+    gpu.enqueue(replacement).unwrap();
+    assert_eq!(gpu.ray_targets()[0].1, 1);
+    assert!(gpu.upload(&device) > 0);
+    let updated = gpu.ray_targets();
+    assert_eq!(updated[0].1, 2);
+    assert!(std::sync::Arc::ptr_eq(&updated[0].2, &new_ray));
+    gpu.remove(key);
+    assert!(gpu.ray_targets().is_empty());
+    let mut reinstated = mesh();
+    reinstated.ray = Some(crate::render::lod::ray::extract(&reinstated).unwrap());
+    gpu.enqueue(reinstated).unwrap();
+    assert!(gpu.upload(&device) > 0);
+    assert_eq!(gpu.ray_targets().len(), 1);
+    gpu.clear();
+    assert!(gpu.ray_targets().is_empty());
 }

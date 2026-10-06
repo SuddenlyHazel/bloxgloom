@@ -21,7 +21,8 @@ fn medium_anisotropy(p:vec3f)->f32 {return 0.0;}
 fn medium_phase(cosine:f32,g:f32)->f32 {return 1.0;}
 fn medium_direction(incoming:vec3f,g:f32)->vec3f {return incoming;}
 fn sun_light(p:vec3f)->vec3f {return vec3f(0.8,0.9,1.0);}
-fn transport(p:vec3f,direction:vec3f,sky:f32)->vec3f {return vec3f(0.2,0.3,0.4);}
+fn ray_water_component(value:vec3f,water_scattered:bool)->vec3f {return value;}
+fn transport_state(p:vec3f,direction:vec3f,sky:f32,limit:f32,primary:bool,footprint:vec4f,initial_depth:u32,pdf:f32,eta:f32)->vec3f {return select(vec3f(0.0),vec3f(0.2,0.3,0.4),initial_depth==1u);}
 struct Output {@builtin(position) position:vec4f};
 @vertex fn vs_main(@builtin(vertex_index) i:u32)->Output {
  let xy=vec2f(f32((i<<1u)&2u),f32(i&2u));return Output(vec4f(xy*2.0-1.0,0.0,1.0));

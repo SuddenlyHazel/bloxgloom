@@ -1,4 +1,5 @@
 pub(crate) mod characters;
+mod clock;
 mod upload;
 
 use super::*;
@@ -50,6 +51,7 @@ pub(super) async fn run_perf_benchmark_async(
     if !(1..=6).contains(&radius) {
         return Err("view radius must be in 1..=6".into());
     }
+    let water_clock = clock::WaterClock::from_env()?;
 
     let instance = wgpu::Instance::default();
     let adapter = instance
@@ -269,14 +271,49 @@ pub(super) async fn run_perf_benchmark_async(
         (vec![], 0)
     };
     let lod_mesh_bytes: usize = lod_meshes.iter().map(render::lod::Mesh::byte_len).sum();
-    let mut lod_source: VecDeque<_> = lod_meshes.into();
     let mut near_ready = std::collections::HashSet::new();
 
     // Benchmark a stable scene, without racing asynchronous BVH admission
     // during steady samples. Setup is already outside the measured frame loop.
     let ray_setup_start = Instant::now();
+    for mesh in lod_meshes {
+        lod_gpu
+            .enqueue(mesh)
+            .map_err(|_| "LOD transport setup exceeded residency budget")?;
+        if lod_gpu.upload(&device) == 0 {
+            return Err("LOD transport setup upload stalled".into());
+        }
+    }
+    let eye_voxel = camera.position.floor().as_ivec3();
+    let (eye_key, eye_local) = world::world_to_chunk(eye_voxel.x, eye_voxel.y, eye_voxel.z);
+    let eye_in_water = chunks
+        .get(&eye_key)
+        .and_then(|chunk| chunk.block(eye_local))
+        == Some(world::WATER);
+    lod_gpu.set_eye_in_water(eye_in_water);
+    lod_gpu.prepare(
+        &queue,
+        camera,
+        PERF_WIDTH,
+        PERF_HEIGHT,
+        render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+        near_ready.iter().copied(),
+    );
+    let distant = lod_gpu
+        .ray_targets()
+        .into_iter()
+        .map(|(_, _, chunk)| chunk)
+        .collect();
     post.trace
-        .prepare_scene(precomputed_meshes.iter().map(|m| m.trace.clone()));
+        .prepare_scene_with_lod(precomputed_meshes.iter().map(|m| m.trace.clone()), distant);
+    super::transport::prepare(
+        &mut post,
+        &device,
+        &queue,
+        &pipeline,
+        &render::trace::dynamic::DynamicTargets::default(),
+        eye_in_water,
+    )?;
     let ray_setup_ms = ray_setup_start.elapsed().as_secs_f64() * 1000.0;
     eprintln!(
         "scene transport: {}, BVH setup {:.1} ms, {} node/triangle bytes (excluded from frame samples)",
@@ -301,6 +338,14 @@ pub(super) async fn run_perf_benchmark_async(
     let mut final_visible = 0usize;
     let mut steady_done = 0usize;
     let mut last_submission = None;
+    let gi_inflight = match std::env::var("BLOXGLOOM_PERF_GI_INFLIGHT") {
+        Ok(value) => value
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=32).contains(n))
+            .ok_or("BLOXGLOOM_PERF_GI_INFLIGHT must be an integer from 1 to 32")?,
+        Err(_) => 0,
+    };
 
     if std::env::var("BLOXGLOOM_PERF_PRELOAD").is_ok_and(|value| value == "1") {
         let preload_start = Instant::now();
@@ -311,14 +356,6 @@ pub(super) async fn run_perf_benchmark_async(
                 total_uploaded += 1;
                 total_upload_bytes += mesh.byte_len();
                 gpu_meshes.insert(mesh.key, uploaded);
-            }
-        }
-        while let Some(mesh) = lod_source.pop_front() {
-            lod_gpu
-                .enqueue(mesh)
-                .map_err(|_| "LOD diagnostic preload exceeded residency budget")?;
-            if lod_gpu.upload(&device) == 0 {
-                return Err("LOD diagnostic preload stalled".into());
             }
         }
         // Drain setup uploads before measuring; this diagnostic mode deliberately
@@ -340,8 +377,7 @@ pub(super) async fn run_perf_benchmark_async(
         let loading = !precomputed_source.is_empty()
             || !mesher_results.is_empty()
             || !pending_upload.is_empty()
-            || !pending_render.is_empty()
-            || !lod_source.is_empty();
+            || !pending_render.is_empty();
         if !loading && steady_done >= steady_frames {
             break;
         }
@@ -351,6 +387,8 @@ pub(super) async fn run_perf_benchmark_async(
             PerfPhase::Steady
         };
         let start = Instant::now();
+        let water_time = water_clock.sample(render::water::time);
+        post.trace.set_water_time(water_time);
 
         // Fill the bounded worker-result channel with precomputed jobs, then mirror
         // ClientApp::poll_work: receive at most 64 meshes, retain at most 128 in
@@ -399,32 +437,18 @@ pub(super) async fn run_perf_benchmark_async(
             uploaded_bytes += mesh_bytes;
         }
 
-        if uploaded_chunks < render::UPLOAD_MESHES_PER_FRAME
-            && let Some(mesh) = lod_source.pop_front()
-        {
-            lod_gpu
-                .enqueue(mesh)
-                .map_err(|_| "LOD benchmark exceeded GPU residency budget")?;
-            if lod_gpu.upload(&device) == 0 {
-                return Err("LOD benchmark upload stalled".into());
-            }
-        }
-        let eye_voxel = camera.position.floor().as_ivec3();
-        let (eye_key, eye_local) = world::world_to_chunk(eye_voxel.x, eye_voxel.y, eye_voxel.z);
-        let eye_in_water = chunks
-            .get(&eye_key)
-            .and_then(|chunk| chunk.block(eye_local))
-            == Some(world::WATER);
         let (matrix, jitter) = post.prepare_temporal(&queue, camera);
         lod_gpu.set_jitter(jitter);
         lod_gpu.set_eye_in_water(eye_in_water);
-        lod_gpu.prepare(
+        lod_gpu.set_reference_handlight(0, [0.0; 3]);
+        lod_gpu.prepare_at(
             &queue,
             camera,
             PERF_WIDTH,
             PERF_HEIGHT,
-            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+            atmosphere,
             near_ready.iter().copied(),
+            water_time,
         );
         let ui_frame = UiFrame {
             health: Some(bloxgloom_host_api::player_health::View {
@@ -485,21 +509,17 @@ pub(super) async fn run_perf_benchmark_async(
                 eye_in_water,
             )),
         );
-        queue.write_buffer(
-            &camera_buffer,
-            0,
-            bytemuck::cast_slice(&{
-                let mut data = atmosphere.camera_data(matrix, camera.position);
-                if render::bsl_reference::enabled() && eye_in_water {
-                    data[31] = -1.0;
-                }
-                if lod_horizon > 0 && !render::bsl_reference::enabled() {
-                    data[28] = f32::from(lod_horizon) * 0.65;
-                    data[29] = f32::from(lod_horizon);
-                }
-                data
-            }),
-        );
+        let mut camera_data = atmosphere.camera_data(matrix, camera.position);
+        render::bsl_reference::handlight::configure(&mut camera_data, 0, [0.0; 3]);
+        if render::bsl_reference::enabled() && eye_in_water {
+            camera_data[31] = -1.0;
+        }
+        if lod_horizon > 0 && !render::bsl_reference::enabled() {
+            camera_data[28] = f32::from(lod_horizon) * 0.65;
+            camera_data[29] = f32::from(lod_horizon);
+        }
+        post.configure_reference_ao(camera_data, camera.fov_y_radians);
+        queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
         queue.write_buffer(
             &target_camera_buffer,
             0,
@@ -610,7 +630,7 @@ pub(super) async fn run_perf_benchmark_async(
         }
         post.reflections.configure(camera.position, atmosphere);
         post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
-        water_renderer.prepare_frame(
+        water_renderer.prepare_frame_at(
             &queue,
             render::water::Frame {
                 atmosphere,
@@ -620,6 +640,7 @@ pub(super) async fn run_perf_benchmark_async(
                 size: [PERF_WIDTH, PERF_HEIGHT],
                 view_projection: matrix,
             },
+            water_time,
         );
         let water_target =
             water_renderer.begin_frame(&device, &mut encoder, &post.scene, &depth_view);
@@ -682,6 +703,11 @@ pub(super) async fn run_perf_benchmark_async(
             &pipeline,
             &texture_group,
         );
+        if let Some(error) = post.trace.take_submission_error() {
+            // Drop this unsubmitted continuation after a partial transport frame.
+            // Do not queue atmosphere, final passes, timestamp readback or capture.
+            return Err(error.into());
+        }
         post.resolve_atmosphere(
             &device,
             &queue,
@@ -768,6 +794,13 @@ pub(super) async fn run_perf_benchmark_async(
         });
         if matches!(phase, PerfPhase::Steady) {
             steady_done += 1;
+        }
+        if post.trace.ready() && gi_inflight > 0 && samples.len().is_multiple_of(gi_inflight) {
+            // Completion waits are excluded from the CPU time captured above.
+            device.poll(wgpu::PollType::Wait {
+                submission_index: last_submission.clone(),
+                timeout: Some(GPU_READBACK_TIMEOUT),
+            })?;
         }
     }
 
@@ -947,8 +980,8 @@ pub(super) async fn run_perf_benchmark_async(
         "mesh payload: {draw_mesh_bytes} raster vertex/index bytes, {trace_triangle_bytes} retained CPU ray triangle bytes; mesh/upload budget figures include the full worker payload"
     );
     eprintln!(
-        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
-        PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done,
+        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; GI completion checkpoint interval={} (0 means only final timestamp readback), checkpoint waits excluded from CPU samples",
+        PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done, gi_inflight,
     );
     // Copy/readback follows all measured submissions and timestamp resolution;
     // the optional image never enters CPU/GPU percentile samples.

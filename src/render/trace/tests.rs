@@ -6,13 +6,18 @@ fn triangle(x: f32) -> Triangle {
         b: [x + 1.0, 0.0, 0.0, 1.0],
         c: [x, 1.0, 0.0, 0.0],
         uv_ab: [0.0; 4],
-        uv_c: [0.0; 4],
+        uv_c: [0.0; 2],
+        surface_color: 0,
+        surface_flags: 0,
         normal: [0.0, 0.0, 1.0, 0.0],
     }
 }
 #[test]
 fn scene_bvh_covers_every_leaf_and_preserves_wind_bounds() {
     let scene = Scene::build([Arc::new(Chunk {
+        water: None,
+        coarse_water: None,
+
         key: None,
         triangles: (0..128).rev().map(|x| triangle(x as f32)).collect(),
     })]);
@@ -43,5 +48,6 @@ fn scene_bvh_covers_every_leaf_and_preserves_wind_bounds() {
     assert!(empty.nodes.is_empty());
 }
 
-mod denoise;
-mod transport;
+pub(in crate::render::trace) mod denoise;
+pub(in crate::render::trace) mod transport;
+mod water;

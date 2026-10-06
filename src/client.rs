@@ -289,6 +289,7 @@ mod observations;
 pub(crate) mod presentation;
 pub(crate) mod startup;
 pub(crate) use startup::prepare as prepare_package_startup;
+mod reference_lighting;
 mod simulation_clock;
 mod weather;
 mod workers;
@@ -2025,6 +2026,7 @@ impl ClientApp {
         }
         let camera = self.view_camera();
         self.present_weather(camera, now);
+        self.configure_reference_lighting(camera);
         if self.status.as_ref().is_some_and(|(_, until)| now > *until) {
             self.status = None;
         }

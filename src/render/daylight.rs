@@ -215,7 +215,11 @@ impl Atmosphere {
             data[28] = 38.0;
             data[29] = 135.0;
         }
-        data[30] = self.wind_seconds;
+        data[30] = if super::bsl_reference::enabled() {
+            self.presentation_seconds
+        } else {
+            self.wind_seconds
+        };
         data[31] = f32::from(self.scene_transport);
         // Preserve the terrain parallax slot at byte 128 for every camera.
         data[32..36].copy_from_slice(&crate::config::parallax::Parallax::default().uniform());

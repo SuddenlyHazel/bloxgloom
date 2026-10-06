@@ -41,7 +41,9 @@ fn wind_compute_matches_independent_caster_positions_and_preserves_material_fiel
             b: [-8.0, 33.0, 4.0, 15.0],
             c: [-9.0, 34.0, 4.0, 1.0],
             uv_ab: [0.0, 1.0, 1.0, 1.0],
-            uv_c: [0.0, 0.0, 0.0, 0.0],
+            uv_c: [0.0; 2],
+            surface_color: 0,
+            surface_flags: 0,
             normal: if id == 1 {
                 [0.0, 0.0, 1.0, 0.0]
             } else if id == 4 {

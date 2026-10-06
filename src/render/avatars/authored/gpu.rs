@@ -170,7 +170,12 @@ impl Gpu {
             label: Some("instanced authored creature shader"),
             source: wgpu::ShaderSource::Wgsl(
                 super::super::motion::shader(
-                    crate::render::daylight::shader(include_str!("../authored.wgsl")),
+                    crate::render::daylight::shader(&format!(
+                        "{}\n{}\n{}",
+                        crate::render::trace::dynamic::DEFORMATION_SHADER,
+                        super::super::SHADING_SHADER,
+                        include_str!("../authored.wgsl")
+                    )),
                     3,
                 )
                 .into(),

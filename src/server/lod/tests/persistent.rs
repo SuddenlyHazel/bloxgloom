@@ -125,3 +125,62 @@ fn different_world_identity_and_corrupt_cache_rebuild_from_authoritative_sources
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(other).unwrap();
 }
+
+#[test]
+fn compact_cache_bytes_are_canonical_and_old_summary_identity_is_discarded() {
+    use sha2::{Digest, Sha256};
+    let root = temporary();
+    let world = World::with_capacity(7, root.clone(), 4).unwrap();
+    let service = Service::new(&world, root.clone()).unwrap();
+    let cold = request(&service, &world, key(), 1);
+    assert!(!cold.cache_hit);
+    let mut expected = cold.tile.unwrap();
+    let path = super::super::disk::path(&root.join("lod-cache"), key());
+    let mut bytes = std::fs::read(&path).unwrap();
+    let message = ServerMessage::LodTile {
+        session: 1,
+        request: 1,
+        tile: expected.clone(),
+    };
+    // Actual atomic disk output, including magic/stamp/checksum and the framed
+    // packet. Compact palette/packed-light lengths must agree with real bytes.
+    assert_eq!(bytes.len(), 72 + crate::protocol::server_wire_len(&message));
+    assert!(expected.encoded_bytes() <= crate::lod::MAX_TILE_BYTES);
+    let warm = request(&service, &world, key(), 2);
+    assert!(warm.cache_hit);
+    expected.revision = 2;
+    assert_eq!(warm.tile, Some(expected.clone()));
+
+    // A valid checksum and current wire encoding cannot authorize a cached
+    // tile produced by the earlier snow-extruding renderer summary. Keep seed,
+    // generator, catalog, wire and source inputs identical; change only the
+    // renderer-summary identity salt (no save format conversion involved).
+    let mut identity = Sha256::new();
+    identity.update(b"bloxgloom-lod-summary-v4-surface-caps");
+    identity.update(7_u64.to_le_bytes());
+    identity.update(crate::world::TERRAIN_GENERATOR_VERSION.to_le_bytes());
+    identity.update(world.catalog().fingerprint().to_le_bytes());
+    identity.update(crate::protocol::WIRE_VERSION.to_le_bytes());
+    identity.update(crate::world::Generator::default().identity());
+    let old_identity: [u8; 32] = identity.finalize().into();
+    assert_ne!(old_identity, world.lod_cache_identity());
+    let mut stamp = Sha256::new();
+    stamp.update(old_identity);
+    stamp.update([key().level]);
+    stamp.update(key().x.to_le_bytes());
+    stamp.update(key().z.to_le_bytes());
+    let old_stamp: [u8; 32] = stamp.finalize().into();
+    bytes[8..40].copy_from_slice(&old_stamp);
+    let end = bytes.len() - 32;
+    let checksum = Sha256::digest(&bytes[..end]);
+    bytes[end..].copy_from_slice(&checksum);
+    std::fs::write(&path, bytes).unwrap();
+    let rebuilt = request(&service, &world, key(), 3);
+    assert!(!rebuilt.cache_hit);
+    expected.revision = 3;
+    assert_eq!(rebuilt.tile, Some(expected));
+    assert!(request(&service, &world, key(), 4).cache_hit);
+    drop(service);
+    drop(world);
+    std::fs::remove_dir_all(root).unwrap();
+}

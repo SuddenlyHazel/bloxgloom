@@ -3,6 +3,7 @@ mod forest;
 mod hydrology;
 mod landforms;
 mod materials;
+mod snow;
 #[cfg(test)]
 mod tests;
 mod trees;
@@ -191,6 +192,21 @@ pub(crate) fn terrain_height(x: i64, z: i64, seed: u64) -> i64 {
     terrain_column(x, z, seed).height
 }
 
+#[cfg(test)]
+pub(crate) fn coast_column_diagnostic(x: i64, z: i64, seed: u64) -> String {
+    let c = terrain_column(x, z, seed);
+    format!(
+        "sample=({x},{z}) height={} biome={:?} shore={} rocky={} temp={:.4} slope={:.4} exact_top={:?}",
+        c.height,
+        c.biome,
+        c.shore,
+        c.rocky,
+        c.temperature,
+        c.slope,
+        generated_block_in_column(x, c.height, z, c, seed)
+    )
+}
+
 pub(super) fn generated_block_in_column(
     x: i64,
     y: i64,
@@ -240,37 +256,41 @@ fn generated_block_with_pattern(
         if y < column.height - 4 {
             return materials::rock(x, y, z, column, seed);
         }
-        let top = if column.rocky && !column.shore {
-            if column.height > 74 || column.temperature < -0.55 {
-                SNOW
-            } else {
-                materials::rock(x, y, z, column, seed)
-            }
-        } else if column.shore {
-            if matches!(column.biome, Biome::Desert) {
-                SAND
-            } else if column.biome == Biome::Forest {
-                materials::palette().soils[3]
-            } else {
-                GRAVEL
-            }
-        } else {
-            match column.biome {
-                Biome::Plains => {
-                    [GRASS, GRASS, materials::palette().soils[0], STONE][pattern as usize]
-                }
-                Biome::Forest => [
-                    GRASS,
-                    materials::palette().soils[1],
-                    MOSS,
-                    materials::palette().soils[2],
-                ][pattern as usize],
-                Biome::Desert => [SAND, SAND, GRAVEL, STONE][pattern as usize],
-                Biome::Tundra => [SNOW, SNOW, GRAVEL, STONE][pattern as usize],
-                Biome::Highland => [STONE, GRAVEL, GRAVEL, SNOW][pattern as usize],
-            }
-        };
         if y == column.height {
+            let top = if column.biome == Biome::Tundra && !column.shore {
+                snow::surface(x, z, column, seed)
+            } else if column.rocky && !column.shore {
+                if column.height > 74 || column.temperature < -0.55 {
+                    SNOW
+                } else {
+                    materials::rock(x, y, z, column, seed)
+                }
+            } else if column.shore {
+                if matches!(column.biome, Biome::Desert) {
+                    SAND
+                } else if column.biome == Biome::Forest {
+                    materials::palette().soils[3]
+                } else {
+                    GRAVEL
+                }
+            } else {
+                match column.biome {
+                    Biome::Plains => {
+                        [GRASS, GRASS, materials::palette().soils[0], STONE][pattern as usize]
+                    }
+                    Biome::Forest => [
+                        GRASS,
+                        materials::palette().soils[1],
+                        MOSS,
+                        materials::palette().soils[2],
+                    ][pattern as usize],
+                    Biome::Desert => [SAND, SAND, GRAVEL, STONE][pattern as usize],
+                    Biome::Tundra => {
+                        unreachable!("cold non-shore surfaces use continuous snow cover")
+                    }
+                    Biome::Highland => [STONE, GRAVEL, GRAVEL, SNOW][pattern as usize],
+                }
+            };
             return top;
         }
         match column.biome {

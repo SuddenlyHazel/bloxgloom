@@ -1,6 +1,7 @@
 //! Strictly bounded distant terrain wire encoding, also used for disposable caches.
 use super::{Cursor, invalid};
 use crate::content::{BlockStateId, Catalog};
+use crate::lod::palette;
 use crate::lod::{
     Column, Interval, LodTile, MAX_TILE_BYTES, MAX_TILE_COVERAGE, MAX_TILE_SPANS,
     MAX_TREE_FEATURES, Span, TileKey, TreeFeature,
@@ -28,24 +29,24 @@ pub(super) fn read_key(c: &mut Cursor<'_>) -> io::Result<TileKey> {
     Ok(key)
 }
 pub(crate) fn tile_len(tile: &LodTile) -> usize {
-    9 + 8
-        + 2
-        + tile.trees.len() * TreeFeature::WIRE_BYTES
-        + 4
-        + 2
-        + tile
-            .columns
-            .iter()
-            .map(|col| 4 + col.coverage.len() * 8 + col.spans.len() * 14)
-            .sum::<usize>()
+    tile.encoded_bytes()
 }
 pub(super) fn write_tile(out: &mut Vec<u8>, tile: &LodTile, catalog: &Catalog) -> io::Result<()> {
     tile.validate(catalog)
         .map_err(|_| invalid("invalid LOD summary"))?;
+    out.try_reserve_exact(tile_len(tile))
+        .map_err(|_| invalid("LOD allocation failed"))?;
     write_key(out, tile.key)?;
     out.extend(tile.revision.to_le_bytes());
     out.extend(tile.geometric_error.to_le_bytes());
     out.extend((tile.columns.len() as u16).to_le_bytes());
+    let states = palette::states(tile);
+    let width = palette::index_width(states.len());
+    out.extend((states.len() as u16).to_le_bytes());
+    out.push(width as u8);
+    for state in &states {
+        out.extend(state.0.to_le_bytes());
+    }
     for col in &tile.columns {
         out.extend((col.coverage.len() as u16).to_le_bytes());
         out.extend((col.spans.len() as u16).to_le_bytes());
@@ -56,9 +57,13 @@ pub(super) fn write_tile(out: &mut Vec<u8>, tile: &LodTile, catalog: &Catalog) -
         for v in &col.spans {
             out.extend(v.bottom.to_le_bytes());
             out.extend(v.top.to_le_bytes());
-            out.extend(v.state.0.to_le_bytes());
-            out.push(v.sky);
-            out.push(v.glow);
+            let index = states.binary_search(&v.state).unwrap();
+            if width == 1 {
+                out.push(index as u8);
+            } else {
+                out.extend((index as u16).to_le_bytes());
+            }
+            out.push(v.sky | (v.glow << 4));
         }
     }
     out.extend((tile.trees.len() as u16).to_le_bytes());
@@ -86,7 +91,39 @@ pub(super) fn read_tile(c: &mut Cursor<'_>, catalog: &Catalog) -> io::Result<Lod
     if count != 1024 {
         return Err(invalid("invalid LOD column count"));
     }
-    let mut columns = Vec::with_capacity(count);
+    let palette_count = c.u16()? as usize;
+    let width = usize::from(c.u8()?);
+    let base_bytes = palette::HEADER_BYTES + 4 * count + 4 * palette_count;
+    if palette_count > MAX_TILE_SPANS
+        || width != palette::index_width(palette_count)
+        || base_bytes > MAX_TILE_BYTES
+    {
+        return Err(invalid("invalid LOD palette count or width"));
+    }
+    // Check actual bytes before reserve: counts alone never authorize allocation.
+    let mut encoded_palette = Cursor {
+        bytes: c.take(palette_count * 4)?,
+        offset: 0,
+    };
+    let mut states = bounded_vec(palette_count)?;
+    for _ in 0..palette_count {
+        let state = BlockStateId(encoded_palette.u32()?);
+        let flags = catalog
+            .state(state)
+            .ok_or_else(|| invalid("unknown LOD palette state"))?
+            .flags;
+        if flags & (crate::content::OPAQUE | crate::content::CUTOUT | crate::content::FLUID) == 0
+            || flags & crate::content::PLANT != 0
+            || states.last().is_some_and(|previous| *previous >= state)
+        {
+            return Err(invalid("invalid or unordered LOD palette state"));
+        }
+        states.push(state);
+    }
+    let mut used = bounded_vec(palette_count)?;
+    used.resize(palette_count, false);
+    let mut columns = bounded_vec(count)?;
+    let span_bytes = 9 + width;
     let mut total_spans = 0usize;
     let mut total_coverage = 0usize;
     for _ in 0..count {
@@ -97,32 +134,51 @@ pub(super) fn read_tile(c: &mut Cursor<'_>, catalog: &Catalog) -> io::Result<Lod
         if span_count > 32
             || total_spans > MAX_TILE_SPANS
             || total_coverage > MAX_TILE_COVERAGE
-            || 34 + 4 * 1024 + total_coverage * 8 + total_spans * 14 > MAX_TILE_BYTES
+            || base_bytes + total_coverage * 8 + total_spans * span_bytes > MAX_TILE_BYTES
         {
             return Err(invalid("LOD allocation cap exceeded"));
         }
-        let mut coverage = Vec::with_capacity(coverage_count);
-        let mut spans = Vec::with_capacity(span_count);
+        let mut payload = Cursor {
+            bytes: c.take(coverage_count * 8 + span_count * span_bytes)?,
+            offset: 0,
+        };
+        let mut coverage = bounded_vec(coverage_count)?;
+        let mut spans = bounded_vec(span_count)?;
         for _ in 0..coverage_count {
             coverage.push(Interval {
-                bottom: c.i32()?,
-                top: c.i32()?,
+                bottom: payload.i32()?,
+                top: payload.i32()?,
             });
         }
         for _ in 0..span_count {
+            let bottom = payload.i32()?;
+            let top = payload.i32()?;
+            let index = if width == 1 {
+                usize::from(payload.u8()?)
+            } else {
+                usize::from(payload.u16()?)
+            };
+            let state = *states
+                .get(index)
+                .ok_or_else(|| invalid("invalid LOD palette index"))?;
+            used[index] = true;
+            let light = payload.u8()?;
             spans.push(Span {
-                bottom: c.i32()?,
-                top: c.i32()?,
-                state: BlockStateId(c.u32()?),
-                sky: c.u8()?,
-                glow: c.u8()?,
+                bottom,
+                top,
+                state,
+                sky: light & 15,
+                glow: light >> 4,
             });
         }
         columns.push(Column { coverage, spans });
     }
     let count = c.u16()? as usize;
     if count > MAX_TREE_FEATURES
-        || 34 + 4 * 1024 + total_coverage * 8 + total_spans * 14 + count * TreeFeature::WIRE_BYTES
+        || base_bytes
+            + total_coverage * 8
+            + total_spans * span_bytes
+            + count * TreeFeature::WIRE_BYTES
             > MAX_TILE_BYTES
     {
         return Err(invalid("forest allocation cap exceeded"));
@@ -130,7 +186,15 @@ pub(super) fn read_tile(c: &mut Cursor<'_>, catalog: &Catalog) -> io::Result<Lod
     let [x, z, _, _] = key
         .bounds()
         .ok_or_else(|| invalid("invalid forest bounds"))?;
-    let mut trees = Vec::with_capacity(count);
+    if used.iter().any(|used| !used) {
+        return Err(invalid("unused LOD palette state"));
+    }
+    let mut tree_payload = Cursor {
+        bytes: c.take(count * TreeFeature::WIRE_BYTES)?,
+        offset: 0,
+    };
+    let c = &mut tree_payload;
+    let mut trees = bounded_vec(count)?;
     for _ in 0..count {
         let dx = i32::from(c.i16()?);
         let y = i32::from(c.i16()?);
@@ -166,6 +230,14 @@ pub(super) fn read_tile(c: &mut Cursor<'_>, catalog: &Catalog) -> io::Result<Lod
     tile.validate(catalog)
         .map_err(|_| invalid("invalid LOD summary"))?;
     Ok(tile)
+}
+
+fn bounded_vec<T>(count: usize) -> io::Result<Vec<T>> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| invalid("LOD allocation failed"))?;
+    Ok(values)
 }
 
 #[cfg(test)]

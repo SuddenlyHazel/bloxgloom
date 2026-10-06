@@ -222,6 +222,17 @@ impl Scene {
         occluded: bool,
         enabled: bool,
     ) -> Vec<u8> {
+        self.render_with_visibility(avatars, caster, occluded, enabled, true)
+    }
+
+    fn render_with_visibility(
+        &mut self,
+        avatars: &[VisualAvatar],
+        caster: bool,
+        occluded: bool,
+        enabled: bool,
+        visible: bool,
+    ) -> Vec<u8> {
         self.renderer.set(&self.queue, avatars);
         self.shadow_data[18] = f32::from(enabled);
         self.queue.write_buffer(
@@ -289,7 +300,12 @@ impl Scene {
                 }),
                 ..Default::default()
             });
-            assert!(self.renderer.draw(&mut pass) > 0);
+            let draws = self.renderer.draw(&mut pass);
+            if visible {
+                assert!(draws > 0);
+            } else {
+                assert_eq!(draws, 0);
+            }
         }
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -601,4 +617,60 @@ fn gpu_procedural_and_authored_actors_project_moving_point_shadows() {
     ] {
         crate::render::local_shadow::gpu_tests::verify_actor_projection(&catalog, actor);
     }
+}
+
+#[test]
+fn gpu_primitive_first_person_owner_keeps_world_caster_and_visible_model_ranges() {
+    let catalog = moving_tests::catalog([0.5, 0.1, 0.1]);
+    let mut scene = Scene::new(&catalog);
+    let mut owner = avatar(AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE));
+    owner.pose = [0.6, 0.8, 0.1, 0.3];
+    let full = scene.render(&[owner], true, false, true);
+    assert!(
+        full.chunks_exact(4).any(|p| p[0] < 255),
+        "primitive owner must cast actual depth"
+    );
+    scene.renderer.set_first_person(Some(FirstPersonView {
+        id: owner.id,
+        eye_height: 1.6,
+        pitch: 0.3,
+    }));
+    assert_eq!(
+        full,
+        scene.render(&[owner], true, false, true),
+        "first-person framing must retain the complete current primitive caster"
+    );
+    let hidden = scene.render_with_visibility(&[owner], false, false, false, false);
+    assert!(
+        hidden.chunks_exact(4).all(|p| p[..3] == [0, 0, 0]),
+        "the primitive owner must stay hidden in the camera color pass"
+    );
+    let mut other = avatar(AvatarModel::Moving(
+        catalog.entity_type_id_by_key("demo:projectile").unwrap(),
+    ));
+    other.id = 2;
+    other.position.y = 0.8;
+    other.motion = Some(MovingVisual {
+        tick: 1,
+        revision: 1,
+        orientation: Quat::IDENTITY.to_array(),
+        velocity: [0.0; 3],
+        stopped: false,
+    });
+    let visible = scene.render(&[other], false, false, false);
+    assert!(
+        visible.chunks_exact(4).any(|p| p[..3] != [0, 0, 0]),
+        "independent moving model must be visible"
+    );
+    assert_eq!(
+        visible,
+        scene.render(&[owner, other], false, false, false),
+        "a hidden owner must not shift the following model's visible instance range"
+    );
+    owner.position.x = 0.4;
+    assert_ne!(
+        full,
+        scene.render(&[owner], true, false, true),
+        "world owner movement must update the current raster caster"
+    );
 }

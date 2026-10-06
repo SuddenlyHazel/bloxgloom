@@ -32,6 +32,15 @@ impl Vertex {
                 | (u32::from(glow) << 7),
         }
     }
+    pub(super) fn ray_surface(self) -> super::ray::Appearance {
+        let encoded = (self.surface >> 13) & 0x3ffff;
+        super::ray::Appearance {
+            packed: self.surface,
+            layer: encoded.saturating_sub(1),
+            color: self.color.map(|c| f32::from(c) / 255.0),
+            textured: encoded != 0 && self.surface & 0x80000000 == 0,
+        }
+    }
     #[cfg(test)]
     pub(super) fn unpack(self) -> [f32; 11] {
         let mut out = [0.0; 11];

@@ -6,6 +6,7 @@ mod gpu;
 mod mesh;
 mod near_coverage;
 mod pipelines;
+mod ray;
 mod selection;
 mod surface;
 mod vertex;

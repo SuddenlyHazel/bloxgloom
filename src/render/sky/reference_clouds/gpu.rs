@@ -22,13 +22,18 @@ else if i<9u {
  let origins=array<vec3f,4>(vec3f(0.0,100.0,0.0),vec3f(0.0,222.0,0.0),vec3f(0.0,100.0,0.0),vec3f(0.0,100.0,0.0));
  let rays=array<vec3f,4>(vec3f(0.8,0.6,0.0),vec3f(0.8,0.6,0.0),vec3f(0.8,-0.6,0.0),vec3f(0.0,1.0,0.0));
  rows[i]=bg_reference_cloud_integrate(origins[i-5u],rays[i-5u],vec2f(1.5,2.5),sky_camera);
-} else {
+} else if i<11u {
  var camera=sky_camera;
  if i==9u {
  camera.climate.x=1.0;
  let raw=bg_bsl_daylight_palette(1.0);let weather=vec3f(176.0,224.0,255.0)*(1.2/255.0);let tinted=weather*bg_bsl_luminance(raw);camera.sun_radiance=vec4f(tinted*tinted,1.0);
  } else {camera.sun.y=-1.0;camera.reference.w=-1.0;camera.sun_radiance=vec4f(pow(vec3f(96.0,192.0,255.0)*(0.3/255.0),vec3f(2.0)),0.0);}
  rows[i]=bg_reference_cloud_integrate(vec3f(0.0,100.0,0.0),vec3f(0.8,0.6,0.0),vec2f(1.5,2.5),camera);
+} else {
+ let origins=array<vec3f,3>(vec3f(0.0,100.0,0.0),vec3f(0.0,222.0,0.0),vec3f(0.0,100.0,0.0));
+ let rays=array<vec3f,3>(vec3f(0.9949874371,0.1,0.0),vec3f(0.8,0.6,0.0),vec3f(0.8,0.6,0.0));
+ let heights=array<f32,3>(100.0,100.0,-70.0);
+ rows[i]=bg_reference_cloud_integrate_case(origins[i-11u],rays[i-11u],vec2f(1.5,2.5),sky_camera,heights[i-11u],true);
 }}
 "#;
     let source = format!(
@@ -109,13 +114,13 @@ else if i<9u {
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 176,
+        size: 224,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let read = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 176,
+        size: 224,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -146,9 +151,9 @@ else if i<9u {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(11, 1, 1);
+        pass.dispatch_workgroups(14, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 176);
+    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 224);
     queue.submit([encoder.finish()]);
     read.slice(..)
         .map_async(wgpu::MapMode::Read, |r| r.unwrap());
@@ -210,6 +215,35 @@ else if i<9u {
             close(*a, e);
         }
     }
+    for (i, origin, ray, eye_height) in [
+        (11, [0., 100., 0.], [0.9949874371, 0.1, 0.], 100.),
+        (12, [0., 222., 0.], [0.8, 0.6, 0.], 100.),
+        (13, [0., 100., 0.], [0.8, 0.6, 0.], -70.),
+    ] {
+        let expected =
+            super::oracle::integrate_case(origin, ray, [1.5, 2.5], 0., false, eye_height, true);
+        for (a, e) in rows[i].iter().zip(expected) {
+            close(*a, e);
+        }
+    }
+    assert!(
+        rows[11][3] > 0.99,
+        "source fast-fade reflection must clear beyond its cloud range"
+    );
+    assert!(
+        super::oracle::integrate(
+            [0., 100., 0.],
+            [0.9949874371, 0.1, 0.],
+            [1.5, 2.5],
+            0.,
+            false
+        )[3] < 0.99,
+        "control must distinguish ordinary sky from reflected cloud fade"
+    );
+    assert!(
+        rows[13][..3].iter().all(|v| *v == 0.),
+        "reflection must use camera altitude for underground attenuation"
+    );
     drop(mapped);
     read.unmap();
     // Distinct R/B values exercise linear repeat, wind, UV scale and vertical
@@ -243,7 +277,7 @@ else if i<9u {
         pass.set_bind_group(0, &group, &[]);
         pass.dispatch_workgroups(5, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 176);
+    encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 224);
     queue.submit([encoder.finish()]);
     read.slice(..)
         .map_async(wgpu::MapMode::Read, |r| r.unwrap());

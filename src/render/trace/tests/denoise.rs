@@ -1,10 +1,15 @@
+mod water_history;
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 const SKY: &str = crate::render::sky::STYLE_SHADER;
 const PREFILTER: &str = include_str!("../../material/sky_prefilter.wgsl");
 const PBR: &str = include_str!("../../material/pbr.wgsl");
-const HELPERS: &str = include_str!("../denoise.wgsl");
+const HELPERS: &str = concat!(
+    include_str!("../denoise.wgsl"),
+    "\n",
+    include_str!("../water/lobes/packet.wgsl")
+);
 const FILTER: &str = include_str!("../filter.wgsl");
 const COMPOSITE: &str = include_str!("../composite.wgsl");
 
@@ -177,7 +182,7 @@ fn render_texture(
     output
 }
 
-pub(super) fn draw(
+pub(in crate::render::trace) fn draw(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     source: &str,
@@ -265,7 +270,7 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
     let (device, queue) = device();
     let width = 32u32;
     let height = 16u32;
-    let entries = (0..8)
+    let entries = (0..10)
         .map(|binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -323,17 +328,18 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
         });
     }
     queue.submit([encoder.finish()]);
-    for (depth_edge, ao_contrast, media_only, foreground, water_edge, signed) in [
-        (false, false, false, false, false, false),
-        (true, false, false, false, false, false),
-        (false, true, false, false, false, false),
-        (false, false, true, false, false, false),
-        (false, false, true, true, false, false),
+    for (depth_edge, ao_contrast, media_only, foreground, water_edge, signed, complete_path) in [
+        (false, false, false, false, false, false, false),
+        (true, false, false, false, false, false, false),
+        (false, true, false, false, false, false, false),
+        (false, false, true, false, false, false, false),
+        (false, false, true, true, false, false, false),
         // Medium-only sky and a raster-only foreground share material class2;
         // their path lengths/raster depth classes must remain disjoint.
-        (true, false, true, false, false, false),
-        (false, false, false, false, true, false),
-        (false, false, false, false, false, true),
+        (true, false, true, false, false, false, false),
+        (false, false, false, false, true, false, false),
+        (false, false, false, false, false, true, false),
+        (false, false, false, false, true, false, true),
     ] {
         let mut reset = device.create_command_encoder(&Default::default());
         {
@@ -353,7 +359,7 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
         if media_only && depth_edge {
             draw_medium_depth_edge(&device, &queue, &depth_view);
         }
-        let mut uniform_data = vec![0.0f32; 72];
+        let mut uniform_data = vec![0.0f32; 76];
         let inverse = if foreground {
             let mut encoder = device.create_command_encoder(&Default::default());
             {
@@ -495,12 +501,23 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
                             0.0,
                             0.0,
                             if water_edge && x * scale < width / 2 {
-                                -0.8
+                                if complete_path { -3.8 } else { -0.8 }
                             } else {
                                 0.8
                             },
                             8.0,
                         ]
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let baseline = (0..height)
+            .flat_map(|y| {
+                (0..width).map(move |x| {
+                    if (x + y).is_multiple_of(2) {
+                        [0.11, 0.04, 0.27, 1.0]
+                    } else {
+                        [0.64, 0.35, 0.02, 1.0]
                     }
                 })
             })
@@ -523,6 +540,14 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
                 width / scale,
                 height / scale,
                 &vec![[0.37, 0.0, 0.0, 0.0]; (width * height / (scale * scale)) as usize],
+            ),
+            texture(&device, &queue, width, height, &baseline),
+            texture(
+                &device,
+                &queue,
+                width / scale,
+                height / scale,
+                &vec![[0.0; 4]; (width * height / (scale * scale)) as usize],
             ),
         ];
         let views = textures
@@ -566,6 +591,14 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
                         binding: 7,
                         resource: wgpu::BindingResource::TextureView(&views[5]),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(&views[6]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::TextureView(&views[7]),
+                    },
                 ],
             })
         };
@@ -597,6 +630,38 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
             )
         };
         let output = draw_filtered();
+        if complete_path {
+            let changed = baseline
+                .iter()
+                .map(|c| [c[2], c[0], c[1], 1.0])
+                .collect::<Vec<_>>();
+            queue.write_texture(
+                textures[6].as_image_copy(),
+                bytemuck::cast_slice(&changed),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 16),
+                    rows_per_image: Some(height),
+                },
+                textures[6].size(),
+            );
+            let moved = draw_filtered();
+            for y in 4..height - 4 {
+                for x in 4..width / 2 - 2 {
+                    let at = (x + y * width) as usize;
+                    for channel in 0..3 {
+                        assert!(
+                            (output[at][channel] + baseline[at][channel]
+                                - moved[at][channel]
+                                - changed[at][channel])
+                                .abs()
+                                < 0.00002,
+                            "complete water signal must subtract exact center HDR, never filtered neighbors"
+                        );
+                    }
+                }
+            }
+        }
         if !media_only && !depth_edge && !ao_contrast && !water_edge && !signed {
             // Change only the high-frequency, colored specular fallback. Its
             // subtraction must remain at the exact center and independent of
@@ -649,7 +714,13 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
                             "specular subtraction must preserve center color"
                         );
                         assert!(
-                            (removed - (output[at][channel] - unattenuated[at][channel]) * 0.37)
+                            (removed
+                                - (output[at][channel]
+                                    - unattenuated[at][channel]
+                                    - (materials[at][channel] * materials[at][3].abs()
+                                        - baseline[at][channel])
+                                        * 0.63)
+                                    * 0.37)
                                 .abs()
                                 < 0.00002,
                             "primary extinction scales center fallback once: ({x},{y}) c={channel}; removed={removed}, full={}, error={}",
@@ -698,7 +769,11 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
                     let at = (x + y * width) as usize;
                     for channel in 0..3 {
                         assert!(
-                            (retained[at][channel] - output[at][channel]).abs() < 0.00002,
+                            (retained[at][channel]
+                                - output[at][channel]
+                                - materials[at][channel] * materials[at][3].abs() * 0.37)
+                                .abs()
+                                < 0.00002,
                             "raster/ray disagreement must preserve center specular and camera-medium correction"
                         );
                     }
@@ -716,7 +791,19 @@ fn spatial_denoise_fixture(scale: u32, source_sky: bool) {
                 } else {
                     1.0
                 };
-                let reconstructed = pixel[0] / basis(x, y);
+                let reconstructed = (pixel[0]
+                    + if complete_path && x < width / 2 {
+                        baseline[(x + y * width) as usize][0]
+                    } else {
+                        let at = (x + y * width) as usize;
+                        baseline[at][0] * 0.63
+                            + if !media_only {
+                                materials[at][0] * materials[at][3].abs() * 0.37
+                            } else {
+                                0.0
+                            }
+                    })
+                    / basis(x, y);
                 max_error = max_error.max((reconstructed - expected).abs());
                 assert!(pixel.iter().all(|value| value.is_finite()));
                 assert_eq!(pixel[3], 0.0);

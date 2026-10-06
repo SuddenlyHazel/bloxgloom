@@ -6,6 +6,7 @@ fn empty(key: TileKey) -> Mesh {
         key,
         revision: 0,
         loading: None,
+        ray: None,
         vertices: Vec::new(),
         indices: Vec::new(),
         water_indices: Vec::new(),

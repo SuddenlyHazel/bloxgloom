@@ -35,6 +35,8 @@ struct CharacterInstance {
 }
 
 pub(super) struct CharacterRenderer {
+    ray_assets: Vec<std::sync::Arc<crate::render::trace::dynamic::DynamicAsset>>,
+    pub(super) ray_targets: crate::render::trace::dynamic::DynamicTargets,
     asset: &'static CharacterAsset,
     pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
@@ -61,6 +63,19 @@ impl CharacterRenderer {
         catalog: &crate::content::Catalog,
     ) -> Self {
         let asset = CharacterAsset::builtin();
+        let ray_assets = if crate::render::trace::dynamic::enabled() {
+            (0..GROUPS)
+                .map(|group| {
+                    super::ray_targets::character(
+                        asset,
+                        if group / STYLES == 0 { 0 } else { 14 },
+                        (group % STYLES) as u32,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         assert_eq!(asset.animation.nodes.len(), JOINTS);
 
         let mut material_ranges: [std::ops::Range<u32>; MATERIALS] = std::array::from_fn(|_| 0..0);
@@ -231,6 +246,8 @@ impl CharacterRenderer {
         let motion_pipeline =
             super::motion::pipeline(device, &shader, &motion_layout, &buffers, None);
         Self {
+            ray_assets,
+            ray_targets: Default::default(),
             asset,
             pipeline,
             shadow_pipeline,
@@ -254,6 +271,7 @@ impl CharacterRenderer {
     }
 
     pub(super) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
+        self.ray_targets.clear();
         self.count = 0;
         self.motion.history.clear_pending();
         self.style_counts.fill(0);
@@ -312,6 +330,22 @@ impl CharacterRenderer {
                     ),
                 };
                 joints.extend(pose.iter().map(|matrix| matrix.to_cols_array()));
+                if let Some(asset) = self.ray_assets.get(group) {
+                    let world = glam::Mat4::from_translation(avatar.position)
+                        * glam::Mat4::from_rotation_y(avatar.pose[0]);
+                    self.ray_targets
+                        .instances
+                        .push(super::ray_targets::instance(
+                            asset.clone(),
+                            avatar,
+                            world,
+                            crate::render::trace::dynamic::Deformation::Character,
+                            pose.to_vec(),
+                            Vec::new(),
+                        ));
+                    self.ray_targets.instances.last_mut().unwrap().skip_primary =
+                        first_person.is_some();
+                }
                 if let Some(view) = first_person {
                     view.prepare_pose(&mut pose, avatar.character_tool);
                     first_person_joints = Some(pose.map(|matrix| matrix.to_cols_array()));

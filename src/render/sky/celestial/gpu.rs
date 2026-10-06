@@ -31,6 +31,10 @@ struct Fixture {
     queue: wgpu::Queue,
     sky: SkyRenderer,
     legacy: wgpu::RenderPipeline,
+    source_celestial: wgpu::RenderPipeline,
+    oracle: bool,
+    target: Option<Vec3>,
+    phase: u32,
     targets: Vec<wgpu::Texture>,
     depth: wgpu::TextureView,
     read: wgpu::Buffer,
@@ -57,6 +61,28 @@ impl Fixture {
             source.replace(
                 current,
                 "let sun_uv=bg_sky_celestial_uv(ray,sun_direction,0.30);",
+            ),
+        );
+        let source_celestial = sky::pipeline::create_with_source(
+            &device,
+            format,
+            &sky.layout,
+            format!(
+                "{}\n{}",
+                source
+                    .replace(
+                        "bg_bsl_textured_celestial(sun_texel",
+                        "source_celestial(sun_texel"
+                    )
+                    .replace(
+                        "bg_bsl_textured_celestial(moon_texel",
+                        "source_celestial(moon_texel"
+                    )
+                    .replace(
+                        "bg_bsl_reference_star_fade(sky_camera.eye.y",
+                        "source_star_fade(sky_camera.eye.y"
+                    ),
+                include_str!("../reference_celestial/oracle.wgsl")
             ),
         );
         let targets = (0..4)
@@ -89,6 +115,10 @@ impl Fixture {
             queue,
             sky,
             legacy,
+            source_celestial,
+            oracle: false,
+            target: None,
+            phase: 0,
             targets,
             depth,
             read,
@@ -100,7 +130,7 @@ impl Fixture {
     }
 
     fn draw(&mut self, sun: Vec3, reference: f32, legacy: bool, position: Vec3) -> Vec<[f32; 3]> {
-        let camera = camera(sun, position);
+        let camera = camera(self.target.unwrap_or(sun), position);
         let mut atmosphere = Atmosphere::at(crate::daylight::INITIAL_MS);
         atmosphere.scene_transport = true;
         self.sky.configure(atmosphere);
@@ -112,11 +142,22 @@ impl Fixture {
         data[24..28].copy_from_slice(&[1.0; 4]);
         data[31] = 0.0; // Zero base sky isolates actual celestial artwork.
         data[32] = 0.0;
+        data[33] = [1.0, 0.875, 0.75, 0.625, 0.5, 0.625, 0.75, 0.875][self.phase as usize];
+        data[34] = self.phase as f32;
         data[39] = reference;
         self.queue
             .write_buffer(&self.sky.camera, 0, bytemuck::cast_slice(&data));
         let mut encoder = self.device.create_command_encoder(&Default::default());
         self.sky.prepare(&self.device, &mut encoder, SIZE, SIZE);
+        self.sky.group = SkyRenderer::bind(
+            &self.device,
+            &self.sky.layout,
+            &self.sky.camera,
+            &self.sky.clouds.view,
+            &self.sky.sampler,
+            &self.sky.celestial,
+            reference.abs() > 0.5,
+        );
         let views: Vec<_> = self
             .targets
             .iter()
@@ -142,7 +183,9 @@ impl Fixture {
                 }),
                 ..Default::default()
             });
-            pass.set_pipeline(if legacy {
+            pass.set_pipeline(if self.oracle {
+                &self.source_celestial
+            } else if legacy {
                 &self.legacy
             } else {
                 &self.sky.pipeline
@@ -181,6 +224,92 @@ impl Fixture {
         drop(mapped);
         self.read.unmap();
         pixels
+    }
+}
+
+#[test]
+fn gpu_production_textured_celestial_matches_source_default_at_horizon_and_phases() {
+    let mut fixture = Fixture::new();
+    for moon in [false, true] {
+        for elevation in [-0.04f32, 0.0, 0.04, 0.3, 0.8] {
+            let direction = Vec3::new((1.0 - elevation * elevation).sqrt(), elevation, 0.0);
+            let sun = if moon { -direction } else { direction };
+            // Aim at Moon as well as Sun; a negative solar direction chooses
+            // the real atlas and exercises the night palette/desaturation.
+            let aim = if moon { -sun } else { sun };
+            // draw() ordinarily aims at the Sun; override the camera basis by
+            // temporarily swapping only the camera target in the fixture.
+            fixture.target = Some(aim);
+            fixture.phase = if elevation < 0.0 {
+                4
+            } else if elevation < 0.1 {
+                3
+            } else {
+                0
+            };
+            for reference in [-1.0, 1.0] {
+                fixture.oracle = false;
+                let current =
+                    fixture.draw(sun, reference, false, Vec3::new(-32000.0, 70.0, 32000.0));
+                fixture.oracle = true;
+                let source =
+                    fixture.draw(sun, reference, false, Vec3::new(-32000.0, 70.0, 32000.0));
+                let mut maximum = 0.0f32;
+                for (a, b) in current.iter().zip(&source) {
+                    for i in 0..3 {
+                        assert!(
+                            (a[i] - b[i]).abs() <= 0.003 + 0.002 * b[i].abs(),
+                            "moon{moon} elevation{elevation} reference{reference}: current{a:?} source{b:?}"
+                        );
+                        maximum = maximum.max(a[i]);
+                    }
+                }
+                if elevation >= 0.3 {
+                    assert!(maximum > 0.005, "actual art must reach fragment output");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn gpu_production_reference_stars_follow_bedrock_while_enhanced_is_unchanged() {
+    let mut fixture = Fixture::new();
+    fixture.target = Some(Vec3::new(0.0, 0.7, 0.7).normalize());
+    let sun = Vec3::new(1.0, -0.8, 0.0).normalize();
+    let enhanced = fixture.draw(sun, 0.0, false, Vec3::new(0.0, 70.0, 0.0));
+    let below = fixture.draw(sun, 0.0, false, Vec3::new(0.0, -100.0, 0.0));
+    assert_eq!(
+        enhanced, below,
+        "enhanced actual star pixels must be unchanged by reference-only bedrock visibility"
+    );
+    for reference in [-1.0, 1.0] {
+        let upper = fixture.draw(sun, reference, false, Vec3::new(0.0, 70.0, 0.0));
+        assert!(
+            upper.iter().flatten().any(|v| *v > 0.001),
+            "actual night stars must be visible"
+        );
+        for height in [-100.0, -70.0, -68.0, -66.0, -64.0, -62.0, 70.0] {
+            fixture.oracle = false;
+            let current = fixture.draw(sun, reference, false, Vec3::new(0.0, height, 0.0));
+            fixture.oracle = true;
+            let source = fixture.draw(sun, reference, false, Vec3::new(0.0, height, 0.0));
+            for (a, b) in current.iter().zip(source) {
+                for i in 0..3 {
+                    assert!(
+                        (a[i] - b[i]).abs() < 0.00002,
+                        "reference star source/consumer mismatch at height{height}: {a:?}/{b:?}"
+                    );
+                }
+            }
+            if height <= -70.0 {
+                assert!(
+                    current.iter().flatten().all(|v| *v == 0.0),
+                    "reference stars below bedrock must be zero"
+                );
+            }
+        }
+        fixture.oracle = false;
     }
 }
 

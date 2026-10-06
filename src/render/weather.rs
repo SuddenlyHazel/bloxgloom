@@ -1,6 +1,9 @@
 //! Bounded weather presentation; simulation and shelter queries stay outside rendering.
 use super::{Camera, daylight::Atmosphere};
 use glam::Vec3;
+pub(crate) mod lightmap;
+mod reference;
+
 pub(crate) const MAX_STREAKS: usize = 1024;
 pub(crate) const MAX_VERTEX_BYTES: u64 = (MAX_STREAKS * 3 * 9 * 4) as u64;
 #[derive(Clone, Copy)]
@@ -50,7 +53,11 @@ impl Presentation {
     pub(crate) fn atmosphere(self, mut a: Atmosphere) -> Atmosphere {
         a.cloud = self.cloud;
         a.rain_strength = self.rain.clamp(0.0, 1.0);
-        a.presentation_seconds = self.seconds.rem_euclid(3600.0);
+        a.presentation_seconds = if super::bsl_reference::enabled() {
+            self.seconds
+        } else {
+            self.seconds.rem_euclid(3600.0)
+        };
         a.fog_exposure = self.exposure;
         a.fog = ((self.rain - 0.6) / 1.2).clamp(0.0, 1.0);
         // A slow, closed cloud-advection path avoids displacement jumps when
@@ -130,3 +137,54 @@ fn random(seed: u32) -> f32 {
 #[cfg(test)]
 #[path = "weather/tests.rs"]
 mod tests;
+
+/// Enhanced rain retains its original particle renderer. Source rain resolves only
+/// color into a private sqrt target, preserving front depth and shaft metadata.
+pub(crate) struct Renderer {
+    enhanced: super::fire::FireRenderer,
+    reference: Option<reference::Reference>,
+    glow: Vec<f32>,
+}
+impl Renderer {
+    pub(crate) fn new(device: &wgpu::Device, camera: &wgpu::Buffer) -> Self {
+        Self {
+            enhanced: super::fire::FireRenderer::with_capacity(device, camera, MAX_VERTEX_BYTES),
+            reference: super::bsl_reference::enabled()
+                .then(|| reference::Reference::new(device, camera)),
+            glow: Vec::new(),
+        }
+    }
+    pub(crate) fn set_lightmaps(&mut self, glow: &[f32]) {
+        self.glow.clear();
+        self.glow.extend(glow.iter().copied().take(MAX_STREAKS * 3));
+    }
+    pub(crate) fn set_mesh(&mut self, queue: &wgpu::Queue, mesh: &[f32]) {
+        if let Some(reference) = &mut self.reference {
+            reference.set(queue, mesh, &self.glow);
+            self.glow.clear();
+        } else {
+            self.enhanced.set_mesh(queue, mesh);
+        }
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.reference.is_some() || self.enhanced.is_empty()
+    }
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
+        if self.reference.is_some() {
+            0
+        } else {
+            self.enhanced.draw(pass)
+        }
+    }
+    pub(crate) fn resolve(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        scene: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+    ) -> usize {
+        self.reference.as_mut().map_or(0, |reference| {
+            reference.resolve(device, encoder, scene, depth)
+        })
+    }
+}

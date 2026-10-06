@@ -138,8 +138,13 @@ impl WaterRenderer {
             reference.finish(device, encoder, scene);
         }
     }
+    #[cfg(test)]
     pub(crate) fn prepare_frame(&self, queue: &wgpu::Queue, frame: Frame) {
-        self.prepare(queue);
+        self.prepare_frame_at(queue, frame, time());
+    }
+    /// The frame owner captures the wave clock once for near, LOD and ray water.
+    pub(crate) fn prepare_frame_at(&self, queue: &wgpu::Queue, frame: Frame, water_time: f32) {
+        self.prepare_at(queue, water_time);
         if let Some(reference) = &self.reference {
             reference.inputs.prepare(queue, frame);
         }
@@ -147,11 +152,11 @@ impl WaterRenderer {
     pub(crate) fn set_camera_group(&mut self, group: wgpu::BindGroup) {
         self.camera_group = group;
     }
-    pub(crate) fn prepare(&self, queue: &wgpu::Queue) {
+    fn prepare_at(&self, queue: &wgpu::Queue, water_time: f32) {
         queue.write_buffer(
             &self.time,
             0,
-            bytemuck::cast_slice(&[time(), 0.0, 0.0, 0.0]),
+            bytemuck::cast_slice(&[water_time, 0.0, 0.0, 0.0]),
         );
     }
     pub(crate) fn draw(
@@ -187,20 +192,22 @@ pub(super) fn reference_source_for(source: &str, lod: bool, reference: bool) -> 
 pub(super) fn shader(source: &str) -> String {
     let source = reference_source(source, false);
     daylight::surface_shader(&format!(
-        "{}\n{}\n{}\n{}\n{source}",
+        "{}\n{}\n{}\n{}\n{}\n{source}",
         include_str!("material/pbr.wgsl"),
         super::sun_shadow::SHADER,
         super::sun_shadow::reference_shader(),
+        include_str!("water/waves.wgsl"),
         include_str!("water_surface.wgsl")
     ))
 }
 pub(super) fn lod_shader(source: &str) -> String {
     let source = reference_source(source, true);
     daylight::surface_shader(&format!(
-        "{}\n{}\n{}\n{}\n{source}",
+        "{}\n{}\n{}\n{}\n{}\n{source}",
         include_str!("material/pbr.wgsl"),
         super::sun_shadow::SHADER.replace("@group(0)", "@group(3)"),
         super::sun_shadow::reference_shader(),
+        include_str!("water/waves.wgsl"),
         include_str!("water_surface.wgsl")
     ))
 }

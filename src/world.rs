@@ -23,6 +23,8 @@ pub(crate) use generation::{Generator, MAX_GENERATION_IDENTITY_BYTES};
 pub(crate) use owner_apply::OwnerApplyReceipt;
 pub use palette::{PaletteView, PalettedBlocks};
 #[cfg(test)]
+pub(crate) use terrain::coast_column_diagnostic;
+#[cfg(test)]
 use terrain::generated_block;
 pub(crate) use terrain::terrain_height;
 pub(crate) use terrain::water_feature;
@@ -37,7 +39,7 @@ pub const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 pub const MAX_TERRAIN_HEIGHT: i32 = 88;
 pub const MAX_GENERATED_HEIGHT: i32 = MAX_TERRAIN_HEIGHT + 24;
 pub const BEDROCK_Y: i32 = -64;
-pub const TERRAIN_GENERATOR_VERSION: u16 = 8;
+pub const TERRAIN_GENERATOR_VERSION: u16 = 9;
 pub type BlockId = crate::content::BlockStateId;
 pub const AIR: BlockId = crate::content::BlockStateId(0);
 pub const GRASS: BlockId = crate::content::BlockStateId(1);

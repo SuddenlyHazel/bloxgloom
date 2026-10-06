@@ -14,6 +14,10 @@ mod moving_tests;
 mod pipeline;
 #[cfg(test)]
 mod projectile_preview_tests;
+mod ray_targets;
+#[cfg(test)]
+pub(in crate::render) use ray_targets::idle_ray_target;
+mod reference;
 #[cfg(test)]
 mod shadow_tests;
 #[cfg(test)]
@@ -128,6 +132,11 @@ impl From<&VisualAvatar> for AvatarInstance {
 }
 
 pub(crate) struct AvatarRenderer {
+    ray_assets: Vec<(
+        AvatarModel,
+        std::sync::Arc<super::trace::dynamic::DynamicAsset>,
+    )>,
+    ray_targets: super::trace::dynamic::DynamicTargets,
     characters: character::CharacterRenderer,
     authored: authored::Renderer,
     pipeline: wgpu::RenderPipeline,
@@ -140,6 +149,7 @@ pub(crate) struct AvatarRenderer {
     instances: wgpu::Buffer,
     models: Vec<(AvatarModel, std::ops::Range<u32>)>,
     counts: Vec<u32>,
+    shadow_counts: Vec<u32>,
 }
 
 impl AvatarRenderer {
@@ -264,7 +274,17 @@ impl AvatarRenderer {
         let characters =
             character::CharacterRenderer::new(device, queue, format, &camera_layout, catalog);
         let authored = authored::Renderer::new(device, queue, format, &camera_layout, catalog);
+        let ray_assets = if super::trace::dynamic::enabled() {
+            models
+                .iter()
+                .map(|(model, range)| (*model, ray_targets::primitive(&mesh, range.clone())))
+                .collect()
+        } else {
+            Vec::new()
+        };
         Self {
+            ray_assets,
+            ray_targets: Default::default(),
             characters,
             authored,
             pipeline,
@@ -276,6 +296,7 @@ impl AvatarRenderer {
             indices,
             instances,
             counts: vec![0; models.len()],
+            shadow_counts: vec![0; models.len()],
             models,
         }
     }
@@ -298,45 +319,90 @@ impl AvatarRenderer {
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
         self.characters.set(queue, avatars);
         self.authored.set(queue, avatars);
+        self.ray_targets.clear();
+        self.ray_targets.append(&self.characters.ray_targets);
+        self.ray_targets.append(&self.authored.ray_targets);
+        for avatar in avatars.iter().take(MAX_AVATARS) {
+            if matches!(avatar.model, AvatarModel::Registered(id) if self.authored.has_model(id)) {
+                continue;
+            }
+            if let Some((_, asset)) = self
+                .ray_assets
+                .iter()
+                .find(|(model, _)| *model == avatar.model)
+            {
+                let world = glam::Mat4::from_translation(avatar.position)
+                    * if matches!(avatar.model, AvatarModel::Moving(_)) {
+                        glam::Mat4::IDENTITY
+                    } else {
+                        glam::Mat4::from_rotation_y(avatar.pose[0])
+                    };
+                self.ray_targets.instances.push(ray_targets::instance(
+                    asset.clone(),
+                    avatar,
+                    world,
+                    super::trace::dynamic::Deformation::Primitive,
+                    Vec::new(),
+                    Vec::new(),
+                ));
+                self.ray_targets.instances.last_mut().unwrap().skip_primary = self
+                    .characters
+                    .first_person
+                    .is_some_and(|view| view.id == avatar.id);
+            }
+        }
         self.motion.history.clear_pending();
         let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
         for (index, (model, _)) in self.models.iter().enumerate() {
             let start = instances.len();
-            instances.extend(
-                avatars
-                    .iter()
-                    .take(MAX_AVATARS)
-                    .filter(|a| {
-                        a.model == *model
-                            && !matches!(a.model, AvatarModel::Registered(id) if self.authored.has_model(id))
-                            && self
-                                .characters
-                                .first_person
-                                .is_none_or(|view| a.id != view.id)
-                            && *model != AvatarModel::Player
-                    })
-                    .map(|avatar| {
-                        let instance = AvatarInstance::from(avatar);
-                        if self.motion.enabled {
+            // Visible instances are a prefix of each model's full caster range.
+            // Retain the first-person owner's exact world pose for shadows.
+            for caster_only in [false, true] {
+                for avatar in avatars.iter().take(MAX_AVATARS).filter(|avatar| {
+                    let authored = matches!(avatar.model,
+                        AvatarModel::Registered(id) if self.authored.has_model(id));
+                    let owner = self
+                        .characters
+                        .first_person
+                        .is_some_and(|view| avatar.id == view.id);
+                    avatar.model == *model
+                        && !authored
+                        && owner == caster_only
+                        && *model != AvatarModel::Player
+                }) {
+                    let instance = AvatarInstance::from(avatar);
+                    if self.motion.enabled {
                         let data = glam::Mat4::from_cols(
-                            avatar.position.extend(1.0), glam::Vec4::from_array(instance.pose),
-                            glam::Vec4::from_array(instance.orientation), glam::Vec4::ZERO);
+                            avatar.position.extend(1.0),
+                            glam::Vec4::from_array(instance.pose),
+                            glam::Vec4::from_array(instance.orientation),
+                            glam::Vec4::ZERO,
+                        );
                         let identity = match avatar.model {
                             AvatarModel::Registered(id) => u64::from(id.0),
                             AvatarModel::Moving(id) => u64::from(id.0) | (1 << 32),
                             AvatarModel::Player => u64::MAX,
                             AvatarModel::PackagedPlayer(index) => u64::from(index) | (2 << 32),
                         };
-                        self.motion.history.stage(avatar.id, identity, avatar.position, vec![data]);
-                        }
-                        instance
-                    }),
-            );
-            self.counts[index] = (instances.len() - start) as u32;
+                        self.motion
+                            .history
+                            .stage(avatar.id, identity, avatar.position, vec![data]);
+                    }
+                    instances.push(instance);
+                }
+                if !caster_only {
+                    self.counts[index] = (instances.len() - start) as u32;
+                }
+            }
+            self.shadow_counts[index] = (instances.len() - start) as u32;
         }
         if !instances.is_empty() {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&instances));
         }
+    }
+
+    pub(crate) fn ray_targets(&self) -> &super::trace::dynamic::DynamicTargets {
+        &self.ray_targets
     }
 
     pub(crate) fn enable_motion(&mut self, enabled: bool) {
@@ -366,14 +432,14 @@ impl AvatarRenderer {
         self.characters.draw_motion(pass, &self.camera_group);
         self.authored.draw_motion(pass, &self.camera_group);
         pass.set_bind_group(1, &self.motion.group, &[]);
-        self.draw_instances(pass, &self.motion_pipeline, &self.camera_group);
+        self.draw_instances(pass, &self.motion_pipeline, &self.camera_group, false);
     }
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
         let character_triangles = self.characters.draw(pass, &self.camera_group);
         character_triangles
             + self.authored.draw(pass, &self.camera_group, false)
-            + self.draw_instances(pass, &self.pipeline, &self.camera_group)
+            + self.draw_instances(pass, &self.pipeline, &self.camera_group, false)
     }
 
     pub(crate) fn draw_shadow<'a>(
@@ -384,7 +450,7 @@ impl AvatarRenderer {
         let character_triangles = self.characters.draw_shadow(pass, caster_camera_group);
         character_triangles
             + self.authored.draw(pass, caster_camera_group, true)
-            + self.draw_instances(pass, &self.shadow_pipeline, caster_camera_group)
+            + self.draw_instances(pass, &self.shadow_pipeline, caster_camera_group, true)
     }
 
     fn draw_instances<'a>(
@@ -392,8 +458,14 @@ impl AvatarRenderer {
         pass: &mut wgpu::RenderPass<'a>,
         pipeline: &'a wgpu::RenderPipeline,
         camera: &'a wgpu::BindGroup,
+        shadow: bool,
     ) -> usize {
-        if self.counts.iter().all(|n| *n == 0) {
+        let counts = if shadow {
+            &self.shadow_counts
+        } else {
+            &self.counts
+        };
+        if counts.iter().all(|n| *n == 0) {
             return 0;
         }
         pass.set_pipeline(pipeline);
@@ -403,11 +475,13 @@ impl AvatarRenderer {
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
         let mut start = 0;
         let mut triangles = 0;
-        for ((_, indices), count) in self.models.iter().zip(&self.counts) {
+        for (((_, indices), count), full_count) in
+            self.models.iter().zip(counts).zip(&self.shadow_counts)
+        {
             if *count > 0 {
                 pass.draw_indexed(indices.clone(), 0, start..start + count);
             }
-            start += count;
+            start += full_count;
             triangles += (indices.end - indices.start) as usize * *count as usize / 3;
         }
         triangles
@@ -418,10 +492,16 @@ pub(crate) fn prepare_character_asset() {
     let _ = character_asset::CharacterAsset::builtin();
 }
 
+pub(crate) const SHADING_SHADER: &str = include_str!("avatars/shading.wgsl");
+
 pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {
     motion::shader(
-        super::daylight::shader(
-            &include_str!("avatars/character.wgsl")
+        super::daylight::shader(&format!(
+            "{}\n{}\n{}\n{}",
+            super::trace::dynamic::DEFORMATION_SHADER,
+            super::trace::dynamic::MATERIAL_SHADER,
+            SHADING_SHADER,
+            include_str!("avatars/character.wgsl")
                 .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog))
                 .replace(
                     "// FIRST_PERSON_JOINT_OFFSET",
@@ -429,8 +509,12 @@ pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {
                         "const FIRST_PERSON_JOINT_OFFSET: u32 = {}u;",
                         MAX_AVATARS * character_asset::JOINT_COUNT
                     ),
-                ),
-        ),
+                )
+        )),
         2,
     )
+}
+
+pub(crate) fn ray_palettes(catalog: &crate::content::Catalog) -> String {
+    appearance::palettes(catalog)
 }

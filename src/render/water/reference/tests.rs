@@ -26,7 +26,11 @@ fn source_near_and_lod_water_entrypoints_validate_with_actual_bindings() {
             "{}\n{shadows}\n{}\n{}\n{source}",
             include_str!("../../material/pbr.wgsl"),
             crate::render::sun_shadow::reference_shader(),
-            include_str!("../../water_surface.wgsl")
+            concat!(
+                include_str!("../waves.wgsl"),
+                "\n",
+                include_str!("../../water_surface.wgsl")
+            )
         ));
         validate(&source);
     }

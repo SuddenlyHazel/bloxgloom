@@ -114,7 +114,11 @@ fn precipitation_strength_does_not_follow_cloud_coverage_or_reset_moon_phase() {
         Presentation::new(0.0, 0.0, [0.0; 2], 1.0, 3601.25, 0.0)
             .atmosphere(base)
             .presentation_seconds,
-        1.25
+        if crate::render::bsl_reference::enabled() {
+            3601.25
+        } else {
+            1.25
+        }
     );
     assert_eq!(
         Presentation::new(1.0, f32::NAN, [0.0; 2], 1.0, 0.0, 0.0)

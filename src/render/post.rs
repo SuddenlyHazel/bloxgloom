@@ -2,6 +2,7 @@
 //! Shared by the window renderer, image previews, and GPU benchmark.
 use wgpu::util::DeviceExt;
 
+mod reference_ao;
 mod reference_bloom;
 mod reference_display;
 mod reference_light_shafts;
@@ -27,6 +28,7 @@ pub(crate) struct PostProcess {
     pub(crate) reflections: super::reflections::Reflections,
     pub(crate) trace: super::trace::TraceLighting,
     atmosphere: super::atmosphere::AtmospherePass,
+    reference_ao: Option<reference_ao::ReferenceAo>,
     reference_bloom: Option<reference_bloom::ReferenceBloom>,
     reference_display: Option<reference_display::ReferenceDisplay>,
     reference_underwater: Option<reference_underwater::Underwater>,
@@ -176,6 +178,7 @@ impl PostProcess {
         let reference_display = reference
             .then(|| reference_display::ReferenceDisplay::new(device, width, height, output));
         Self {
+            reference_ao: reference.then(|| reference_ao::ReferenceAo::new(device, width, height)),
             reference_bloom,
             reference_display,
             reference_light_shafts: reference
@@ -229,6 +232,9 @@ impl PostProcess {
             shafts.resize(device, width, height);
         }
         self.ambient.resize(device, width, height);
+        if let Some(ao) = &mut self.reference_ao {
+            ao.resize(device, width, height);
+        }
         self.reflections.resize(device, width, height);
         self.trace.resize(device, targets.scene.texture().size());
         self.atmosphere.resize(device, width, height);
@@ -298,8 +304,19 @@ impl PostProcess {
         matrix: glam::Mat4,
     ) {
         if !self.trace.ready() {
-            self.ambient
-                .resolve(device, queue, encoder, &self.scene, depth, matrix);
+            if let Some(ao) = &mut self.reference_ao {
+                ao.resolve(
+                    device,
+                    queue,
+                    encoder,
+                    &self.scene,
+                    depth,
+                    self.temporal.is_some(),
+                );
+            } else {
+                self.ambient
+                    .resolve(device, queue, encoder, &self.scene, depth, matrix);
+            }
             self.reflections
                 .capture_opaque(device, encoder, &self.scene, depth);
         }
@@ -498,6 +515,12 @@ impl PostProcess {
         }
         if let Some(display) = &mut self.reference_display {
             display.front_depth = depth.cloned();
+        }
+    }
+
+    pub(crate) fn configure_reference_ao(&mut self, data: [f32; 80], fov: f32) {
+        if let Some(ao) = &mut self.reference_ao {
+            ao.configure(data, fov);
         }
     }
 

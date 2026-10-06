@@ -1,6 +1,6 @@
 //! Revisioned scene assembly; the window thread only queues immutable chunks.
 use super::scene::{Chunk, Scene};
-use crate::world::ChunkKey;
+use crate::{lod::TileKey, world::ChunkKey};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -15,6 +15,11 @@ struct ChunkUpdate {
     key: ChunkKey,
     chunk: Option<Arc<Chunk>>,
 }
+struct LodUpdate {
+    revision: u64,
+    key: TileKey,
+    chunk: Option<Arc<Chunk>>,
+}
 struct GpuContext {
     device: wgpu::Device,
     materials: wgpu::BindGroupLayout,
@@ -22,11 +27,13 @@ struct GpuContext {
 }
 enum Update {
     Chunk(ChunkUpdate),
+    Lod(LodUpdate),
     Configure { revision: u64, context: GpuContext },
 }
 pub(crate) struct Ready {
     pub revision: u64,
     pub scene: Scene,
+    pub lod_pages: Vec<Scene>,
     pub gpu: Option<super::gpu::Gpu>,
 }
 pub(crate) struct Worker {
@@ -47,10 +54,12 @@ impl Worker {
             .name("ray-scene".into())
             .spawn(move || {
                 let mut chunks = BTreeMap::new();
+                let mut lod = BTreeMap::new();
                 let mut context = None;
                 while let Ok(update) = receive.recv() {
                     let mut revision = 0;
                     let apply = |chunks: &mut BTreeMap<ChunkKey, Arc<Chunk>>,
+                                 lod: &mut BTreeMap<TileKey, Arc<Chunk>>,
                                  context: &mut Option<GpuContext>,
                                  revision: &mut u64,
                                  update: Update| {
@@ -63,6 +72,14 @@ impl Worker {
                                     chunks.remove(&update.key);
                                 }
                             }
+                            Update::Lod(update) => {
+                                *revision = update.revision;
+                                if let Some(chunk) = update.chunk {
+                                    lod.insert(update.key, chunk);
+                                } else {
+                                    lod.remove(&update.key);
+                                }
+                            }
                             Update::Configure {
                                 revision: current,
                                 context: configured,
@@ -72,26 +89,15 @@ impl Worker {
                             }
                         }
                     };
-                    apply(&mut chunks, &mut context, &mut revision, update);
+                    apply(&mut chunks, &mut lod, &mut context, &mut revision, update);
                     for update in receive.try_iter() {
-                        apply(&mut chunks, &mut context, &mut revision, update);
+                        apply(&mut chunks, &mut lod, &mut context, &mut revision, update);
                     }
-                    // Reject oversized scenes before duplicating every chunk's
-                    // triangle allocation or constructing a doomed BVH. An empty
-                    // current revision deliberately selects the safe fallback.
-                    let triangle_bytes = chunks.values().try_fold(0u64, |total, chunk| {
-                        total.checked_add(chunk.byte_len() as u64)
-                    });
-                    let scene = if triangle_bytes.is_some_and(|bytes| bytes <= storage_limit) {
-                        Scene::build(chunks.values().cloned())
-                    } else {
-                        tracing::warn!(
-                            ?triangle_bytes,
-                            storage_limit,
-                            "ray triangles exceed storage limit; skipping scene build"
-                        );
-                        Scene::default()
-                    };
+                    // Reject the entire revision if any geometry or medium
+                    // binding cannot fit. Never publish partial occluders.
+                    let assembled = assemble(&chunks, &lod, storage_limit);
+                    let valid = assembled.is_some();
+                    let (scene, lod_pages) = assembled.unwrap_or_default();
                     // A rebuild may have become obsolete while assembling its
                     // BVH. Do not spend GPU allocation/compilation on that result.
                     if current_revision.load(Ordering::Acquire) != revision {
@@ -100,10 +106,11 @@ impl Worker {
                     // Device objects are Send. Buffer initialization, shader and
                     // pipeline compilation run here rather than during redraw.
                     let gpu = context.as_ref().and_then(|context| {
-                        (scene.fits(storage_limit) && !scene.nodes.is_empty()).then(|| {
-                            super::gpu::Gpu::new(
+                        (valid && eligible(&scene, &lod_pages)).then(|| {
+                            super::gpu::Gpu::new_with_lod(
                                 &context.device,
                                 &scene,
+                                &lod_pages,
                                 context.size,
                                 &context.materials,
                             )
@@ -114,6 +121,7 @@ impl Worker {
                         Ready {
                             revision,
                             scene,
+                            lod_pages,
                             gpu,
                         },
                     );
@@ -132,6 +140,15 @@ impl Worker {
         self.revision = self.revision.wrapping_add(1);
         self.latest_revision.store(self.revision, Ordering::Release);
         let _ = self.updates.send(Update::Chunk(ChunkUpdate {
+            revision: self.revision,
+            key,
+            chunk,
+        }));
+    }
+    pub fn set_lod(&mut self, key: TileKey, chunk: Option<Arc<Chunk>>) {
+        self.revision = self.revision.wrapping_add(1);
+        self.latest_revision.store(self.revision, Ordering::Release);
+        let _ = self.updates.send(Update::Lod(LodUpdate {
             revision: self.revision,
             key,
             chunk,
@@ -168,6 +185,77 @@ impl Worker {
     pub fn poll(&self) -> Option<Scene> {
         self.poll_ready().map(|r| r.scene)
     }
+}
+
+// All assembly runs on the worker. Preflight immutable source payloads before
+// duplicating BVHs, and medium records before extending their storage binding.
+fn assemble(
+    near: &BTreeMap<ChunkKey, Arc<Chunk>>,
+    lod: &BTreeMap<TileKey, Arc<Chunk>>,
+    limit: u64,
+) -> Option<(Scene, Vec<Scene>)> {
+    assemble_sources(
+        &near.values().cloned().collect::<Vec<_>>(),
+        &lod.values().cloned().collect::<Vec<_>>(),
+        limit,
+    )
+}
+
+pub(super) fn assemble_sources(
+    near: &[Arc<Chunk>],
+    lod: &[Arc<Chunk>],
+    limit: u64,
+) -> Option<(Scene, Vec<Scene>)> {
+    let near_bytes = near
+        .iter()
+        .try_fold(0u64, |bytes, c| bytes.checked_add(c.byte_len() as u64))?;
+    if near_bytes > limit {
+        return None;
+    }
+    let pages = super::scene::pages::build(lod.iter().cloned(), limit)?;
+    let mut scene = Scene::build(near.iter().cloned());
+    let mut medium_bytes = 0u64;
+    let mut has_medium = false;
+    for c in near {
+        if let Some(water) = c.water.as_ref().filter(|_| c.key.is_some()) {
+            has_medium = true;
+            medium_bytes = medium_bytes
+                .checked_add(16)?
+                .checked_add((water.mask.len() as u64).checked_mul(4)?)?;
+        }
+    }
+    for c in lod {
+        if let Some(water) = &c.coarse_water {
+            has_medium = true;
+            medium_bytes = medium_bytes.checked_add(water.byte_len() as u64)?;
+        }
+    }
+    if has_medium {
+        let total = (scene.coverage.len() as u64)
+            .checked_mul(4)?
+            .checked_add(16)?
+            .checked_add(medium_bytes)?;
+        if total > limit {
+            return None;
+        }
+    }
+    super::scene::volume::append_limited(&mut scene, near, lod, limit);
+    if !scene.fits(limit)
+        || pages.iter().any(|p| {
+            let bytes = (p.nodes.len() as u64) * std::mem::size_of::<super::scene::Node>() as u64
+                + (p.triangles.len() as u64) * std::mem::size_of::<super::scene::Triangle>() as u64;
+            bytes.checked_add(16).is_none_or(|n| n > limit)
+        })
+    {
+        return None;
+    }
+    Some((scene, pages))
+}
+
+fn eligible(scene: &Scene, pages: &[Scene]) -> bool {
+    !scene.nodes.is_empty()
+        || scene.coverage.get(7).is_some_and(|cells| *cells > 0)
+        || pages.iter().any(|page| !page.nodes.is_empty())
 }
 
 // At most one complete scene waits for admission. The worker publishes in

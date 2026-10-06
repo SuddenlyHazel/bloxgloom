@@ -37,6 +37,7 @@ pub use egui_ui::{render_egui_previews, render_package_egui_previews};
 pub(crate) mod capture;
 mod lod;
 mod perf;
+mod transport;
 pub(crate) use lod::render_lod_previews;
 
 pub(crate) use perf::characters::run_character_benchmark;
@@ -688,6 +689,7 @@ async fn render_previews_weather(
         .await?;
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
+            required_features: transport::profile::features(&adapter)?,
             required_limits: render::material_device_limits(
                 adapter.limits(),
                 render::material_texture_layers(crate::content::catalog()) as usize,
@@ -710,11 +712,7 @@ async fn render_previews_weather(
         };
     let mut water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
-    let mut rain_renderer = render::fire::FireRenderer::with_capacity(
-        &device,
-        &camera_buffer,
-        render::weather::MAX_VERTEX_BYTES,
-    );
+    let mut rain_renderer = render::weather::Renderer::new(&device, &camera_buffer);
     let mut avatar_renderer = render::AvatarRenderer::new(
         &device,
         &queue,
@@ -1209,6 +1207,8 @@ async fn render_previews_weather(
     let mut water_meshes = Vec::new();
     let mut gpu_meshes = Vec::new();
     let mut local_sources = Vec::new();
+    let mut reference_rain_lights = HashMap::new();
+    let cache_reference_rain = render::bsl_reference::enabled() && atmosphere.rain_strength > 0.0;
     for z in -terrain_radius..=terrain_radius {
         for x in -terrain_radius..=terrain_radius {
             for y in bottom_chunk..=top_chunk {
@@ -1219,6 +1219,9 @@ async fn render_previews_weather(
                 };
                 let chunk = &chunks[&key];
                 let light = LightField::build_with_bounce(key, &chunks, SEED, bounced_lighting);
+                if cache_reference_rain {
+                    reference_rain_lights.insert(key, render::weather::lightmap::cache(&light));
+                }
                 let mesh = render::mesh_chunk_lit_with_neighbors(
                     chunk,
                     &light,
@@ -1272,6 +1275,7 @@ async fn render_previews_weather(
         }
     }
 
+    let mut drop_ray_targets = render::trace::dynamic::DynamicTargets::default();
     let drop_gpu_mesh = if matches!(scene, PreviewScene::Drops(_) | PreviewScene::Cave { .. }) {
         let custom = outputs[0]
             .path
@@ -1369,6 +1373,9 @@ async fn render_previews_weather(
             });
             visual.light = field.face(local, 1, 0);
         }
+        let mut ray_drops = render::trace::dynamic::DropTargets::new(&drop_catalog);
+        ray_drops.set(&visuals);
+        drop_ray_targets = ray_drops.targets().clone();
         let meshes = if custom {
             render::mesh_dropped_items_with_catalog(&visuals, &drop_catalog)
         } else {
@@ -1668,6 +1675,7 @@ async fn render_previews_weather(
             atmosphere.wind_seconds = ((world_time % 128_000) as f32 / 1_000.0
                 + outdoor::motion::seconds(frame))
             .rem_euclid(128.0);
+            atmosphere.presentation_seconds = outdoor::motion::seconds(frame);
             let patches = render::contact_shadow::patches(
                 &shadow_avatars,
                 camera.position,
@@ -1715,7 +1723,20 @@ async fn render_previews_weather(
                 sky_sample,
             )),
         );
-        rain_renderer.set_mesh(&queue, &weather.vertices(camera));
+        let rain_mesh = weather.vertices(camera);
+        if render::bsl_reference::enabled() {
+            let glow = rain_mesh
+                .chunks_exact(9)
+                .map(|v| {
+                    render::weather::lightmap::sample(
+                        Vec3::new(v[0], v[1], v[2]),
+                        &reference_rain_lights,
+                    )
+                })
+                .collect::<Vec<_>>();
+            rain_renderer.set_lightmaps(&glow);
+        }
+        rain_renderer.set_mesh(&queue, &rain_mesh);
         sun_shadows.update(&queue, camera, atmosphere);
         let matrix = render::view_projection(camera, output.width, output.height);
         queue.write_buffer(
@@ -1836,12 +1857,54 @@ async fn render_previews_weather(
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        let new_transport_scene = motion_post.is_none();
         let mut post = motion_post.take().unwrap_or_else(|| {
             render::post::PostProcess::new(&device, output.width, output.height, FORMAT)
         });
-        if !post.trace.ready() {
-            post.trace.prepare_scene(trace_chunks.iter().cloned());
+        let post_size = post.scene.texture().size();
+        if post_size.width != output.width || post_size.height != output.height {
+            post.resize(&device, output.width, output.height);
         }
+        let eye_voxel = camera.position.floor().as_ivec3();
+        let (eye_key, eye_local) = world::world_to_chunk(eye_voxel.x, eye_voxel.y, eye_voxel.z);
+        let eye_in_water = chunks
+            .get(&eye_key)
+            .and_then(|chunk| chunk.block(eye_local))
+            == Some(world::WATER);
+        if new_transport_scene {
+            let distant = if let Some(horizon) = &mut landscape_horizon {
+                horizon.set_eye_in_water(eye_in_water);
+                horizon.prepare(
+                    &queue,
+                    camera,
+                    output.width,
+                    output.height,
+                    atmosphere,
+                    chunks.keys().copied(),
+                );
+                horizon
+                    .ray_targets()
+                    .into_iter()
+                    .map(|(_, _, chunk)| chunk)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            post.trace
+                .prepare_scene_with_lod(trace_chunks.iter().cloned(), distant);
+        }
+        let mut dynamic = avatar_renderer.ray_targets().clone();
+        dynamic
+            .instances
+            .extend(drop_ray_targets.instances.iter().cloned());
+        transport::prepare(
+            &mut post,
+            &device,
+            &queue,
+            &pipeline,
+            &dynamic,
+            eye_in_water,
+        )?;
         atmosphere.scene_transport = post.trace.ready();
         sky.configure(atmosphere);
         queue.write_buffer(
@@ -1855,10 +1918,6 @@ async fn render_previews_weather(
                 sky_sample,
             )),
         );
-        let post_size = post.scene.texture().size();
-        if post_size.width != output.width || post_size.height != output.height {
-            post.resize(&device, output.width, output.height);
-        }
 
         if matches!(
             scene,
@@ -1889,7 +1948,13 @@ async fn render_previews_weather(
         }
         let temporal = render::post::temporal_requested();
         post.enable_temporal(&device, temporal);
-        let samples = if post.temporal_enabled() && !motion_sequence {
+        // Optional fixed wave time makes controlled headless A/B captures
+        // independent of compilation latency and GPU frame duration.
+        let fixed_water_time = std::env::var("BLOXGLOOM_PREVIEW_WATER_TIME")
+            .ok()
+            .and_then(|value| value.parse::<f32>().ok())
+            .filter(|value| value.is_finite() && *value >= 0.0);
+        let default_samples = if post.temporal_enabled() && !motion_sequence {
             if post.trace.ready() || render::bsl_reference::enabled() {
                 32
             } else {
@@ -1898,6 +1963,10 @@ async fn render_previews_weather(
         } else {
             1
         };
+        let capture =
+            transport::Capture::new(default_samples, post.trace.ready(), motion_sequence)?;
+        let samples = capture.samples;
+        transport::profile::prepare(&mut post, &device, samples)?;
         if !local_maps_ready {
             // Warm up admission with real submitted depth passes. Never mark a
             // face initialized without drawing it (important with updates<count).
@@ -1919,24 +1988,22 @@ async fn render_previews_weather(
             local_maps_ready = true;
         }
         let mut sample = 0;
-        let eye_voxel = camera.position.floor().as_ivec3();
-        let (eye_key, eye_local) = world::world_to_chunk(eye_voxel.x, eye_voxel.y, eye_voxel.z);
-        let eye_in_water = chunks
-            .get(&eye_key)
-            .and_then(|chunk| chunk.block(eye_local))
-            == Some(world::WATER);
         let mut encoder = loop {
+            let water_time = fixed_water_time.unwrap_or_else(render::water::time);
+            post.trace.set_water_time(water_time);
             let (matrix, jitter) = post.prepare_temporal(&queue, camera);
             if let Some(horizon) = &mut landscape_horizon {
                 horizon.set_jitter(jitter);
                 horizon.set_eye_in_water(eye_in_water);
-                horizon.prepare(
+                horizon.set_reference_handlight(0, [0.0; 3]);
+                horizon.prepare_at(
                     &queue,
                     camera,
                     output.width,
                     output.height,
                     atmosphere,
                     chunks.keys().copied(),
+                    water_time,
                 );
             }
             queue.write_buffer(
@@ -1952,6 +2019,7 @@ async fn render_previews_weather(
                 )),
             );
             let mut camera_data = atmosphere.camera_data(matrix, camera.position);
+            render::bsl_reference::handlight::configure(&mut camera_data, 0, [0.0; 3]);
             if render::bsl_reference::enabled() && eye_in_water {
                 camera_data[31] = -1.0;
             }
@@ -1961,6 +2029,7 @@ async fn render_previews_weather(
             if let Some(config) = &preview_config {
                 camera_data[32..36].copy_from_slice(&config.parallax.uniform());
             }
+            post.configure_reference_ao(camera_data, camera.fov_y_radians);
             queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("preview commands"),
@@ -2059,7 +2128,7 @@ async fn render_previews_weather(
             }
             post.reflections.configure(camera.position, atmosphere);
             post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
-            water_renderer.prepare_frame(
+            water_renderer.prepare_frame_at(
                 &queue,
                 render::water::Frame {
                     atmosphere,
@@ -2069,6 +2138,7 @@ async fn render_previews_weather(
                     size: [output.width, output.height],
                     view_projection: matrix,
                 },
+                water_time,
             );
             let water_target =
                 water_renderer.begin_frame(&device, &mut encoder, &post.scene, &depth_view);
@@ -2137,6 +2207,11 @@ async fn render_previews_weather(
                 &pipeline,
                 &texture_group,
             );
+            if let Some(error) = post.trace.take_submission_error() {
+                // Drop the unsubmitted continuation: no filter/composite,
+                // final readback or PNG is allowed after a partial ray frame.
+                return Err(error.into());
+            }
             if (matches!(scene, PreviewScene::Fire) && !fire_renderer.is_empty())
                 || !rain_renderer.is_empty()
             {
@@ -2168,6 +2243,14 @@ async fn render_previews_weather(
                 }
                 rain_renderer.draw(&mut pass);
             }
+            rain_renderer.resolve(
+                &device,
+                &mut encoder,
+                &post.scene,
+                water_renderer
+                    .reference_front_depth()
+                    .unwrap_or(&depth_view),
+            );
             post.resolve_atmosphere(
                 &device,
                 &queue,
@@ -2193,10 +2276,12 @@ async fn render_previews_weather(
                 break encoder;
             }
             // Separate submissions preserve each jitter/camera uniform update.
-            queue.submit(Some(encoder.finish()));
+            let submitted = Instant::now();
+            let submission = queue.submit(Some(encoder.finish()));
             sky_sample = sky_sample.wrapping_add(1);
             post.submitted();
             avatar_renderer.submitted();
+            capture.checkpoint(&device, submission, sample, submitted.elapsed())?;
         };
         if has_target {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -2271,17 +2356,25 @@ async fn render_previews_weather(
                 depth_or_array_layers: 1,
             },
         );
+        let submitted = Instant::now();
         let submission = queue.submit(Some(encoder.finish()));
         post.submitted();
         sky_sample = sky_sample.wrapping_add(1);
         avatar_renderer.submitted();
+        capture.checkpoint(&device, submission.clone(), samples, submitted.elapsed())?;
         let (sender, receiver) = mpsc::channel();
         readback.map_async(wgpu::MapMode::Read, .., move |result| {
             let _ = sender.send(result);
         });
         device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission),
-            timeout: Some(std::time::Duration::from_secs(30)),
+            // Static captures queue 32 path-traced samples before readback.
+            // Bound the whole batch rather than treating it as one live frame.
+            timeout: Some(std::time::Duration::from_secs(if post.trace.ready() {
+                180
+            } else {
+                30
+            })),
         })?;
         receiver.recv()??;
         let mapped = readback.get_mapped_range(..)?;
@@ -2291,7 +2384,19 @@ async fn render_previews_weather(
         }
         drop(mapped);
         readback.unmap();
+        transport::profile::report(&post, &device, &queue)?;
+        if post.trace.ready() && pixels.chunks_exact(4).all(|pixel| pixel[3] == 0) {
+            return Err(
+                "path-traced preview returned an empty readback; GPU submission may have failed"
+                    .into(),
+            );
+        }
         write_png(&output.path, output.width, output.height, &pixels)?;
+        if std::env::var("BLOXGLOOM_GI_DIAGNOSTICS").as_deref() == Ok("1")
+            && let Some(diagnostics) = post.trace.water_history_diagnostics(&device, &queue)?
+        {
+            println!("{diagnostics}");
+        }
         if motion_sequence {
             motion_post = Some(post);
         }

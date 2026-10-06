@@ -42,6 +42,9 @@ fn worker_static_tags_preserve_botanical_and_unknown_motion_allowance() {
     }
     let unknown = Scene::build_with_bounds(
         [Arc::new(Chunk {
+            water: None,
+            coarse_water: None,
+
             triangles: unknown,
             key: None,
         })],

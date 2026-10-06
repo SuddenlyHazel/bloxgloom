@@ -318,7 +318,9 @@ fn mesh_chunk_with_catalog(
         }
     }
     water::append(&mut out, chunk, light, catalog, known);
-    out.trace = std::sync::Arc::new(super::trace::scene::Chunk::from_mesh(&out, catalog));
+    out.trace = std::sync::Arc::new(super::trace::scene::Chunk::from_world_mesh(
+        &out, catalog, chunk,
+    ));
     out
 }
 

@@ -6,13 +6,18 @@ mod gpu;
 
 fn geometry(x: f32) -> Arc<Chunk> {
     Arc::new(Chunk {
+        water: None,
+        coarse_water: None,
+
         key: None,
         triangles: vec![Triangle {
             a: [x, 0.0, 0.0, 0.0],
             b: [x + 1.0, 0.0, 0.0, 0.0],
             c: [x, 1.0, 0.0, 0.0],
             uv_ab: [0.0; 4],
-            uv_c: [0.0; 4],
+            uv_c: [0.0; 2],
+            surface_color: 0,
+            surface_flags: 0,
             normal: [0.0, 0.0, 1.0, 0.0],
         }],
     })
@@ -73,6 +78,7 @@ fn poll_rejects_stale_results_on_both_sides_of_current_result() {
                 revision,
                 scene: Scene::build([geometry(x)]),
                 gpu: None,
+                lod_pages: Vec::new(),
             },
         );
     }
@@ -88,6 +94,7 @@ fn poll_rejects_stale_results_on_both_sides_of_current_result() {
             revision: 2,
             scene: Scene::build([geometry(-16.0)]),
             gpu: None,
+            lod_pages: Vec::new(),
         },
     );
     assert!(
@@ -137,6 +144,7 @@ fn latest_mailbox_preserves_revision_wrap_and_replaces_full_results() {
                 revision,
                 scene: Scene::build([geometry(x)]),
                 gpu: None,
+                lod_pages: Vec::new(),
             },
         );
     }
@@ -220,5 +228,128 @@ fn real_mesher_worker_rebuild_benchmark() {
         timings[2].as_secs_f64() * 1000.,
         timings[0].as_secs_f64() * 1000.,
         timings[4].as_secs_f64() * 1000.
+    );
+}
+
+fn latest_ready(worker: &Worker) -> Ready {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(result) = worker.poll_ready() {
+            return result;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "worker revision was not published"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn selected_lod_replacement_removal_preserves_near_and_revision() {
+    let mut worker = Worker::new(4096);
+    let near = ChunkKey { x: -1, y: 0, z: 0 };
+    let tile = TileKey {
+        level: 1,
+        x: -1,
+        z: 0,
+    };
+    worker.set(near, Some(geometry(-16.0)));
+    worker.set_lod(tile, Some(geometry(-64.0)));
+    worker.set_lod(tile, Some(geometry(-60.0)));
+    let result = latest_ready(&worker);
+    assert_eq!(result.revision, 3);
+    assert_eq!(result.scene.triangles[0].a[0], -16.0);
+    assert_eq!(result.lod_pages.len(), 1);
+    assert_eq!(result.lod_pages[0].triangles[0].a[0], -60.0);
+    assert!(result.lod_pages[0].coverage.is_empty());
+    worker.set_lod(tile, None);
+    let result = latest_ready(&worker);
+    assert_eq!(result.revision, 4);
+    assert_eq!(result.scene.triangles.len(), 1);
+    assert!(result.lod_pages.is_empty());
+}
+
+#[test]
+fn lod_page_overflow_rejects_the_whole_scene_and_recovers() {
+    let mut worker = Worker::new(208);
+    let tile = TileKey {
+        level: 0,
+        x: 0,
+        z: 0,
+    };
+    worker.set(ChunkKey { x: 0, y: 0, z: 0 }, Some(geometry(0.0)));
+    let too_large = Chunk {
+        triangles: vec![geometry(64.0).triangles[0]; 5],
+        ..Default::default()
+    };
+    worker.set_lod(tile, Some(Arc::new(too_large)));
+    let result = latest_ready(&worker);
+    assert!(result.scene.triangles.is_empty());
+    assert!(result.lod_pages.is_empty());
+    worker.set_lod(tile, Some(geometry(64.0)));
+    let result = latest_ready(&worker);
+    assert_eq!(result.scene.triangles.len(), 1);
+    assert_eq!(result.lod_pages.len(), 1);
+}
+
+#[test]
+fn medium_quota_is_atomic_and_loaded_empty_near_stays_eligible() {
+    use crate::render::trace::scene::water::{CoarseColumn, CoarseTile, Occupancy};
+    let key = ChunkKey { x: -1, y: 0, z: 0 };
+    let tile = TileKey {
+        level: 0,
+        x: -1,
+        z: 0,
+    };
+    let mut near = BTreeMap::new();
+    near.insert(
+        key,
+        Arc::new(Chunk {
+            key: Some(key),
+            ..Default::default()
+        }),
+    );
+    let (scene, pages) = assemble(&near, &BTreeMap::new(), 48).unwrap();
+    assert!(scene.nodes.is_empty());
+    assert!(eligible(&scene, &pages));
+    assert!(!eligible(&Scene::default(), &[]));
+    let mut lod = BTreeMap::new();
+    lod.insert(
+        tile,
+        Arc::new(Chunk {
+            coarse_water: Some(CoarseTile {
+                key: tile,
+                columns: vec![CoarseColumn {
+                    coverage: vec![crate::lod::Interval { bottom: 0, top: 20 }],
+                    water: vec![crate::lod::Interval {
+                        bottom: 16,
+                        top: 17,
+                    }],
+                }],
+            }),
+            ..Default::default()
+        }),
+    );
+    // 48 loaded +16 medium header +32 directory +16 column +16 intervals.
+    assert!(assemble(&near, &lod, 127).is_none());
+    let (scene, _) = assemble(&near, &lod, 128).unwrap();
+    assert_eq!(scene.coverage.len() * 4, 128);
+    assert_eq!(scene.water_offset, 12);
+    near.insert(
+        key,
+        Arc::new(Chunk {
+            key: Some(key),
+            water: Some(Occupancy {
+                class: 1,
+                mask: vec![],
+            }),
+            ..Default::default()
+        }),
+    );
+    assert!(assemble(&near, &lod, 143).is_none());
+    assert_eq!(
+        assemble(&near, &lod, 144).unwrap().0.coverage.len() * 4,
+        144
     );
 }

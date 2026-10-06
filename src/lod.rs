@@ -4,9 +4,11 @@ use crate::content::{BlockStateId, Catalog};
 
 mod extract;
 mod forest;
+pub(crate) mod palette;
 pub use forest::{MAX_TREE_FEATURES, TreeFeature};
 pub(crate) mod loading;
 mod reduce;
+mod render_summary;
 pub(crate) mod skylight;
 #[cfg(test)]
 mod tests;
@@ -22,7 +24,8 @@ pub const MAX_TILE_COVERAGE: usize = 2048;
 pub const MAX_TILE_BYTES: usize = 60 * 1024;
 // Allocation is bounded by the unchanged packet cap, not an unrelated lower
 // occupancy limit. Coverage and forest bytes further reduce admission capacity.
-pub const MAX_TILE_SPANS: usize = (MAX_TILE_BYTES - 34 - 4 * TILE_COLUMNS) / 14;
+pub const MAX_TILE_SPANS: usize =
+    (MAX_TILE_BYTES - palette::HEADER_BYTES - 4 * TILE_COLUMNS) / 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TileKey {
@@ -130,14 +133,9 @@ pub struct LodTile {
     pub geometric_error: u32,
 }
 impl LodTile {
-    /// Canonical uncompressed wire size including conservative tile header allowance.
+    /// Exact compact wire size, including palette, coverage and forest descriptors.
     pub fn encoded_bytes(&self) -> usize {
-        34 + self.trees.len() * TreeFeature::WIRE_BYTES
-            + self
-                .columns
-                .iter()
-                .map(|c| 4 + c.coverage.len() * 8 + c.spans.len() * 14)
-                .sum::<usize>()
+        palette::encoded_bytes(self)
     }
     pub fn validate(&self, catalog: &Catalog) -> Result<(), String> {
         self.validate_structure(catalog)?;
@@ -165,25 +163,7 @@ impl LodTile {
     pub(crate) fn into_render_summary(mut self, catalog: &Catalog) -> Result<Self, String> {
         self.validate_structure(catalog)?;
         if self.validate(catalog).is_err() {
-            for column in &mut self.columns {
-                let mut spans: Vec<Span> = Vec::new();
-                for s in &column.spans {
-                    if let Some(last) = spans.last_mut()
-                        && last.top == s.bottom
-                        && (catalog.block_flags(last.state) ^ catalog.block_flags(s.state))
-                            & crate::content::FLUID
-                            == 0
-                    {
-                        last.top = s.top;
-                        last.state = s.state;
-                        last.sky = s.sky;
-                        last.glow = last.glow.max(s.glow);
-                    } else {
-                        spans.push(*s);
-                    }
-                }
-                column.spans = spans;
-            }
+            render_summary::condense(&mut self.columns, catalog);
         }
         self.validate(catalog).map_err(|error| {
             format!(

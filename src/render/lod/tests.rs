@@ -1,5 +1,6 @@
 use super::*;
 mod appearance;
+mod coast_material;
 mod layout;
 use crate::{
     lod::{Column, Interval, LodTile, Span, TILE_COLUMNS, TileKey},

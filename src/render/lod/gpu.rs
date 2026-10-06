@@ -25,6 +25,7 @@ struct Tile {
     revision: u64,
     uniform: wgpu::Buffer,
     group: wgpu::BindGroup,
+    ray: Option<std::sync::Arc<crate::render::trace::scene::Chunk>>,
     coverage: Box<super::coverage::Coverage>,
     bounds: Option<[Vec3; 2]>,
     distance: f32,
@@ -50,6 +51,7 @@ pub(crate) struct Gpu {
     horizon: u16,
     jitter: glam::Vec2,
     eye_in_water: bool,
+    reference_handlight: (u8, [f32; 3]),
 }
 impl Gpu {
     pub(crate) fn new(
@@ -86,6 +88,7 @@ impl Gpu {
             horizon: 512,
             jitter: glam::Vec2::ZERO,
             eye_in_water: false,
+            reference_handlight: (0, [0.0; 3]),
         }
     }
     pub(crate) fn enqueue(&mut self, mut mesh: Mesh) -> Result<(), UploadError> {
@@ -192,6 +195,7 @@ impl Gpu {
                 revision: m.revision,
                 uniform,
                 group,
+                ray: m.ray,
                 coverage: m.coverage,
                 bounds: m.bounds,
                 distance: 0.0,
@@ -233,11 +237,49 @@ impl Gpu {
     pub(crate) fn ready_keys(&self) -> impl Iterator<Item = TileKey> + '_ {
         self.tiles.keys().copied()
     }
+    fn update_selection(&mut self) {
+        if self.selection_dirty {
+            self.selected =
+                select_ready(self.tiles.keys().copied().collect(), |parent, children| {
+                    super::coverage::can_refine(
+                        &self.tiles[&parent].coverage,
+                        children.map(|k| self.tiles[&k].coverage.as_ref()),
+                    )
+                });
+            self.selection_dirty = false;
+        }
+    }
+    /// All admitted coverage-selected targets, including tiles outside the view.
+    /// Call before choosing GI readiness; queued/unuploaded replacements stay out.
+    pub(crate) fn ray_targets(
+        &mut self,
+    ) -> Vec<(
+        TileKey,
+        u64,
+        std::sync::Arc<crate::render::trace::scene::Chunk>,
+    )> {
+        if self.horizon == 0 {
+            return Vec::new();
+        }
+        self.update_selection();
+        self.selected
+            .iter()
+            .filter_map(|key| {
+                let tile = &self.tiles[key];
+                tile.ray
+                    .as_ref()
+                    .map(|ray| (*key, tile.revision, ray.clone()))
+            })
+            .collect()
+    }
     pub(crate) fn set_jitter(&mut self, jitter: glam::Vec2) {
         self.jitter = jitter;
     }
     pub(crate) fn set_eye_in_water(&mut self, value: bool) {
         self.eye_in_water = value;
+    }
+    pub(crate) fn set_reference_handlight(&mut self, held: u8, relative_eye: [f32; 3]) {
+        self.reference_handlight = (held, relative_eye);
     }
     pub(crate) fn prepare(
         &mut self,
@@ -247,6 +289,27 @@ impl Gpu {
         height: u32,
         atmosphere: Atmosphere,
         near: impl Iterator<Item = ChunkKey>,
+    ) {
+        self.prepare_at(
+            queue,
+            camera,
+            width,
+            height,
+            atmosphere,
+            near,
+            super::super::water::time(),
+        );
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepare_at(
+        &mut self,
+        queue: &wgpu::Queue,
+        camera: Camera,
+        width: u32,
+        height: u32,
+        atmosphere: Atmosphere,
+        near: impl Iterator<Item = ChunkKey>,
+        water_time: f32,
     ) {
         if self.horizon == 0 {
             self.visible.clear();
@@ -259,6 +322,11 @@ impl Gpu {
         let vp = super::super::visibility::view_projection(relative, width, height);
         let vp = super::super::post::temporal::jitter_matrix(vp, self.jitter, width, height);
         let mut data = atmosphere.camera_data(vp, Vec3::ZERO);
+        super::super::bsl_reference::handlight::configure(
+            &mut data,
+            self.reference_handlight.0,
+            self.reference_handlight.1,
+        );
         if super::super::bsl_reference::enabled() && self.eye_in_water {
             data[31] = -1.0;
         }
@@ -272,26 +340,12 @@ impl Gpu {
         queue.write_buffer(
             &self.options,
             0,
-            bytemuck::cast_slice(&[
-                super::super::water::time(),
-                if self.textured { 1.0 } else { 0.0 },
-                0.0,
-                0.0,
-            ]),
+            bytemuck::cast_slice(&[water_time, if self.textured { 1.0 } else { 0.0 }, 0.0, 0.0]),
         );
         if let Some(slots) = self.near.update(near) {
             queue.write_buffer(&self.coverage, 0, bytemuck::cast_slice(slots));
         }
-        if self.selection_dirty {
-            self.selected =
-                select_ready(self.tiles.keys().copied().collect(), |parent, children| {
-                    super::coverage::can_refine(
-                        &self.tiles[&parent].coverage,
-                        children.map(|k| self.tiles[&k].coverage.as_ref()),
-                    )
-                });
-            self.selection_dirty = false;
-        }
+        self.update_selection();
         self.visible.clear();
         for key in &self.selected {
             let Some([x, z, _, _]) = key.bounds() else {

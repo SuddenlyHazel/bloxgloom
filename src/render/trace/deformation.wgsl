@@ -1,5 +1,5 @@
 struct DeformFrame {inverse:mat4x4f,previous:mat4x4f,eye:vec4f};
-struct DeformTriangle {a:vec4f,b:vec4f,c:vec4f,uv_ab:vec4f,uv_c:vec4f,normal:vec4f};
+struct DeformTriangle {a:vec4f,b:vec4f,c:vec4f,uv_ab:vec4f,uv_c:vec2f,surface_color:u32,surface_flags:u32,normal:vec4f};
 struct DeformMaterial {flags:u32,layer:u32};
 @group(0) @binding(0) var<uniform> deform_frame:DeformFrame;
 @group(0) @binding(1) var<storage,read> deform_source:array<DeformTriangle>;
@@ -16,6 +16,7 @@ fn deform_position(p:vec3f,n:vec3f,uv:vec2f,flags:u32)->vec3f {
     let index=invocation.x;
     if index>=arrayLength(&deform_source) {return;}
     var t=deform_source[index];
+    if (t.surface_flags&16u)!=0u {deform_output[index]=t;return;}
     let flags=deform_materials[u32(t.a.w)].flags;
     t.a=vec4f(deform_position(t.a.xyz,t.normal.xyz,t.uv_ab.xy,flags),t.a.w);
     t.b=vec4f(deform_position(t.b.xyz,t.normal.xyz,t.uv_ab.zw,flags),t.b.w);

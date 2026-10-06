@@ -34,6 +34,8 @@ struct Actor {
     tool_sequence: u32,
 }
 pub(super) struct Renderer {
+    ray_assets: Vec<Option<Arc<crate::render::trace::dynamic::DynamicAsset>>>,
+    pub(super) ray_targets: crate::render::trace::dynamic::DynamicTargets,
     gpu: gpu::Gpu,
     assets: Vec<Asset>,
     bindings: HashMap<AvatarModel, Binding>,
@@ -192,7 +194,16 @@ impl Renderer {
         }
         let gpu = gpu::Gpu::new(device, queue, format, camera, &assets);
         let ranges = vec![0..0; assets.len()];
+        let ray_assets = assets
+            .iter()
+            .map(|asset| {
+                crate::render::trace::dynamic::enabled()
+                    .then(|| super::ray_targets::authored(&asset.model))
+            })
+            .collect();
         Self {
+            ray_assets,
+            ray_targets: Default::default(),
             gpu,
             assets,
             bindings,
@@ -217,6 +228,7 @@ impl Renderer {
         self.set_at(queue, avatars, self.preview_dt.unwrap_or(dt));
     }
     fn set_at(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar], dt: f32) {
+        self.ray_targets.clear();
         self.frame = self.frame.wrapping_add(1);
         self.instances.clear();
         self.gpu.motion.history.clear_pending();
@@ -374,6 +386,29 @@ impl Renderer {
                 actor.visual = visual;
                 actor.position = avatar.position;
                 actor.seen = self.frame;
+                if let Some(asset) = &self.ray_assets[asset_id] {
+                    let world = motion_world(avatar, binding.scale, [0.0; 3]);
+                    let parts = model
+                        .primitives
+                        .iter()
+                        .zip(&actor.appearance.colors)
+                        .map(|(primitive, &color)| {
+                            (color, actor.appearance.visible[primitive.node])
+                        })
+                        .collect();
+                    self.ray_targets
+                        .instances
+                        .push(super::ray_targets::instance(
+                            asset.clone(),
+                            avatar,
+                            world,
+                            crate::render::trace::dynamic::Deformation::Authored,
+                            actor.animator.matrices.clone(),
+                            parts,
+                        ));
+                    self.ray_targets.instances.last_mut().unwrap().skip_primary =
+                        player && self.first_person.is_some_and(|view| view.id == avatar.id);
+                }
                 let offsets = [self.joints.len() as u32, self.parts.len() as u32];
                 self.joints
                     .extend(actor.animator.matrices.iter().map(|m| m.to_cols_array()));

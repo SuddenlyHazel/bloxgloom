@@ -100,7 +100,7 @@ fn ray_primary_medium_sample(origin:vec3f,direction:vec3f,distance:f32,color:vec
         point=origin+direction*ray_air_distance(origin.y,direction.y,distance,optical_sample);
     }
     let g=medium_anisotropy(point);
-    let scattered=(sun_light(point)*medium_phase(dot(direction,ray_frame.sun.xyz),g)+transport(point,medium_direction(direction,g),1.0))*0.92;
+    let scattered=(ray_water_component(sun_light(point)*medium_phase(dot(direction,ray_frame.sun.xyz),g),false)+transport_state(point,medium_direction(direction,g),1.0,512.0,false,vec4f(0.0),1u,0.0,1.0))*0.92;
     return RayPrimaryMedium(deterministic+(opacity/probability)*scattered,transmission);
 }
 

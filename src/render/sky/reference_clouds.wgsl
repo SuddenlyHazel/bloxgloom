@@ -26,14 +26,15 @@ fn bg_reference_cloud_sample(position:vec3f,wind:vec2f,reveal:f32,rain:f32)->f32
     let high=textureSampleLevel(bg_reference_noise,bg_reference_noise_sampler,detail_coord+0.04,0.0).b;
     return bg_reference_cloud_density(base,mix(low,high,fract(slices)),gradient,reveal,rain);
 }
-// Sky-depth source case z=1. Foreground depth masking/reflection calls are
-// separate source stages, not reconstructed by this sky-only comparison pass.
-fn bg_reference_cloud_integrate(origin:vec3f,ray:vec3f,pixel:vec2f,camera:SkyCamera)->vec4f {
+// Source sky-depth case z=1, including water's fadeFaster reflection branch.
+// Reflection origin is the absolute surface position; source step scaling and
+// underground attenuation still use the actual camera altitude.
+fn bg_reference_cloud_integrate_case(origin:vec3f,ray:vec3f,pixel:vec2f,camera:SkyCamera,eye_height:f32,fade_faster:bool)->vec4f {
     if abs(ray.y)<0.000001 {return vec4f(0.0,0.0,0.0,1.0);}
     let lower=(192.0-origin.y)/ray.y;let upper=(252.0-origin.y)/ray.y;
     let nearest=max(min(lower,upper),0.0);let furthest=max(lower,upper);
     if furthest<0.0 {return vec4f(0.0,0.0,0.0,1.0);}
-    let scaling=clamp((abs(origin.y-222.0)/30.0-1.0)*0.625,0.0,1.0);
+    let scaling=clamp((abs(eye_height-222.0)/30.0-1.0)*0.625,0.0,1.0);
     let step_length=30.0/(4.0*ray.y*ray.y*scaling+1.0);
     let count=u32(min((furthest-nearest)/step_length,32.0)+1.0);
     let dither=bg_reference_cloud_dither(pixel,camera.reference.z);
@@ -45,7 +46,7 @@ fn bg_reference_cloud_integrate(origin:vec3f,ray:vec3f,pixel:vec2f,camera:SkyCam
     let reveal=pow(clamp(mix(abs(vl),max(vl,0.0),shadow)*2.0-1.0,0.0,1.0),12.0)*(1.0-rain);
     let half_light=mix(abs(vl)*0.8,vl,shadow)*0.5+0.5;
     let scattering=pow(half_light,6.0);let light_factor=(2.0-1.5*vl*shadow)*2.0;
-    let fog=max(camera.reference.y,0.5);let fade_start=32.0/fog;let fade_end=240.0/fog;
+    let fog=max(camera.reference.y,0.5);let fade_start=32.0/fog;let fade_end=select(240.0,80.0,fade_faster)/fog;
     var opacity=0.0;var lighting=0.0;var fade=1.0;
     for(var i=0u;i<count;i++) {
         if opacity>0.99 {break;}
@@ -68,7 +69,10 @@ fn bg_reference_cloud_integrate(origin:vec3f,ray:vec3f,pixel:vec2f,camera:SkyCam
     let ambient=bg_bsl_ambient_default(sun,camera.sun_radiance.w,rain,camera.climate.y)*(0.3*sky_visible+0.5);
     let direct=mix(camera.sun_radiance.xyz,horizon,horizon_mix)*(0.85+1.15*scattering);
     var color=mix(ambient,direct,lighting)*(1.0-0.4*rain)*(0.5-0.25*(1.0-sky_visible)*(1.0-rain));
-    color*=clamp((origin.y+70.0)/8.0,0.0,1.0);
+    color*=clamp((eye_height+70.0)/8.0,0.0,1.0);
     opacity*=fade;opacity*=opacity;
     return vec4f(color*opacity,1.0-opacity);
+}
+fn bg_reference_cloud_integrate(origin:vec3f,ray:vec3f,pixel:vec2f,camera:SkyCamera)->vec4f {
+    return bg_reference_cloud_integrate_case(origin,ray,pixel,camera,origin.y,false);
 }

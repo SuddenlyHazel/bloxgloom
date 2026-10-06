@@ -42,6 +42,8 @@ fn build_median(triangles: Vec<Triangle>) -> Scene {
         scene.nodes[index].escape = scene.nodes.len() as u32;
     }
     let mut scene = Scene {
+        water_offset: 0,
+
         triangles,
         nodes: Vec::new(),
         coverage: vec![0; 12],
@@ -145,6 +147,9 @@ fn binned_split_preserves_nearest_hits_and_terminates_with_coincident_centroids(
         }
     }
     let coincident = Scene::build([Arc::new(Chunk {
+        water: None,
+        coarse_water: None,
+
         key: None,
         triangles: vec![mesh.trace.triangles[0]; 127],
     })]);
@@ -244,12 +249,18 @@ fn generated_bvh_traversal_profile() {
         let median_build = start.elapsed();
         let start = Instant::now();
         let sah = Scene::build([Arc::new(Chunk {
+            water: None,
+            coarse_water: None,
+
             triangles,
             key: None,
         })]);
         let sah_build = start.elapsed();
         let tight = Scene::build_with_bounds(
             [Arc::new(Chunk {
+                water: None,
+                coarse_water: None,
+
                 triangles: median.triangles.clone(),
                 key: None,
             })],

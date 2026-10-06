@@ -10,6 +10,7 @@ mod drops;
 pub(crate) mod effects;
 pub(crate) mod fire;
 mod fog;
+mod foliage;
 pub(crate) mod game_ui;
 mod hooks;
 pub(crate) mod lod;
@@ -151,7 +152,9 @@ pub struct Renderer {
     package_local_shadows: Option<local_shadow::Settings>,
     applied_package_local_shadows: Option<local_shadow::Settings>,
     weather: weather::Presentation,
-    rain: fire::FireRenderer,
+    rain: weather::Renderer,
+    reference_handlight: (u8, [f32; 3]),
+    reference_rain: Option<(Vec<f32>, Vec<f32>)>,
     instance: wgpu::Instance,
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -177,6 +180,7 @@ pub struct Renderer {
     drop_cutout_vertices: wgpu::Buffer,
     drop_cutout_indices: wgpu::Buffer,
     drop_cutout_index_count: u32,
+    drop_ray_targets: trace::dynamic::DropTargets,
     avatars: avatars::AvatarRenderer,
     sun_shadows: sun_shadow::SunShadows,
     local_shadows: local_shadow::LocalShadows,
@@ -326,8 +330,7 @@ impl Renderer {
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let mut water = water::WaterRenderer::new(&device, &camera_buffer);
         lod.set_reference_water_inputs(&device, water.reference_inputs());
-        let rain =
-            fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
+        let rain = weather::Renderer::new(&device, &camera_buffer);
         let mut avatars = avatars::AvatarRenderer::new(
             &device,
             &queue,
@@ -375,6 +378,7 @@ impl Renderer {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let drop_ray_targets = trace::dynamic::DropTargets::new(&catalog);
         Ok(Self {
             atmosphere: daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
             package_lighting: Default::default(),
@@ -384,6 +388,8 @@ impl Renderer {
             applied_package_local_shadows: None,
             weather: weather::Presentation::default(),
             rain,
+            reference_handlight: (0, [0.0; 3]),
+            reference_rain: None,
             catalog,
             instance,
             window,
@@ -410,6 +416,7 @@ impl Renderer {
             drop_cutout_vertices,
             drop_cutout_indices,
             drop_cutout_index_count: 0,
+            drop_ray_targets,
             avatars,
             sun_shadows,
             local_shadows,
@@ -481,6 +488,15 @@ impl Renderer {
         self.atmosphere.lighting = lighting;
     }
 
+    pub(crate) fn set_reference_handlight(&mut self, level: u8, relative_eye: [f32; 3]) {
+        self.reference_handlight = (level, relative_eye);
+    }
+    pub(crate) fn reference_rain_mesh(&self, camera: Camera) -> Vec<f32> {
+        self.weather.vertices(camera)
+    }
+    pub(crate) fn set_reference_rain_mesh(&mut self, mesh: Vec<f32>, glow: Vec<f32>) {
+        self.reference_rain = Some((mesh, glow));
+    }
     pub(crate) fn set_weather(
         &mut self,
         cloud: f32,
@@ -498,6 +514,7 @@ impl Renderer {
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
+        self.drop_ray_targets.set(items);
         let meshes = drops::mesh_with_catalog(items, &self.catalog);
         if !meshes.opaque_vertices.is_empty() {
             self.queue.write_buffer(
@@ -703,6 +720,8 @@ impl Renderer {
         eye_in_water: bool,
         frame_time: f32,
     ) -> Result<RenderStats, RendererError> {
+        let water_time = water::time();
+        self.post.trace.set_water_time(water_time);
         let uploaded_chunks = self.upload_pending();
         self.post.trace.install(&self.device);
         self.post.trace.prepare_gpu(
@@ -714,27 +733,45 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
         );
+        if uploaded_chunks < UPLOAD_MESHES_PER_FRAME {
+            self.lod.upload(&self.device);
+        }
+        self.post.trace.sync_lod_targets(self.lod.ray_targets());
+        self.post.trace.set_eye_water(eye_in_water);
+        // Admit exact current poses before choosing the frame's lighting path.
+        // New native assets upload on their worker; those frames keep the
+        // matching voxel/SSR path instead of tracing previous actor poses.
+        let mut dynamic_targets = self.avatars.ray_targets().clone();
+        dynamic_targets.append(self.drop_ray_targets.targets());
+        self.post
+            .trace
+            .prepare_dynamic(&self.device, &self.queue, &dynamic_targets);
         let atmosphere = daylight::Atmosphere {
             scene_transport: self.post.trace.ready(),
             ..self.weather.atmosphere(self.atmosphere)
         };
-        if uploaded_chunks < UPLOAD_MESHES_PER_FRAME {
-            self.lod.upload(&self.device);
-        }
         let (view_projection, jitter) = self.post.prepare_temporal(&self.queue, camera);
         self.lod.set_jitter(jitter);
         self.lod.set_eye_in_water(eye_in_water);
-        self.lod.prepare(
+        self.lod
+            .set_reference_handlight(self.reference_handlight.0, self.reference_handlight.1);
+        self.lod.prepare_at(
             &self.queue,
             camera,
             self.config.width,
             self.config.height,
             atmosphere,
             self.ready_near.iter().copied(),
+            water_time,
         );
         self.sun_shadows.update(&self.queue, camera, atmosphere);
-        self.rain
-            .set_mesh(&self.queue, &self.weather.vertices(camera));
+        if let Some((mesh, glow)) = self.reference_rain.take() {
+            self.rain.set_lightmaps(&glow);
+            self.rain.set_mesh(&self.queue, &mesh);
+        } else {
+            self.rain
+                .set_mesh(&self.queue, &self.weather.vertices(camera));
+        }
         let mut stats = RenderStats {
             uploaded_chunks,
             pending_chunks: self.pending.len(),
@@ -760,6 +797,11 @@ impl Renderer {
         );
         self.post.reflections.configure(camera.position, atmosphere);
         let mut camera_data = atmosphere.camera_data(view_projection, camera.position);
+        bsl_reference::handlight::configure(
+            &mut camera_data,
+            self.reference_handlight.0,
+            self.reference_handlight.1,
+        );
         if bsl_reference::enabled() && eye_in_water {
             camera_data[31] = -1.0;
         }
@@ -767,6 +809,8 @@ impl Renderer {
             camera_data[28] = f32::from(self.lod_horizon) * 0.65;
             camera_data[29] = f32::from(self.lod_horizon);
         }
+        self.post
+            .configure_reference_ao(camera_data, camera.fov_y_radians);
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
         self.queue.write_buffer(
@@ -924,7 +968,7 @@ impl Renderer {
             &self.depth,
             view_projection,
         );
-        self.water.prepare_frame(
+        self.water.prepare_frame_at(
             &self.queue,
             water::Frame {
                 atmosphere,
@@ -934,6 +978,7 @@ impl Renderer {
                 size: [self.config.width, self.config.height],
                 view_projection,
             },
+            water_time,
         );
         let water_target =
             self.water
@@ -1030,6 +1075,12 @@ impl Renderer {
             stats.drawn_triangles += self.fire.draw(&mut pass);
             stats.drawn_triangles += self.rain.draw(&mut pass);
         }
+        stats.drawn_triangles += self.rain.resolve(
+            &self.device,
+            &mut encoder,
+            &self.post.scene,
+            self.water.reference_front_depth().unwrap_or(&self.depth),
+        );
         self.post.resolve_atmosphere(
             &self.device,
             &self.queue,

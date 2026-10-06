@@ -56,14 +56,21 @@ fn bg_material_auxiliary(uv: vec2f, texture_id: u32) -> vec4f {
 fn voxel_vertex(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     var vertex = bg_vertex(BgVertex(input.position, input.normal, input.uv), u32(input.layer));
-    let moving_foliage = (material_map_flags[u32(input.layer)].flags & 64u) != 0u;
+    // Pickups already carry their explicit presentation transform; the negative
+    // glow payload retains reactivity without a second terrain-rooted sway.
+    let moving_foliage = (material_map_flags[u32(input.layer)].flags & 64u) != 0u
+        && input.glow_bounce_packed >= 0.0;
     if moving_foliage {
+        if BG_BSL_REFERENCE || BG_BSL_ADVANCED_REFERENCE {
+            vertex.position=bg_bsl_foliage_wind(vertex.position,vertex.uv,camera.fog_range.z,camera.eye.xyz,camera.ambient_sh[5].xyz,u32(input.layer));
+        } else {
         var wind_uv = vertex.uv;
         let flags = material_map_flags[u32(input.layer)].flags;
         if (flags & 8u) != 0u {
             wind_uv.y = wind_uv.y*0.5 + select(0.5,0.0,(flags & 128u) != 0u);
         }
         vertex.position = bg_foliage_wind(vertex.position, vertex.normal, wind_uv, camera.fog_range.z);
+        }
     }
     output.position = camera.view_projection * vec4<f32>(vertex.position, 1.0);
     let sky = input.light_levels.x;
@@ -139,9 +146,10 @@ fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr
         var basic=0.0;
         if (flags&64u)!=0u {basic=select(1.0,0.5,input.normal.y>0.9999);}
         let view=normalize(camera.eye.xyz-input.world_position);
-        let emission=max(material_emission[u32(input.layer)],specular.emission);
+        var emission=max(material_emission[u32(input.layer)],specular.emission);
+        if BG_BSL_REFERENCE {emission=bg_bsl_default_emission(u32(input.layer),surface.albedo.rgb);}
         var color=bg_bsl_default_surface(surface.albedo.rgb,normalize(surface.normal),view,
-            vec2f(input.block_level,input.sky_level),max(input.indirect_bounce.w,0.0),basic,
+            bg_bsl_reference_lightmap(vec2f(input.block_level,input.sky_level),input.world_position),max(input.indirect_bounce.w,0.0),basic,
             emission,bg_bsl_reference_sun_visibility(receiver,normalize(surface.normal),camera.sun.xyz,basic,input.sky_level),bg_bsl_reference_frame());
         if BG_BSL_REFERENCE || !specular.present {
             return bg_scene_output(color,vec3f(0.0),input.world_position,input.sky_level,input.history_sign);

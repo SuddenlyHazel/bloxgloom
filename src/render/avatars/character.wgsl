@@ -63,6 +63,7 @@ fn character_vertex(input: Input, shadow: bool) -> Output {
     let visibility = f32((input.surface >> 8u) & 255u) / 255.0;
     output.light = vec4f(input.tint * bg_surface_light(normal, camera.sun, sky, vec3f(0.0), bounce, glow_bounce, visibility), input.tint.x);
     output.direct = vec4f(input.tint * bg_direct_light(normal,camera.sun,sky),visibility);
+    if BG_BSL_REFERENCE {output.direct.x=glow;}
     output.indirect = vec4f(input.tint * bg_indirect_light(normal,camera.sun,sky,bounce,glow_bounce), input.tint.y);
     output.world_position = vec4f(world, input.tint.z);
     output.normal_sky = vec4f(normal, sky);
@@ -80,13 +81,13 @@ fn character_vertex(input: Input, shadow: bool) -> Output {
     return character_vertex(input, true);
 }
 fn srgb_to_linear(rgb: vec3f) -> vec3f {
-    return select(pow((rgb+vec3f(0.055))/1.055,vec3f(2.4)),rgb/12.92,rgb<=vec3f(0.04045));
+    return bg_actor_srgb(rgb);
 }
 // The texture is already decoded by its sRGB texture format. Decode the user
 // RGB exactly once, multiply in linear light. Accessory primitives never tint.
 fn tint_hair(neutral: vec3f, rgb: vec3f) -> vec3f { return neutral * srgb_to_linear(rgb / 255.0); }
 fn shade_hair(neutral: vec4f, rgb: vec3f, fixed: bool) -> vec4f {
-    return vec4f(select(tint_hair(neutral.rgb,rgb),neutral.rgb,fixed),neutral.a);
+    return bg_actor_hair_color(neutral,rgb,fixed);
 }
 fn character_albedo(input: Output) -> vec4f {
     if input.radiance_eye_height.w > 0.0 && (input.joint == 3u || input.joint == 4u) && input.direction_height.w > input.radiance_eye_height.w - 0.12 { discard; }
@@ -96,17 +97,13 @@ fn character_albedo(input: Output) -> vec4f {
     if is_hair {
         let fixed = select(0u,1u,input.surface == 8u);
         albedo = textureSampleLevel(hair,pixels,input.uv,i32(input.texture)-1,0.0);
-        albedo = shade_hair(albedo,vec3f(input.hair_color_body.xyz),fixed != 0u);
+        if BG_BSL_REFERENCE {
+            let encoded=bg_actor_reference_encoded(albedo.rgb);
+            albedo=vec4f(select(encoded*vec3f(input.hair_color_body.xyz)/255.0,encoded,fixed!=0u),albedo.a);
+        } else {albedo = shade_hair(albedo,vec3f(input.hair_color_body.xyz),fixed != 0u);}
     } else {
-        if input.surface == 0u && input.cosmetics.x != 0u {
-            // Preserve the painted shade ratios; palette entries remain the
-            // same startup-validated colors used by the rest of the game.
-            let shade = clamp(dot(albedo.rgb, vec3f(0.2126,0.7152,0.0722))/0.425405,0.0,1.0);
-            albedo = vec4f(shade * SKINS[min(input.cosmetics.x,31u)],albedo.a);
-        }
-        if input.surface == 1u && input.cosmetics.z != 0u { albedo = vec4f(clamp(dot(albedo.rgb,vec3f(0.2126,0.7152,0.0722))/0.08,0.0,1.0) * PANTS[min(input.cosmetics.z,31u)],albedo.a); }
-        if input.surface == 9u && input.cosmetics.y != 0u { albedo = vec4f(clamp(dot(albedo.rgb,vec3f(0.2126,0.7152,0.0722))/0.08,0.0,1.0) * SHIRTS[min(input.cosmetics.y,31u)],albedo.a); }
-        if input.surface == 4u && input.iris.w != 0u { albedo = vec4f(srgb_to_linear(vec3f(input.iris.xyz)/255.0),albedo.a); }
+        albedo = bg_actor_body_color(albedo,input.surface,input.cosmetics,input.iris);
+        if BG_BSL_REFERENCE {albedo=vec4f(bg_actor_reference_encoded(albedo.rgb),albedo.a);}
 
     }
     if albedo.a < 0.05 { discard; }
@@ -115,6 +112,12 @@ fn character_albedo(input: Output) -> vec4f {
 @fragment fn fs_main(input: Output) -> BgSceneOutput {
     let receiver = bg_shadow_receiver(input.world_position.xyz);
     let albedo = character_albedo(input);
+    if BG_BSL_REFERENCE {
+        let normal=normalize(input.normal_sky.xyz);
+        let shadow=bg_bsl_reference_sun_visibility(receiver,normal,camera.sun.xyz,0.0,input.normal_sky.w);
+        let tint=vec3f(input.light.w,input.indirect.w,input.world_position.w);
+        return bg_actor_reference_shade(albedo.rgb,tint,normal,input.world_position.xyz,vec2f(input.direct.x,input.normal_sky.w),shadow);
+    }
     // Evaluate local shadows after interpolation; indirect/bounce stays intact.
     let local_light = bg_shadowed_local_light(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
     let tint = vec3f(input.light.w, input.indirect.w, input.world_position.w);
@@ -122,7 +125,7 @@ fn character_albedo(input: Output) -> vec4f {
     let light = input.light.xyz + tint * local_light - input.direct.xyz * (1.0 - visibility);
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
-    return bg_scene_output(albedo.rgb*light,albedo.rgb*input.indirect.xyz,input.world_position.xyz,input.normal_sky.w,input.direct.w * history_sign);
+    return bg_actor_scene_output(albedo.rgb*light,albedo.rgb*input.indirect.xyz,input.world_position.xyz,input.normal_sky.xyz,input.normal_sky.w,input.direct.w * history_sign);
 }
 @fragment fn fs_shadow(input: Output) {
     // Keep body, chosen hair and embedded texture alpha identical to color.

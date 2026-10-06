@@ -31,16 +31,24 @@ struct SkyOutput {@location(0) color:vec4f,@location(1) indirect:vec4f,@location
     var color=bg_sky_base(ray,bg_sky_camera_sun(),cloud_parameters,sky_camera.climate.xy,sky_camera.horizon.xyz,sky_camera.zenith.xyz);
     let alignment=dot(ray,sun_direction);let solar=sky_camera.sun_radiance.xyz;
     let sun_uv=bg_sky_sun_uv(ray,sun_direction);
-    let sun_color=textureSampleLevel(sun_art,cloud_sampler,clamp(sun_uv,vec2f(0.0),vec2f(1.0)),0.0).rgb;
-    color+=sun_color*solar*bg_sky_celestial_inside(sun_uv,alignment)*6.5;
+    let sun_texel=textureSampleLevel(sun_art,cloud_sampler,clamp(sun_uv,vec2f(0.0),vec2f(1.0)),0.0);
+    if abs(sky_camera.reference.w)>0.5 {
+        color+=bg_bsl_textured_celestial(sun_texel,ray.y,false,clamp(sun_direction.y*10.0+0.5,0.0,1.0),sky_camera.climate.y)*bg_sky_celestial_inside(sun_uv,alignment);
+    } else {
+        color+=sun_texel.rgb*solar*bg_sky_celestial_inside(sun_uv,alignment)*6.5;
+    }
     let night=1.0-clamp(sun_direction.y*10.0+0.5,0.0,1.0);
-    color+=bg_bsl_stars(ray,sky_camera.eye.xyz,sun_direction,sky_camera.climate.w,sky_camera.climate.x,sky_camera.climate.y);
+    color+=bg_bsl_stars(ray,sky_camera.eye.xyz,sun_direction,sky_camera.climate.w,sky_camera.climate.x,sky_camera.climate.y)*bg_bsl_reference_star_fade(sky_camera.eye.y,abs(sky_camera.reference.w)>0.5);
     let moon_uv=bg_sky_celestial_uv(ray,-sun_direction,0.20);
     let phase=u32(sky_camera.climate.z)%8u;
     let tile=vec2f(f32(phase%4u),f32(phase/4u));
     let atlas_uv=(clamp(moon_uv,vec2f(0.0),vec2f(1.0))+tile)/vec2f(4.0,2.0);
-    let moon_color=textureSampleLevel(moon_art,cloud_sampler,atlas_uv,0.0).rgb;
-    color+=moon_color*bg_sky_celestial_inside(moon_uv,-alignment)*night*vec3f(0.55,0.65,0.85);
+    let moon_texel=textureSampleLevel(moon_art,cloud_sampler,atlas_uv,0.0);
+    if abs(sky_camera.reference.w)>0.5 {
+        color+=bg_bsl_textured_celestial(moon_texel,ray.y,true,1.0-night,sky_camera.climate.y)*bg_sky_celestial_inside(moon_uv,-alignment);
+    } else {
+        color+=moon_texel.rgb*bg_sky_celestial_inside(moon_uv,-alignment)*night*vec3f(0.55,0.65,0.85);
+    }
     if abs(sky_camera.reference.w)>0.5 && sky_camera.sun.w< -0.5 {
         let active_light=sun_direction*select(1.0,-1.0,sky_camera.reference.w<0.0);
         let exterior=clamp(-sky_camera.sun.w-1.0,0.0,1.0);

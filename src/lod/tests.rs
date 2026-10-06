@@ -428,21 +428,38 @@ fn render_budget_simplification_cannot_erase_invalid_data_or_air_gaps() {
 fn budget_reduction_preserves_water_and_solid_boundaries() {
     let catalog = Catalog::builtins();
     let column = Column {
-        coverage: vec![Interval { bottom: 0, top: 16 }],
-        spans: [
-            (0, 1, STONE),
-            (1, 2, crate::world::DIRT),
-            (2, 3, crate::world::GRAVEL),
-            (3, 6, crate::world::WATER),
-        ]
-        .map(|(bottom, top, state)| Span {
-            bottom,
-            top,
-            state,
-            sky: 15,
-            glow: 0,
-        })
-        .to_vec(),
+        coverage: vec![Interval { bottom: 0, top: 24 }],
+        // Four spans now fit the lossless compact packet. Keep actual budget
+        // pressure, without relying on the superseded 14-byte span layout.
+        spans: (0..16)
+            .map(|y| Span {
+                bottom: y,
+                top: y + 1,
+                state: if y % 2 == 0 {
+                    STONE
+                } else {
+                    crate::world::DIRT
+                },
+                sky: 0,
+                glow: 0,
+            })
+            .chain([
+                Span {
+                    bottom: 16,
+                    top: 17,
+                    state: crate::world::GRAVEL,
+                    sky: 15,
+                    glow: 0,
+                },
+                Span {
+                    bottom: 17,
+                    top: 20,
+                    state: crate::world::WATER,
+                    sky: 15,
+                    glow: 0,
+                },
+            ])
+            .collect(),
     };
     let tile = LodTile {
         trees: Vec::new(),
@@ -454,15 +471,28 @@ fn budget_reduction_preserves_water_and_solid_boundaries() {
         revision: 1,
         columns: vec![column; TILE_COLUMNS],
         geometric_error: 0,
-    }
-    .into_render_summary(&catalog)
-    .unwrap();
+    };
+    assert!(tile.validate(&catalog).is_err());
+    let tile = tile.into_render_summary(&catalog).unwrap();
     for c in tile.columns {
-        assert_eq!(c.spans.len(), 2);
+        assert_eq!(c.spans.len(), 3);
         assert_eq!(
-            (c.spans[1].bottom, c.spans[1].top, c.spans[1].state),
-            (3, 6, crate::world::WATER)
+            (c.spans[2].bottom, c.spans[2].top, c.spans[2].state),
+            (17, 20, crate::world::WATER)
         );
-        assert_eq!(c.spans[0].top, 3);
+        assert_eq!(
+            (c.spans[0].bottom, c.spans[0].top, c.spans[0].sky),
+            (0, 16, 0)
+        );
+        assert_eq!(
+            c.spans[1],
+            Span {
+                bottom: 16,
+                top: 17,
+                state: crate::world::GRAVEL,
+                sky: 15,
+                glow: 0
+            }
+        );
     }
 }

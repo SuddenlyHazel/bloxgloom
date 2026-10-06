@@ -187,6 +187,13 @@ impl EditGpu {
         self.post
             .reflections
             .configure(camera.position, Atmosphere::at(crate::daylight::INITIAL_MS));
+        self.post.configure_reference_ao(
+            Atmosphere::at(crate::daylight::INITIAL_MS).camera_data(
+                super::super::view_projection(camera, WIDTH, HEIGHT),
+                camera.position,
+            ),
+            camera.fov_y_radians,
+        );
         self.post.resolve_ambient(
             &self.device,
             &self.queue,

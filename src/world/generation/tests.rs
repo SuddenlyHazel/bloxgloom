@@ -182,15 +182,18 @@ fn unknown_builtin_generation_id_is_reported_without_panicking() {
 fn builtin_contributor_preserves_terrain_vegetation_and_negative_chunk_seams() {
     let catalog = Catalog::builtins();
     let seed = 73;
-    // Frozen fingerprints from generator version 8 (living bough bark states), including a
-    // negative horizontal seam, a vertical seam, bedrock, plants and empty sky.
+    let mut mismatches = Vec::new();
+    // Version 9 changes only four cold surface fixtures here (respectively
+    // 255, 256, 256 and 143 nonshore Tundra columns). Version-8 bedrock and sky
+    // fingerprints remain exact; composition and every direct seam sample are
+    // checked independently of these frozen hashes.
     for (key, fingerprint) in [
-        (ChunkKey { x: -2, y: 1, z: -1 }, 0x0010d0fa44f0e177),
-        (ChunkKey { x: -1, y: 1, z: -1 }, 0x3f7ea0464471ed01),
+        (ChunkKey { x: -2, y: 1, z: -1 }, 0x3bfb268e59122dab),
+        (ChunkKey { x: -1, y: 1, z: -1 }, 0x383443e80b059e01),
         (ChunkKey { x: -1, y: 2, z: -1 }, 0x9c1bda7f8c872325),
-        (ChunkKey { x: 0, y: 1, z: -1 }, 0x4a9086c8fb00c6fa),
+        (ChunkKey { x: 0, y: 1, z: -1 }, 0x6e8df6092d10381a),
         (ChunkKey { x: 0, y: 2, z: -1 }, 0x9c1bda7f8c872325),
-        (ChunkKey { x: -1, y: 1, z: 0 }, 0x83d72ead5a39c98b),
+        (ChunkKey { x: -1, y: 1, z: 0 }, 0x193472b5b99dc361),
         (ChunkKey { x: 0, y: -5, z: 0 }, 0x82c546d079aba325),
         (ChunkKey { x: 0, y: -4, z: 0 }, 0x440d30e377554c1c),
         (ChunkKey { x: 0, y: 8, z: 0 }, 0x9c1bda7f8c872325),
@@ -216,7 +219,27 @@ fn builtin_contributor_preserves_terrain_vegetation_and_negative_chunk_seams() {
                     (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
                 })
             });
-        assert_eq!(hash, fingerprint, "{key:?}");
+        if hash != fingerprint {
+            let mut cold_surfaces = 0;
+            for z in 0..16 {
+                for x in 0..16 {
+                    let column = super::super::terrain::terrain_column(
+                        i64::from(key.x) * 16 + x,
+                        i64::from(key.z) * 16 + z,
+                        seed,
+                    );
+                    cold_surfaces += usize::from(
+                        column.biome == super::super::terrain::Biome::Tundra
+                            && !column.shore
+                            && (i64::from(key.y) * 16..i64::from(key.y) * 16 + 16)
+                                .contains(&column.height),
+                    );
+                }
+            }
+            mismatches.push(format!(
+                "{key:?}: expected={fingerprint:#018x}, actual={hash:#018x}, nonshore Tundra surface columns={cold_surfaces}"
+            ));
+        }
         for z in 0..16 {
             for x in 0..16 {
                 for y in 0..16 {
@@ -237,6 +260,11 @@ fn builtin_contributor_preserves_terrain_vegetation_and_negative_chunk_seams() {
             }
         }
     }
+    assert!(
+        mismatches.is_empty(),
+        "generator fingerprints:\n{}",
+        mismatches.join("\n")
+    );
 }
 
 #[test]

@@ -7,12 +7,7 @@ fn gpu_actual_reference_sky_adds_source_underwater_solar_only_in_water() {
             .await
             .unwrap();
         let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
-        let source = format!(
-            "{}\n{}\n{}",
-            crate::render::sky::environment_shader(),
-            include_str!("../../sky/camera.wgsl"),
-            include_str!("../../sky/sky.wgsl")
-        );
+        let source = crate::render::sky::shader_source();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("actual reference sky SunGlare consumer"),
             source: wgpu::ShaderSource::Wgsl(source.into()),

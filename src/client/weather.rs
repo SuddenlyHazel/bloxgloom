@@ -266,7 +266,11 @@ impl super::ClientApp {
                 sample.rain,
                 [sample.wind * 0.35_f32.cos(), sample.wind * 0.35_f32.sin()],
                 self.weather.exposure,
-                (elapsed % 3_600_000) as f32 / 1_000.0,
+                if crate::render::bsl_reference::enabled() {
+                    elapsed as f32 / 1_000.0
+                } else {
+                    (elapsed % 3_600_000) as f32 / 1_000.0
+                },
                 flash,
             );
             renderer.set_weather_rain_cover(self.weather.origin, self.weather.cover);

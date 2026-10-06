@@ -27,6 +27,12 @@ fn gpu_live_preparation_admits_current_scene_and_handles_resize_during_build() {
     let mut trace = crate::render::trace::TraceLighting {
         worker: Worker::new(storage_limit),
         scene: None,
+        dynamic_ready: true,
+        dynamic_targets: Default::default(),
+        eye_water: false,
+        water_time: 0.0,
+        lod_pages: Vec::new(),
+        lod_targets: BTreeMap::new(),
         gpu: None,
         active_revision: 0,
         enabled: true,

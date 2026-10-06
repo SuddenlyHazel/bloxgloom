@@ -12,7 +12,7 @@ pub(super) enum Shot {
 }
 impl Shot {
     pub(super) fn site(self) -> (i32, i32) {
-        // Generator version 8, seed 0xB10C6100. Unlike the authored showcase,
+        // Fixed seed 0xB10C6100. Unlike the authored showcase,
         // every block in these views comes from ordinary world generation.
         match self {
             Self::Meadow => (-2000, -2048),

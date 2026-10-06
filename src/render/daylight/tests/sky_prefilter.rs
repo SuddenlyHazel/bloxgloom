@@ -40,7 +40,11 @@ fn source(reference: bool) -> String {
             "bg_material_highlight"
         ),
         include_str!("../../scene_ao_output.wgsl"),
-        include_str!("../../water_surface.wgsl"),
+        concat!(
+            include_str!("../../water/waves.wgsl"),
+            "\n",
+            include_str!("../../water_surface.wgsl")
+        ),
         function(
             include_str!("../../reflections.wgsl"),
             "bg_reflection_fallback"

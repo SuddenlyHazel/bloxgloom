@@ -10,10 +10,11 @@ const PRIMARY: &str = r#"
    textureSampleLevel(ray_albedo,ray_sampler,t.uv_ab.xy,layer,f32(textureNumLevels(ray_albedo)-1u)).a,0.0,1.0);
  }
  let result=ray_primary_transport(pixel);
+ if ray_frame.counts.y==44u {return vec4f(f32(test_primary_air_count),f32(test_transport_count),result.radiance.r,result.geometry.w);}
  if ray_frame.counts.y==22u||ray_frame.counts.y==23u {
-  return vec4f(f32(test_transport_count),result.transmission,result.radiance.r,result.geometry.w);
+  return vec4f(f32(test_transport_count),ray_primary_t(result.transmission),result.radiance.r,result.geometry.w);
  }
- return vec4f(result.geometry.z,result.transmission,result.radiance.r,result.geometry.w);
+ return vec4f(result.geometry.z,ray_primary_t(result.transmission),result.radiance.r,result.geometry.w);
 }
 "#;
 
@@ -63,22 +64,72 @@ pub(super) fn run_mode(
     forced_mode: u32,
 ) -> Vec<[f32; 4]> {
     let scene = Scene::build([Arc::new(Chunk {
+        water: None,
+        coarse_water: None,
+
         triangles,
         key: None,
     })]);
-    let mut frame = vec![0.0f32; 72];
-    frame[..16].copy_from_slice(&Mat4::IDENTITY.to_cols_array());
-    frame[16..32].copy_from_slice(&Mat4::IDENTITY.to_cols_array());
+    run_scene(
+        f,
+        &scene,
+        marker,
+        density,
+        if forced_mode > 0 {
+            forced_mode
+        } else {
+            u32::from(probe_alpha)
+        },
+        Mat4::IDENTITY,
+        false,
+    )
+}
+
+pub(super) struct PrimaryCamera {
+    pub inverse: Mat4,
+    pub eye: glam::Vec3,
+}
+impl From<Mat4> for PrimaryCamera {
+    fn from(inverse: Mat4) -> Self {
+        Self {
+            eye: inverse.w_axis.truncate(),
+            inverse,
+        }
+    }
+}
+pub(super) fn run_scene(
+    f: &Fixture,
+    scene: &Scene,
+    marker: f32,
+    density: f32,
+    mode: u32,
+    camera: impl Into<PrimaryCamera>,
+    eye_water: bool,
+) -> Vec<[f32; 4]> {
+    let camera = camera.into();
+    let inverse = camera.inverse;
+    let eye = camera.eye;
+    let mut frame = vec![0.0f32; 76];
+    // Callers provide their world inverse; production traces camera-relative
+    // vectors and adds the eye only when reconstructing a world position.
+    let relative_inverse = (inverse.inverse() * glam::Mat4::from_translation(eye)).inverse();
+    frame[..16].copy_from_slice(&relative_inverse.to_cols_array());
+    frame[32..35].copy_from_slice(&eye.to_array());
+    frame[73] = f32::from_bits(scene.water_offset);
+    frame[74] = f32::from(eye_water);
+    frame[75] = 1.0; // Production plane-aware complete-water history.
+    frame[16..32].copy_from_slice(&inverse.inverse().to_cols_array());
+    frame[64..67].copy_from_slice(&eye.to_array());
+    frame[36..40].copy_from_slice(&[0.0, 1.0, 0.0, 1.0]);
+    if (40..=43).contains(&mode) {
+        frame[71] = f32::from_bits(1);
+    }
     frame[44..48].copy_from_slice(&[0.1, 0.2, 0.3, 0.0]);
     frame[48..52].copy_from_slice(&[0.2, 0.3, 0.5, 1.0]);
     frame[60] = density;
     frame[62] = 2.0;
     frame[68] = f32::from_bits(scene.nodes.len() as u32);
-    frame[69] = f32::from_bits(if forced_mode > 0 {
-        forced_mode
-    } else {
-        u32::from(probe_alpha)
-    });
+    frame[69] = f32::from_bits(mode);
     let buffer = |data: &[u8], usage| {
         f.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -100,11 +151,11 @@ pub(super) fn run_mode(
         bytemuck::cast_slice(&scene.coverage),
         wgpu::BufferUsages::STORAGE,
     );
-    let entries = (0..11)
+    let entries = (0..16)
         .map(|binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: if binding <= 2 || binding == 10 {
+            ty: if binding <= 2 || (10..=14).contains(&binding) {
                 wgpu::BindingType::Buffer {
                     ty: if binding == 0 {
                         wgpu::BufferBindingType::Uniform
@@ -143,12 +194,38 @@ pub(super) fn run_mode(
             })
         })
         .collect::<Vec<_>>();
+    let history = (0..2)
+        .map(|x| {
+            if !(40..=43).contains(&mode) {
+                return [0.0; 4];
+            }
+            let nx = ((x * 2 + 1) as f32 + 0.5) / 4.0 * 2.0 - 1.0;
+            let far = inverse * glam::Vec4::new(nx, -0.5, 1.0, 1.0);
+            let direction = (far.truncate() / far.w - eye).normalize();
+            [
+                4.0,
+                2.0,
+                1.0,
+                2.0 / (-direction.y) + if mode == 41 { 1.0 } else { 0.0 },
+            ]
+        })
+        .collect::<Vec<_>>();
+    let history_geometry = if (40..=43).contains(&mode) {
+        [
+            0.0,
+            if mode == 43 { -1.0 } else { 1.0 },
+            if mode == 42 { -0.12 } else { -3.12 },
+            8.0,
+        ]
+    } else {
+        [0.0; 4]
+    };
     let textures = [
         sample_texture(f, 4, 2, &receivers),
         sample_texture(f, 4, 2, &[[0.04, 0.04, 0.04, 1.0]; 8]),
         sample_texture(f, 4, 2, &[[0.03, 0.03, 0.03, marker]; 8]),
-        sample_texture(f, 2, 1, &[[0.0; 4]; 2]),
-        sample_texture(f, 2, 1, &[[0.0; 4]; 2]),
+        sample_texture(f, 2, 1, &history),
+        sample_texture(f, 2, 1, &[history_geometry; 2]),
         sample_texture(f, 4, 2, &[[1.0, 1.0, 1.0, 1.0]; 8]),
     ];
     let views = textures
@@ -170,64 +247,89 @@ pub(super) fn run_mode(
         view_formats: &[],
     });
     let depth = depth.create_view(&Default::default());
+    let mut encoder = f.device.create_command_encoder(&Default::default());
+    {
+        let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+    }
+    f.queue.submit([encoder.finish()]);
+    let mut bindings = vec![
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: nodes.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: triangles.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: wgpu::BindingResource::TextureView(&depth),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: wgpu::BindingResource::TextureView(&views[0]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: wgpu::BindingResource::TextureView(&views[1]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 6,
+            resource: wgpu::BindingResource::TextureView(&views[2]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 7,
+            resource: wgpu::BindingResource::TextureView(&views[3]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 8,
+            resource: wgpu::BindingResource::TextureView(&views[4]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 9,
+            resource: wgpu::BindingResource::TextureView(&views[5]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 10,
+            resource: coverage.as_entire_binding(),
+        },
+    ];
+    bindings.push(wgpu::BindGroupEntry {
+        binding: 15,
+        resource: wgpu::BindingResource::TextureView(&views[3]),
+    });
+    f.append_empty_pages(&mut bindings);
     let group = f.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: nodes.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: triangles.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(&depth),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::TextureView(&views[0]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: wgpu::BindingResource::TextureView(&views[1]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: wgpu::BindingResource::TextureView(&views[2]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: wgpu::BindingResource::TextureView(&views[3]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 8,
-                resource: wgpu::BindingResource::TextureView(&views[4]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 9,
-                resource: wgpu::BindingResource::TextureView(&views[5]),
-            },
-            wgpu::BindGroupEntry {
-                binding: 10,
-                resource: coverage.as_entire_binding(),
-            },
-        ],
+        entries: &bindings,
     });
     super::super::denoise::draw(
         &f.device,
         &f.queue,
-        &source(2).replace(FIXTURE, PRIMARY),
+        &source(12).replace(FIXTURE, PRIMARY).replace("fn ray_primary_medium_sample(origin:vec3f,direction:vec3f,distance:f32,color:vec3f,correction:vec3f)->RayPrimaryMedium {", "var<private> test_primary_air_count:u32;\nfn ray_primary_medium_sample(origin:vec3f,direction:vec3f,distance:f32,color:vec3f,correction:vec3f)->RayPrimaryMedium {test_primary_air_count++;"),
         2,
         1,
-        &[&group, &f.materials],
-        &[Some(&layout), Some(&f.material_layout)],
+        &[&group, &f.materials, &f.dynamic.group],
+        &[
+            Some(&layout),
+            Some(&f.material_layout),
+            Some(&f.dynamic.layout),
+        ],
     )
 }
 
@@ -286,7 +388,8 @@ fn gpu_primary_ray_alpha_mismatch_preserves_leaf_fallback_and_distinguishes_wate
     assert!(
         water
             .iter()
-            .all(|p| p[0] < 0.0 && p[1] == 1.0 && p[3] == 1.0)
+            .all(|p| p[0] < 0.0 && p[1] == -1.0 && p[2] == 0.0 && p[3] == -1.0),
+        "a water raster marker without an admitted real interface retains its fallback"
     );
     let matched = run(
         &f,
@@ -322,7 +425,10 @@ fn gpu_primary_ray_alpha_mismatch_preserves_leaf_fallback_and_distinguishes_wate
     assert!(
         fog.iter().all(|p| p[1] < 0.0
             && p[1] > -1.0
-            && p[2].abs() > 0.01
+            // Static history excludes current raster HDR extinction. A sealed,
+            // nonemissive air path can have zero incident radiance; signed T
+            // must still attenuate its current HDR at exact-center composition.
+            && p[2] >= 0.0
             && p.iter().all(|v| v.is_finite())),
         "unknown leaves still integrate camera media: {fog:?}"
     );

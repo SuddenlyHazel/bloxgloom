@@ -1,9 +1,13 @@
 //! Opt-in, source-audited BSL default material/lighting reference.
 //! This is a comparison path, not a whole-frame Minecraft/Iris parity claim.
+mod emission;
+pub(crate) mod handlight;
 mod orbit;
 use super::daylight::Atmosphere;
 use glam::Vec3;
 pub(crate) use orbit::{Celestial, shadow_fade};
+
+pub(crate) const HANDLIGHT_SHADER: &str = include_str!("bsl_reference/handlight.wgsl");
 
 pub(crate) const ALBEDO_SHADER: &str = include_str!("bsl_reference/albedo.wgsl");
 
@@ -26,10 +30,12 @@ pub(crate) fn advanced_materials() -> bool {
 
 pub(crate) fn shader() -> String {
     format!(
-        "const BG_BSL_REFERENCE: bool = {};\nconst BG_BSL_ADVANCED_REFERENCE: bool = {};\n{ALBEDO_SHADER}\n{LIGHTING_SHADER}\n{REFLECTION_SHADER}\n{}",
+        "const BG_BSL_REFERENCE: bool = {};\nconst BG_BSL_ADVANCED_REFERENCE: bool = {};\n{ALBEDO_SHADER}\n{HANDLIGHT_SHADER}\n{LIGHTING_SHADER}\n{REFLECTION_SHADER}\n{}\n{}\n{}",
         default_materials(),
         advanced_materials(),
-        include_str!("bsl_reference/camera.wgsl")
+        include_str!("bsl_reference/camera.wgsl"),
+        super::foliage::reference::shader(crate::content::catalog()),
+        emission::shader(crate::content::catalog())
     )
 }
 

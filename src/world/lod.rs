@@ -27,7 +27,7 @@ impl World {
     pub(crate) fn lod_cache_identity(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hash = Sha256::new();
-        hash.update(b"bloxgloom-lod-summary-v3-forest");
+        hash.update(b"bloxgloom-lod-summary-v5-surface-caps-compact");
         hash.update(self.seed.to_le_bytes());
         hash.update(super::TERRAIN_GENERATOR_VERSION.to_le_bytes());
         hash.update(self.catalog.fingerprint().to_le_bytes());

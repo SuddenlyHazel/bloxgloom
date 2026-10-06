@@ -8,6 +8,19 @@ const FIXTURE: &str = r#"
 @fragment fn fs_main(@builtin(position) pixel:vec4f)->@location(0) vec4f {
  let index=u32(pixel.x);ray_rng=index*1973u+911u;
  let mode=ray_frame.counts.y;
+ if mode==24u||mode==25u {
+  let cosines=array<f32,5>(-1.0,-0.5,0.0,0.5,1.0);
+  let cosine=cosines[index%5u];let normal=vec3f(sqrt(1.0-cosine*cosine),cosine,0.0);
+  let kind=index/5u;let color=vec3f(0.6,0.36,0.34);
+  let pbr=bg_decode_pbr(vec4f(0.3,select(0.0,1.0,kind==2u),0.0,0.0),color,false,kind!=0u);
+  let transmitted=select(vec3f(0.0),vec3f(0.3,0.2,0.1),kind==3u);
+  let emission=vec3f(0.07,0.03,0.01);
+  let surface=RaySurface(color,pbr,emission,1.0,select(0.0,0.5,kind==3u),color,transmitted);
+  let sunlight=ray_surface_sunlight(vec3f(0.0),normal,surface,mode==25u);
+  let value=emission+ray_diffuse_direct(normal,normal,ray_frame.sun.xyz,surface,sunlight)
+    +bg_pbr_sun(normal,normal,ray_frame.sun,1.0,1.0,pbr,sunlight);
+  return vec4f(value,f32(test_sun_calls));
+ }
  if mode>=19u&&mode<=21u {
   let energy=transport(vec3f(0.0),vec3f(0.0,0.0,1.0),1.0);
   return vec4f(energy,f32(test_vertex_count));
@@ -49,16 +62,16 @@ const FIXTURE: &str = r#"
  if mode==7u {return vec4f(sun_light(vec3f(0.0)),1.0);}
  if mode==8u {
   let hit=ray_cast(vec3f(0.0),vec3f(0.0,0.0,1.0),512.0);
-  let sheet=ray_surface(hit);
+  let sheet=ray_surface(hit,vec3f(0.0,0.0,hit.distance));
   return vec4f(sheet.albedo*sheet.transmission*(vec3f(1.0)-sheet.pbr.f0)*ray_frame.solar.xyz,1.0);
  }
  if mode==9u||mode==10u {
   let hit=ray_cast(vec3f(0.0),vec3f(0.0,0.0,1.0),512.0);
-  let sheet=ray_surface(hit);
+  let sheet=ray_surface(hit,vec3f(0.0,0.0,hit.distance));
   if mode==10u {return vec4f((sheet.reflection+sheet.transmittance)*(vec3f(1.0)-sheet.pbr.f0),sheet.pbr.f0.r);}
   var energy=vec3f(0.0);
   for(var sample_index=0u;sample_index<64u;sample_index++) {
-   energy+=scatter(hit.normal,hit.normal,sheet).weight;
+   energy+=scatter(hit.normal,hit.normal,sheet,vec3f(0.0,0.0,hit.distance)).weight;
   }
   return vec4f(energy/64.0,1.0);
  }
@@ -89,40 +102,55 @@ const FIXTURE: &str = r#"
 
 fn source(bounces: u32) -> String {
     let path_loop = format!("for(var bounce=0u;bounce<{bounces}u;bounce++) {{");
-    let transport = include_str!("../transport.wgsl")
+    let transport = format!("{}\n{}",include_str!("../transport.wgsl"),include_str!("../paired.wgsl"))
+        .replace("fn sun_light_visible(p:vec3f,sky:f32)->vec3f {", "fn sun_light_visible(p:vec3f,sky:f32)->vec3f {test_sun_calls++;")
         .replace("bounce<12u", &format!("bounce<{bounces}u"))
         // Controlled first-scatter fixture: retain actual geometry, production
         // integrator and HG scattering, while positioning the medium event past
         // a verified loaded-space boundary. Closed rooms still hit walls first.
-        .replace("let event=medium_event(origin,direction,hit.distance);",
-            "var event=medium_event(origin,direction,hit.distance); if ray_frame.counts.y==16u && bounce==0u {event=140.0;}")
+        .replace("} else {event=medium_event(origin,direction,limit);}",
+            "} else {event=medium_event(origin,direction,limit);} if ray_frame.counts.y==16u && bounce==0u {event=140.0;}")
         // Count real path vertices and control only the stochastic scatter for
         // exact-zero/tiny-positive energy fixtures. Production hit/shading,
         // direct/emission accumulation and zero termination remain untouched.
         .replace(&path_loop,&format!("{path_loop}test_vertex_count++;"))
-        .replace("let sample=scatter(hit.normal,-direction,surface);",
-            "var sample=scatter(hit.normal,-direction,surface); if ray_frame.counts.y>=19u && ray_frame.counts.y<=21u {sample=RayScatter(vec3f(0.0,0.0,1.0),vec3f(0.0)); if ray_frame.counts.y==21u && bounce==0u {sample.weight=vec3f(1e-20);}}")
+        .replace("let sample=scatter(hit.normal,-direction,surface,origin);",
+            "var sample=scatter(hit.normal,-direction,surface,origin); if ray_frame.counts.y>=19u && ray_frame.counts.y<=21u {sample=RayScatter(vec3f(0.0,0.0,1.0),vec3f(0.0)); if ray_frame.counts.y==21u && bounce==0u {sample.weight=vec3f(1e-20);}}")
         .replace("var origin=start;", "test_transport_count++;var origin=start;")
-        .replace("let sample=scatter(n,-direction,surface);",
-            "var sample=scatter(n,-direction,surface); if ray_frame.counts.y==22u||ray_frame.counts.y==23u {sample=RayScatter(vec3f(0.0,0.0,1.0),vec3f(select(0.0,1e-20,ray_frame.counts.y==23u)));}");
+        .replace("let sample=scatter(n,-direction,surface,position);",
+            "var sample=scatter(n,-direction,surface,position); if ray_frame.counts.y==22u||ray_frame.counts.y==23u {sample=RayScatter(vec3f(0.0,0.0,1.0),vec3f(select(0.0,1e-20,ray_frame.counts.y==23u)));}");
     assert!(
         transport.contains("test_vertex_count++;"),
         "vertex-count fixture must instrument the real path loop"
     );
-    format!(
-        "const RAY_MATERIAL_FAST:bool={};\nconst RAY_NEAR_FIRST:bool=false;\nvar<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{transport}\n{}\n{}\n{}\n{}\n{FIXTURE}",
-        super::super::optimizations::material_fast(),
+    let libraries = [
         render::sky::environment_shader(),
-        include_str!("../../material/pbr.wgsl"),
-        include_str!("../../material/foliage.wgsl"),
-        include_str!("../../material/foliage_optics.wgsl"),
-        include_str!("../intersection.wgsl"),
-        include_str!("../coverage.wgsl"),
-        include_str!("../denoise.wgsl"),
-        include_str!("../medium.wgsl"),
-        include_str!("../../daylight/test_camera.wgsl"),
-        include_str!("../../daylight.wgsl"),
-        include_str!("../../material/relief.wgsl"),
+        include_str!("../../material/pbr.wgsl").to_owned(),
+        include_str!("../../material/foliage.wgsl").to_owned(),
+        include_str!("../../material/foliage_optics.wgsl").to_owned(),
+        include_str!("../../water/waves.wgsl").to_owned(),
+        include_str!("../intersection.wgsl").to_owned(),
+        include_str!("../coverage.wgsl").to_owned(),
+        include_str!("../volume.wgsl").to_owned(),
+        include_str!("../lod.wgsl").to_owned(),
+        super::super::dynamic::shader(crate::content::catalog()),
+        include_str!("../water.wgsl").to_owned(),
+        include_str!("../water/lobes/packet.wgsl").to_owned(),
+        include_str!("../water/lobes/sample.wgsl").to_owned(),
+        include_str!("../water/caustics.wgsl").to_owned(),
+        include_str!("../water/ggx.wgsl").to_owned(),
+        include_str!("../water/diagnostics.wgsl").to_owned(),
+        include_str!("../denoise.wgsl").to_owned(),
+        transport,
+        include_str!("../medium.wgsl").to_owned(),
+        include_str!("../../daylight/test_camera.wgsl").to_owned(),
+        include_str!("../../daylight.wgsl").to_owned(),
+        include_str!("../../material/relief.wgsl").to_owned(),
+    ]
+    .join("\n");
+    format!(
+        "const RAY_MATERIAL_FAST:bool={};\nconst RAY_NEAR_FIRST:bool=false;\nconst RAY_LOD_TIERED:bool=true;\nconst RAY_SUN_SKIP:bool=true;\nconst RAY_CAUSTIC_GUIDE:bool=true;\nconst RAY_CAUSTIC_PHASE_GUIDE:bool=true;\nconst RAY_CAUSTIC_GGX_GUIDE:bool=true;\nconst RAY_WATER_COMPONENT:u32=0u;\nvar<private> test_vertex_count:u32;\nvar<private> test_transport_count:u32;\nvar<private> test_sun_calls:u32;\n{libraries}\n{FIXTURE}",
+        super::super::optimizations::material_fast()
     )
 }
 
@@ -152,7 +180,9 @@ fn quad(points: [[f32; 3]; 4], material: u32, uv: [f32; 2], cutout: bool) -> Vec
                 b: [b[0], b[1], b[2], 0.0],
                 c: [c[0], c[1], c[2], f32::from(cutout)],
                 uv_ab: [uv[0], uv[1], uv[0], uv[1]],
-                uv_c: [uv[0], uv[1], 0.0, 0.0],
+                uv_c: [uv[0], uv[1]],
+                surface_color: 0,
+                surface_flags: 0,
                 normal: [n.x, n.y, n.z, 0.0],
             }
         })
@@ -202,15 +232,20 @@ fn alpha_samples(png: &[u8]) -> [[f32; 2]; 2] {
     [sample(false), sample(true)]
 }
 
-struct Fixture {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    materials: wgpu::BindGroup,
-    material_layout: wgpu::BindGroupLayout,
+pub(in crate::render::trace) struct Fixture {
+    pub(in crate::render::trace) device: wgpu::Device,
+    pub(in crate::render::trace) queue: wgpu::Queue,
+    pub(in crate::render::trace) materials: wgpu::BindGroup,
+    pub(in crate::render::trace) material_layout: wgpu::BindGroupLayout,
     layout: wgpu::BindGroupLayout,
+    dynamic: super::super::dynamic::DynamicGpu,
+    empty_pages: wgpu::Buffer,
 }
 impl Fixture {
-    fn new(catalog: &Catalog) -> Self {
+    pub(in crate::render::trace) fn new(catalog: &Catalog) -> Self {
+        Self::new_with_features(catalog, wgpu::Features::empty())
+    }
+    fn new_with_features(catalog: &Catalog, features: wgpu::Features) -> Self {
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
         let limits = render::material::resources::required_limits(
@@ -220,6 +255,7 @@ impl Fixture {
         .unwrap();
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             required_limits: limits,
+            required_features: features,
             ..Default::default()
         }))
         .unwrap();
@@ -232,7 +268,7 @@ impl Fixture {
         .unwrap();
         let material_layout = pipeline.get_bind_group_layout(1);
         let entries = (0..3)
-            .chain(std::iter::once(10))
+            .chain(10..15)
             .map(|binding| wgpu::BindGroupLayoutEntry {
                 binding,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -252,13 +288,27 @@ impl Fixture {
             label: Some("production transport fixture inputs"),
             entries: &entries,
         });
+        let dynamic = super::super::dynamic::DynamicGpu::new(&device);
+        let empty_pages = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("real empty LOD page headers"),
+            contents: bytemuck::cast_slice(&[0u32; 8]),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
         Self {
+            dynamic,
+            empty_pages,
             device,
             queue,
             materials,
             material_layout,
             layout,
         }
+    }
+    fn append_empty_pages<'a>(&'a self, entries: &mut Vec<wgpu::BindGroupEntry<'a>>) {
+        entries.extend((11..15).map(|binding| wgpu::BindGroupEntry {
+            binding,
+            resource: self.empty_pages.as_entire_binding(),
+        }));
     }
     fn run(
         &self,
@@ -280,17 +330,23 @@ impl Fixture {
         keys: Vec<crate::world::ChunkKey>,
     ) -> Vec<[f32; 4]> {
         let mut chunks = vec![Arc::new(Chunk {
+            water: None,
+            coarse_water: None,
+
             triangles,
             key: None,
         })];
         chunks.extend(keys.into_iter().map(|key| {
             Arc::new(Chunk {
+                water: None,
+                coarse_water: None,
+
                 key: Some(key),
                 triangles: vec![],
             })
         }));
         let scene = Scene::build(chunks);
-        let mut frame = vec![0.0f32; 72];
+        let mut frame = vec![0.0f32; 76];
         frame[36..40].copy_from_slice(&[0.0, 1.0, 0.0, f32::from(mode == 4)]);
         if matches!(mode, 7 | 8 | 17 | 18) {
             frame[36..40].copy_from_slice(&[0.0, 0.0, 1.0, 1.0]);
@@ -330,7 +386,7 @@ impl Fixture {
             wgpu::BufferUsages::STORAGE,
         );
         let buffers = [&uniform, &nodes, &triangles, &coverage];
-        let entries = buffers
+        let mut entries = buffers
             .iter()
             .enumerate()
             .map(|(binding, buffer)| wgpu::BindGroupEntry {
@@ -338,6 +394,7 @@ impl Fixture {
                 resource: buffer.as_entire_binding(),
             })
             .collect::<Vec<_>>();
+        self.append_empty_pages(&mut entries);
         let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.layout,
@@ -349,8 +406,12 @@ impl Fixture {
             &source(bounces),
             width,
             1,
-            &[&group, &self.materials],
-            &[Some(&self.layout), Some(&self.material_layout)],
+            &[&group, &self.materials, &self.dynamic.group],
+            &[
+                Some(&self.layout),
+                Some(&self.material_layout),
+                Some(&self.dynamic.layout),
+            ],
         )
     }
 }
@@ -500,3 +561,38 @@ mod secondary_air;
 
 #[path = "transport/traversal.rs"]
 mod traversal;
+
+pub(in crate::render::trace) mod water_paths;
+
+mod full_scene;
+
+#[test]
+fn gpu_zero_solar_lobes_skip_queries_but_preserve_emission_and_botanical_transmission() {
+    let fixture = Fixture::new(&Catalog::builtins());
+    let reference = fixture.run(vec![], 24, 0.0, 12, 20);
+    let optimized = fixture.run(vec![], 25, 0.0, 12, 20);
+    for (index, (old, new)) in reference.iter().zip(&optimized).enumerate() {
+        assert_eq!(
+            old[..3],
+            new[..3],
+            "direct/emissive radiance changed at case{index}"
+        );
+        assert_eq!(old[3], 1.0);
+        let skipped = index / 5 < 3 && index % 5 <= 2;
+        assert_eq!(
+            new[3],
+            if skipped { 0.0 } else { 1.0 },
+            "wrong query gate at case{index}"
+        );
+        if skipped {
+            assert_eq!(new[..3], [0.07, 0.03, 0.01]);
+        }
+    }
+    assert!(
+        optimized[15][0] > 0.07,
+        "backlit botanical transmission must remain"
+    );
+}
+
+#[path = "transport/guide_query.rs"]
+mod guide_query;

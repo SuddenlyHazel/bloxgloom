@@ -1,5 +1,5 @@
 struct RayNode {low:vec3f,first:u32,high:vec3f,count:u32,escape:u32,pad0:u32,pad1:u32,pad2:u32};
-struct RayTriangle {a:vec4f,b:vec4f,c:vec4f,uv_ab:vec4f,uv_c:vec4f,normal:vec4f};
+struct RayTriangle {a:vec4f,b:vec4f,c:vec4f,uv_ab:vec4f,uv_c:vec2f,surface_color:u32,surface_flags:u32,normal:vec4f};
 struct RayHit {distance:f32,triangle:u32,uv:vec2f,normal:vec3f};
 @group(0) @binding(1) var<storage,read> ray_nodes:array<RayNode>;
 @group(0) @binding(2) var<storage,read> ray_triangles:array<RayTriangle>;
@@ -23,11 +23,11 @@ fn ray_box(origin:vec3f,inverse:vec3f,node:RayNode,limit:f32)->bool {
 }
 // One accepted triangle path shared by the reference and near-first walks.
 // Smaller triangle IDs win exact ties, matching contiguous stackless DFS order.
-fn ray_triangle_hit(origin:vec3f,direction:vec3f,limit:f32,i:u32,current:RayHit)->RayHit {
-    let t=ray_triangles[i];var flags=0u;
+fn ray_test_triangle(origin:vec3f,direction:vec3f,limit:f32,i:u32,current:RayHit,t:RayTriangle)->RayHit {
+    var flags=0u;
     if !RAY_MATERIAL_FAST {flags=ray_materials[u32(t.a.w)].flags;}
     var a=t.a.xyz;var b=t.b.xyz;var c=t.c.xyz;
-    if ray_frame.parameters.y<0.5 {
+    if ray_frame.parameters.y<0.5 && (t.surface_flags&16u)==0u {
         if RAY_MATERIAL_FAST {flags=ray_materials[u32(t.a.w)].flags;}
         a=ray_wind(a,t.normal.xyz,t.uv_ab.xy,flags);
         b=ray_wind(b,t.normal.xyz,t.uv_ab.zw,flags);
@@ -43,11 +43,22 @@ fn ray_triangle_hit(origin:vec3f,direction:vec3f,limit:f32,i:u32,current:RayHit)
     let distance=dot(e2,q)*inverse_det;
     if distance<=0.003||distance>=limit||distance>current.distance {return current;}
     if distance==current.distance&&i>=current.triangle {return current;}
+    if (t.surface_flags&1u)!=0u {
+        let cell=vec3i(floor((origin+direction*distance-t.normal.xyz*0.002)/16.0));
+        if ray_loaded_cell(cell) {return current;}
+    }
     let uv=t.uv_ab.xy*(1.0-u-v)+t.uv_ab.zw*u+t.uv_c.xy*v;
-    if t.c.w>0.5 && textureSampleLevel(ray_albedo,ray_sampler,uv,i32(ray_materials[u32(t.a.w)].layer),0.0).a<0.5 {return current;}
+    if t.c.w>0.5 && ((t.surface_flags&1u)==0u||(t.surface_flags&8u)!=0u) && textureSampleLevel(ray_albedo,ray_sampler,uv,i32(ray_materials[u32(t.a.w)].layer),0.0).a<0.5 {return current;}
     var normal=normalize(cross(e1,e2));
     if dot(normal,direction)>0.0 {normal=-normal;}
     return RayHit(distance,i,uv,normal);
+}
+fn ray_triangle_hit(origin:vec3f,direction:vec3f,limit:f32,i:u32,current:RayHit)->RayHit {
+    return ray_test_triangle(origin,direction,limit,i,current,ray_triangles[i]);
+}
+fn ray_triangle_at(id:u32)->RayTriangle {
+    if (id&0xf0000000u)!=0u {return ray_lod_triangle(id);}
+    return ray_triangles[id];
 }
 fn ray_cast_stackless(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
     var hit=RayHit(limit,0xffffffffu,vec2f(0.0),vec3f(0.0));
@@ -111,9 +122,17 @@ fn ray_cast_near_first(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
     }
     return hit;
 }
+fn ray_cast_static(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
+    var hit=RayHit(limit,0xffffffffu,vec2f(0.0),vec3f(0.0));
+    if RAY_NEAR_FIRST {hit=ray_cast_near_first(origin,direction,limit);}
+    else {hit=ray_cast_stackless(origin,direction,limit);}
+    return ray_lod_cast(origin,direction,limit,hit);
+}
 fn ray_cast(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
-    if RAY_NEAR_FIRST {return ray_cast_near_first(origin,direction,limit);}
-    return ray_cast_stackless(origin,direction,limit);
+    return dynamic_ray_cast(origin,direction,limit,ray_cast_static(origin,direction,limit));
+}
+fn ray_cast_primary(origin:vec3f,direction:vec3f,limit:f32)->RayHit {
+    return dynamic_ray_cast_primary(origin,direction,limit,ray_cast_static(origin,direction,limit));
 }
 
 // Visibility only: an accepted nonbotanical hit anywhere on the finite sun
@@ -129,7 +148,7 @@ fn ray_any_opaque(origin:vec3f,direction:vec3f,limit:f32)->bool {
         if node.count==0u {index++;continue;}
         for(var i=node.first;i<node.first+node.count;i++) {
             let t=ray_triangles[i];let metadata=ray_materials[u32(t.a.w)];
-            if (metadata.flags&64u)!=0u {continue;}
+            if (metadata.flags&64u)!=0u || (t.surface_flags&2u)!=0u {continue;}
             // Only botanicals deform, so this opaque subset needs no wind.
             let e1=t.b.xyz-t.a.xyz;let e2=t.c.xyz-t.a.xyz;
             let p=cross(direction,e2);let determinant=dot(e1,p);
@@ -142,10 +161,10 @@ fn ray_any_opaque(origin:vec3f,direction:vec3f,limit:f32)->bool {
             let distance=dot(e2,q)*inverse_det;
             if distance<=0.003||distance>=limit {continue;}
             let uv=t.uv_ab.xy*(1.0-u-v)+t.uv_ab.zw*u+t.uv_c.xy*v;
-            if t.c.w>0.5 && textureSampleLevel(ray_albedo,ray_sampler,uv,i32(metadata.layer),0.0).a<0.5 {continue;}
+            if t.c.w>0.5 && ((t.surface_flags&1u)==0u||(t.surface_flags&8u)!=0u) && textureSampleLevel(ray_albedo,ray_sampler,uv,i32(metadata.layer),0.0).a<0.5 {continue;}
             return true;
         }
         index=node.escape;
     }
-    return false;
+    return ray_lod_any_opaque(origin,direction,limit);
 }

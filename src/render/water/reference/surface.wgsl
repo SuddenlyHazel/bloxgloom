@@ -29,7 +29,7 @@ fn bg_reference_water_surface(normal:vec3f,sky:f32,glow:f32,world:vec3f,relative
     let view=-relative/max(length(relative),0.00001);
     let frame=bg_bsl_reference_frame();
     let base=pow(vec3f(64.0,160.0,255.0)*(0.35/255.0),vec3f(2.0))*0.1225;
-    let diffuse=bg_bsl_default_surface(base,n,view,vec2f(glow,sky),1.0,1.0,0.0,shadow,frame);
+    let diffuse=bg_bsl_default_surface(base,n,view,bg_bsl_reference_relative_lightmap(vec2f(glow,sky),relative),1.0,1.0,0.0,shadow,frame);
     let eye_water=water_reference.properties.y;
     let fresnel=(pow(clamp(1.0-dot(n,view),0.0,1.0),5.0)*0.98+0.02)*max(1.0-eye_water*0.5,0.5);
     let alpha=mix(0.7,1.0,fresnel);
@@ -37,7 +37,7 @@ fn bg_reference_water_surface(normal:vec3f,sky:f32,glow:f32,world:vec3f,relative
     let screen_reflection=bg_water_source_reflection(world,n);
     var environment=bg_bsl_sky_default(reflected,water_reference.sky.sun.xyz,water_reference.sky.sun_radiance.w,water_reference.sky.climate.x,water_reference.sky.climate.y);
     if water_reference.properties.x>0.5 {
-        let cloud=bg_reference_cloud_integrate(world,reflected,pixel,water_reference.sky);
+        let cloud=bg_reference_cloud_integrate_case(world,reflected,pixel,water_reference.sky,water_reference.sky.eye.y,true);
         environment=environment*cloud.a+cloud.rgb;
     }
     environment*=sky*sky*clamp(1.0-eye_water,0.0,1.0);

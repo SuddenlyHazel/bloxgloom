@@ -25,9 +25,13 @@ pub(super) fn palettes(catalog: &Catalog) -> String {
 
 pub(super) fn shader(catalog: &Catalog) -> String {
     super::motion::shader(
-        super::super::daylight::shader(
-            &include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes(catalog)),
-        ),
+        super::super::daylight::shader(&format!(
+            "{}\n{}\n{}\n{}",
+            crate::render::trace::dynamic::DEFORMATION_SHADER,
+            crate::render::trace::dynamic::MATERIAL_SHADER,
+            super::SHADING_SHADER,
+            include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes(catalog))
+        )),
         1,
     )
 }

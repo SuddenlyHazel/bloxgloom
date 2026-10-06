@@ -8,6 +8,7 @@ pub(crate) struct Mesh {
     pub key: TileKey,
     pub revision: u64,
     pub loading: Option<crate::lod::loading::ClientTrace>,
+    pub(crate) ray: Option<std::sync::Arc<crate::render::trace::scene::Chunk>>,
     pub(super) vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub water_indices: Vec<u32>,
@@ -40,6 +41,7 @@ pub(crate) fn mesh(
         key: tile.key,
         revision: tile.revision,
         loading: None,
+        ray: None,
         vertices: vec![],
         indices: vec![],
         water_indices: vec![],
@@ -264,6 +266,9 @@ pub(crate) fn mesh(
         }
     }
     m.bounds = m.bounds();
+    if super::ray::requested() {
+        m.ray = Some(super::ray::extract_tile(&m, tile, catalog)?);
+    }
     Ok(m)
 }
 // The outside column's top occluder divides outdoor cliff walls from faces

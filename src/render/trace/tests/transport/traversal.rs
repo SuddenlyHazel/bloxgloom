@@ -39,7 +39,7 @@ fn node(first: u32, count: u32, escape: u32, near: f32) -> Node {
     }
 }
 fn run(f: &Fixture, scene: &Scene, seconds: f32, predeformed: bool) -> Vec<[f32; 4]> {
-    let mut frame = [0f32; 72];
+    let mut frame = [0f32; 76];
     frame[35] = seconds;
     frame[61] = f32::from(predeformed);
     frame[68] = f32::from_bits(scene.nodes.len() as u32);
@@ -60,9 +60,9 @@ fn run(f: &Fixture, scene: &Scene, seconds: f32, predeformed: bool) -> Vec<[f32;
         bytemuck::cast_slice(&scene.triangles),
         wgpu::BufferUsages::STORAGE,
     );
-    let coverage = buffer(&[0u8; 4], wgpu::BufferUsages::STORAGE);
+    let coverage = buffer(&[0u8; 48], wgpu::BufferUsages::STORAGE);
     let buffers = [&uniform, &nodes, &triangles, &coverage];
-    let entries = buffers
+    let mut entries = buffers
         .iter()
         .enumerate()
         .map(|(i, b)| wgpu::BindGroupEntry {
@@ -70,6 +70,7 @@ fn run(f: &Fixture, scene: &Scene, seconds: f32, predeformed: bool) -> Vec<[f32;
             resource: b.as_entire_binding(),
         })
         .collect::<Vec<_>>();
+    f.append_empty_pages(&mut entries);
     let group = f.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &f.layout,
@@ -81,8 +82,12 @@ fn run(f: &Fixture, scene: &Scene, seconds: f32, predeformed: bool) -> Vec<[f32;
         &shader(),
         6,
         1,
-        &[&group, &f.materials],
-        &[Some(&f.layout), Some(&f.material_layout)],
+        &[&group, &f.materials, &f.dynamic.group],
+        &[
+            Some(&f.layout),
+            Some(&f.material_layout),
+            Some(&f.dynamic.layout),
+        ],
     );
     assert!(
         result.iter().all(|v| v[2] == 0.0),
@@ -119,6 +124,8 @@ fn gpu_near_first_preserves_alpha_wind_finite_segments_ties_and_stack_overflow()
     triangles.extend(plane(-2.0, 0.0, 1.0, leaf, transparent, true));
     triangles.extend(plane(0.0, 2.0, 1.0, leaf, opaque, true));
     let scene = Scene {
+        water_offset: 0,
+
         nodes: vec![node(0, 0, 3, 0.0), node(0, 2, 2, 0.2), node(2, 4, 3, 0.0)],
         triangles,
         coverage: vec![],
@@ -144,6 +151,8 @@ fn gpu_near_first_preserves_alpha_wind_finite_segments_ties_and_stack_overflow()
     // Independently bake the leaf positions as the production compute pass
     // does, then disable per-intersection deformation. Both paths must agree.
     let mut baked = Scene {
+        water_offset: 0,
+
         nodes: scene.nodes.clone(),
         triangles: scene.triangles.clone(),
         coverage: vec![],
@@ -169,6 +178,8 @@ fn gpu_near_first_preserves_alpha_wind_finite_segments_ties_and_stack_overflow()
     let mut triangles = plane(-2.0, 2.0, 2.0, stone, [0.2; 2], false);
     triangles.extend(plane(-2.0, 2.0, 2.0, stone, [0.8; 2], false));
     let mut ties = Scene {
+        water_offset: 0,
+
         nodes: scene.nodes.clone(),
         triangles,
         coverage: vec![],
