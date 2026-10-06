@@ -55,9 +55,10 @@ fn bg_shaft_encode(radiance:vec3f,dither:f32)->vec3f {
    let world=frame.eye.xyz+relative*(distance/linear_front);
    let projected=frame.shadow*vec4f(world,1.0);
    let shadow=bg_bsl_distort_shadow(vec3f(projected.xy,projected.z*2.0-1.0),frame.options.y);
+   let comparison_depth=shadow.z+0.0512*frame.parameters.w;
    var sample=1.0;
-   if length(shadow.xy*2.0-1.0)<1.0 && shadow.z<0.5 {
-     sample=textureSampleCompareLevel(shadow_depth,shadow_sampler,vec2f(shadow.x,1.0-shadow.y),shadow.z+0.0512*frame.parameters.w);
+   if length(shadow.xy*2.0-1.0)<1.0 && comparison_depth<0.5 {
+     sample=textureSampleCompareLevel(shadow_depth,shadow_sampler,vec2f(shadow.x,1.0-shadow.y),comparison_depth);
      sample*=sample;
    }
    sum+=vec3f(sample)*bg_shaft_shadow_tint(translucent,distance,linear_front,frame.parameters.z,frame.eye.w);

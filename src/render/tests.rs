@@ -529,7 +529,9 @@ fn adjacent_leaves_use_bounded_card_clusters() {
     chunk.blocks.set(Chunk::index([4, 2, 4]).unwrap(), LEAVES);
     let mesh = mesh_chunk(&chunk);
     assert!(mesh.indices.is_empty());
-    assert_eq!(mesh.cutout_indices.len(), 36);
+    // Both boundary cells retain four crossed cards; their shared face does
+    // not add a cube wall or duplicate the cluster.
+    assert_eq!(mesh.cutout_indices.len(), 8 * 6);
 }
 
 #[test]

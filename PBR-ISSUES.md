@@ -2,6 +2,22 @@
 
 The October 5, 2026 audit compared 350 imported JG RTX materials, their source pixels, Bloxgloom's material pipeline, and the BSL reference in `external/shaders`. It found import and filtering defects as well as rendering capability gaps. Predicted visual effects below require gameplay verification.
 
+## Current goal status — October 6, 2026
+
+The separate BSL reference mode targets the checked-in default. The enhanced renderer remains the normal game mode. The goal remains active; implementation, visual acceptance and matched-runtime parity are separate checks.
+
+| Area | Current implementation and remaining acceptance |
+| --- | --- |
+| World composition | Generator 8 supplies regional terrain, coasts, drainage, tree species/shapes and vegetation patches. Distant-tree proxies are being integrated to fix floating cuboids caused by expanding single tree voxels across coarse cells. |
+| Texture artwork | The earlier 91 height-map changes alter only height channels. Later authorized art work also changes three bark albedos, 55 botanical smoothness channels and three icons, and appends nine bark-only wood icons. These later changes are not height-only. Source pack files remain untouched. |
+| Foliage | Oblique leaf clusters, rooted runtime wind and species-aware bounded thin-sheet optics are implemented. Increased geometry cost and whole-scene appearance require final acceptance. |
+| Global illumination | Opt-in scene path tracing supports multiple surface bounces and air/cloud scattering. Exact material and stationary-BVH optimizations pass GPU transport checks. Quarter-size transport still costs approximately 115 ms/frame on the M1 Pro in short controls; it is unsuitable as the default gameplay renderer. |
+| Off-screen reflections | Loaded chunk geometry participates in traced reflection paths. Missing coverage remains conservative; actors, pickups, fluids and distant proxy geometry are not included in the ray BVH. |
+| Sky and clouds | Enhanced 3D volumetric clouds and source-based sky are implemented. Reference mode separately implements the default source cloud, fog, bloom/display, shadow, water, flare and shaft equations. Ambient sky orientation is being corrected after independent quadrature found vertical-face illumination underestimated by 2.2–4.3 times. |
+| BSL styling/parity | Default and explicitly non-default advanced reference modes are separate. Source equations have independent CPU/GPU checks, including artistic metal treatment. Exact whole-frame parity is **not established**: no matched Minecraft/Iris scene/frame is available, and runtime filtering, lightmap, projection and material classifications differ. See [BSL_REFERENCE_AUDIT.md](BSL_REFERENCE_AUDIT.md). |
+
+The renderer checkpoint is committed as `281208c`. A complete check of its earlier compiled snapshot passed 2,006 tests and failed 13, with 18 ignored. The fixed shader syntax, stale foliage count, generation fingerprint and lighting-dependent rendering fixtures are being validated; this is not a passing final-suite claim. Final images, 300-frame benchmarks and checks will be recorded after the current integration freezes.
+
 ## Work and approval sequence
 
 1. Complete and committed: corrected normal orientation, source material encoding, and categorical material filtering, with automated checks and performance comparisons.

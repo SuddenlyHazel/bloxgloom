@@ -166,10 +166,61 @@ fn gpu_source_default_shafts_actual_depth_tint_encoding_and_lifecycle() {
             let expected = oracle(light, weights);
             for (actual, expected) in actual[..3].iter().zip(expected) {
                 assert!(
-                    (f64::from(*actual) - expected).abs() < 0.002,
+                    (f64::from(*actual) - expected).abs() < 0.0002 + expected * 0.001,
                     "case{index}: {actual} vs{expected}"
                 );
             }
+        }
+        // Source validity includes the positive comparison-depth offset. At
+        // compressed Z=.49998 its default offset crosses .5, so the exact
+        // source out-of-map value is white even with a black depth attachment.
+        shafts.medium(false);
+        let input = shafts.input.as_mut().unwrap();
+        input.data[26] = 0.0;
+        input.data[30] = 0.4999;
+        let mut encoder = device.create_command_encoder(&Default::default());
+        clear(&mut encoder, &scene, [0.0; 3], 1.0, Some((&opaque, 1.0)));
+        clear(&mut encoder, &metadata, [0.0; 3], 0.0, Some((&front, 1.0)));
+        clear(
+            &mut encoder,
+            &shafts.scratch,
+            [0.0; 3],
+            1.0,
+            Some((&shadow, 0.0)),
+        );
+        shafts.encode(
+            &device,
+            &queue,
+            &mut encoder,
+            &scene,
+            Some(&front),
+            &metadata,
+            true,
+        );
+        let actual = read_color(&device, &queue, encoder, &scene);
+        for (actual, expected) in actual[..3].iter().zip(oracle(light, [7.0; 3])) {
+            assert!((f64::from(*actual) - expected).abs() < 0.0002 + expected * 0.001);
+        }
+        // Explicitly absent map/noise bypasses preserve existing scene radiance;
+        // source out-of-map fallback is not permission to use a stale whole map.
+        for missing_noise in [false, true] {
+            shafts.gpu.noise.available = !missing_noise;
+            shafts.input.as_mut().unwrap().enabled = missing_noise;
+            let mut encoder = device.create_command_encoder(&Default::default());
+            clear(&mut encoder, &scene, [0.25, 0.5, 1.0], 1.0, None);
+            shafts.encode(
+                &device,
+                &queue,
+                &mut encoder,
+                &scene,
+                Some(&front),
+                &metadata,
+                true,
+            );
+            assert_eq!(
+                read_color(&device, &queue, encoder, &scene),
+                [0.25, 0.5, 1.0, 1.0]
+            );
         }
         // Submission is the only history clock, and resize/discard cannot retain
         // a previously recorded world's shadow/opaque-depth views.
