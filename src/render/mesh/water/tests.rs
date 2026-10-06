@@ -11,24 +11,65 @@ fn mesh(chunk: &Chunk, known: &HashMap<ChunkKey, Arc<Chunk>>) -> ChunkMesh {
     super::super::mesh_chunk_with_catalog(chunk, None, 0, content::catalog(), known)
 }
 #[test]
-fn full_water_chunk_is_six_greedy_faces_and_authoritative_neighbors_hide_seams() {
+fn fluid_frontier_keeps_caps_and_known_air_proves_six_greedy_faces() {
     let key = ChunkKey { x: -1, y: 1, z: 0 };
     let water = chunk(key, WATER);
     let isolated = mesh(&water, &Default::default());
     assert!(isolated.indices.is_empty() && isolated.cutout_indices.is_empty());
-    assert_eq!(isolated.water_indices.len(), 36);
-    assert_eq!(isolated.water_vertices.len(), 24 * FLOATS);
+    assert_eq!(isolated.water_indices.len(), 12);
+    assert_eq!(isolated.water_vertices.len(), 8 * FLOATS);
+    assert!(
+        isolated
+            .water_vertices
+            .chunks_exact(FLOATS)
+            .all(|v| v[4].abs() == 1.0),
+        "unknown lateral edges must not invent translucent shore walls"
+    );
+    let air_keys = [
+        ChunkKey { x: -2, ..key },
+        ChunkKey { x: 0, ..key },
+        ChunkKey { y: 0, ..key },
+        ChunkKey { y: 2, ..key },
+        ChunkKey { z: -1, ..key },
+        ChunkKey { z: 1, ..key },
+    ];
+    let mut known: HashMap<_, _> = air_keys
+        .into_iter()
+        .map(|key| (key, Arc::new(chunk(key, AIR))))
+        .collect();
+    assert_eq!(mesh(&water, &known).water_indices.len(), 36);
     let right = chunk(ChunkKey { x: 0, ..key }, WATER);
     let upper = chunk(ChunkKey { y: 2, ..key }, WATER);
-    let known = HashMap::from([(right.key, Arc::new(right)), (upper.key, Arc::new(upper))]);
+    known.insert(right.key, Arc::new(right));
+    known.insert(upper.key, Arc::new(upper));
     assert_eq!(mesh(&water, &known).water_indices.len(), 24);
-    // Missing neighbors remain exposed. No procedural terrain may hide them.
+    // Having only the current snapshot never certifies an exterior shoreline.
     assert_eq!(
         mesh(&water, &HashMap::from([(key, Arc::new(water.clone()))]))
             .water_indices
             .len(),
-        36
+        12
     );
+}
+
+#[test]
+fn negative_seam_wall_appears_only_after_air_snapshot_and_retires_after_water() {
+    let key = ChunkKey { x: -1, y: 1, z: 0 };
+    let mut water = chunk(key, AIR);
+    water.blocks.set(Chunk::index([15, 3, 3]).unwrap(), WATER);
+    let mut known = HashMap::new();
+    assert_eq!(mesh(&water, &known).water_indices.len(), 30);
+    let mut neighbor = chunk(ChunkKey { x: 0, ..key }, AIR);
+    known.insert(neighbor.key, Arc::new(neighbor.clone()));
+    assert_eq!(mesh(&water, &known).water_indices.len(), 36);
+    neighbor.blocks.set(Chunk::index([0, 3, 3]).unwrap(), WATER);
+    known.insert(neighbor.key, Arc::new(neighbor.clone()));
+    assert_eq!(mesh(&water, &known).water_indices.len(), 30);
+    neighbor.blocks.set(Chunk::index([0, 3, 3]).unwrap(), STONE);
+    known.insert(neighbor.key, Arc::new(neighbor));
+    assert_eq!(mesh(&water, &known).water_indices.len(), 30);
+    known.clear();
+    assert_eq!(mesh(&water, &known).water_indices.len(), 30);
 }
 #[test]
 fn water_keeps_riverbed_visible_and_hides_submerged_internal_faces() {

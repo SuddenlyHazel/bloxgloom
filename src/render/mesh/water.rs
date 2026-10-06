@@ -1,4 +1,4 @@
-//! Greedy fluid boundaries. Only authoritative neighbor snapshots hide a seam.
+//! Greedy fluid boundaries. Unknown lateral residency edges are not shorelines.
 use super::{Catalog, Chunk, ChunkKey, ChunkMesh, LightField, LightSample, content, world};
 use std::{collections::HashMap, sync::Arc};
 pub(crate) const FLOATS: usize = 12;
@@ -58,6 +58,13 @@ pub(super) fn append(
                                 _ => None,
                             }
                         };
+                        // A missing horizontal snapshot does not prove an air
+                        // boundary. Drawing its full-depth wall darkens distant
+                        // water behind the residency edge. Keep vertical caps
+                        // until their authoritative neighbors can hide them.
+                        if axis != 1 && adjacent.is_none() {
+                            continue;
+                        }
                         if adjacent.is_some_and(|id| {
                             catalog.block_flags(id) & (content::FLUID | content::OPAQUE) != 0
                         }) {
