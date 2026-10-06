@@ -37,7 +37,7 @@ Exposed botanical leaf faces now use inset, tilted cards while retaining interio
 
 This import adds source-backed cube, leaf, and plant materials. It does not imply Minecraft-specific mechanics, stair/slab geometry, animated water, ore crafting recipes, or new custom entity models.
 
-Conversion regressions can be run with `uv run --with pillow --with numpy python -m unittest discover -s tools/jg_rtx -p 'test_*.py'`. The runtime also checks actual imported ore categories, independently audited source normal/roughness pixels, and linear-light albedo mips, plus GPU category sampling at fractional mip levels and repeating UVs when an adapter is available. The corrected material catalog uses the default `world-v31/` save directory; existing local test worlds are not upgraded.
+Conversion regressions can be run with `uv run --with pillow --with numpy python -m unittest discover -s tools/jg_rtx -p 'test_*.py'`. The runtime also checks actual imported ore categories, independently audited source normal/roughness pixels, and linear-light albedo mips, plus GPU category sampling at fractional mip levels and repeating UVs when an adapter is available. The corrected material catalog uses the default `world-v32/` save directory; existing local test worlds are not upgraded.
 
 ## Available content and generation
 
@@ -71,4 +71,10 @@ The final `cargo test --quiet -- --test-threads=4` run passed **1,893 tests**, w
 
 ## Celestial artwork
 
-The Java pack’s `sun.png` and eight-phase `moon_phases.png` are imported unchanged into `assets/textures/environment/`. [environment.json](environment.json) records their exact upstream revision, source paths, hashes, license and row-major4×2 phase layout. Reproduce with `python3 tools/jg_rtx/environment.py /path/to/jg-rtx`. Runtime sampling decodes sRGB, indexes lunar phase from authoritative world days and applies the sky’s volumetric cloud transmittance. These images share the artwork attribution/license above; they do not add block IDs.
+The Java pack’s `sun.png` and eight-phase `moon_phases.png` are imported unchanged into `assets/textures/environment/`. [environment.json](environment.json) records their exact upstream revision, source paths, hashes, license and row-major 4×2 phase layout. Reproduce with `python3 tools/jg_rtx/environment.py /path/to/jg-rtx`. Runtime sampling decodes sRGB, indexes lunar phase from authoritative world days and applies the sky’s volumetric cloud transmittance. These images share the artwork attribution/license above; they do not add block IDs.
+
+## Botanical optical interpretation
+
+Canonical Bedrock MERS alpha is subsurface scattering strength. It is retained in the converted LabPBR data; it is not a measured probability of transmitting sunlight through an entire leaf sheet. Enhanced raster backlighting and scene transport share `src/render/material/foliage_optics.wgsl`: source strength allocates reflected/transmitted diffuse lobes, while a separate thin optical path uses Beer–Lambert spectral absorption. Reflected plus transmitted energy stays at or below one per channel before Fresnel allocation. Visibility and sky gating remain independent, so this material model adds neither emission nor exterior light to sealed caves.
+
+Runtime metadata uses presentation thickness coefficients of 0.20 for cherry/petals, 0.35 for other broad leaves, 0.40 for acacia, 0.55 for jungle/mangrove, 0.65 for spruce, and 0.25 for small plants. These are explicit bounded visual calibrations, not measured species optical constants or changes to the source artwork. Metadata bits 27–31 carry the quantized path coefficient; logical texture IDs and auxiliary sampling bits 24–26 remain unchanged. This avoids repeatedly multiplying opaque pink diffuse reflectance into every transmitted shadow/path segment, which previously made cherry canopies unnaturally dark and rusty.
