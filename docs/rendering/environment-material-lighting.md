@@ -1,5 +1,7 @@
 # Shared environment and material lighting
 
+> Updated October 5, 2026: the coordinated JG RTX renderer pass now uses GGX environment convolution, integrated BRDF response, and screen-space reflections for visible geometry, with shadowed atmospheric scattering and revised HDR display mapping. The earlier checkpoints below record the previous analytic-only implementation. See `PBR-ISSUES.md` at repository root for current validation, controls, and limits.
+
 This pass connects the procedural atmosphere to surface illumination without
 changing exposure. The clear-noon diffuse calibration is retained. Low-angle sun
 light becomes warm and fades below the horizon; diffuse hemispheres follow the

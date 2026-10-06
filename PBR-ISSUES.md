@@ -8,7 +8,7 @@ The October 5, 2026 audit compared 350 imported JG RTX materials, their source p
 2. The user completed the live test and approved continuing on October 5, 2026, reporting a modest improvement but unsatisfactory overall appearance.
 3. Complete: corrected roughness conversion and albedo color-space handling, reimported assets, and validated source pixels and runtime filtering. The user reported unsatisfactory cherry bark appearance after stage 2; the follow-up investigation is recorded below. Broader visual acceptance remains pending.
 
-Height reconstruction, parallax self-shadowing, and scene reflections are documented here but are outside the two authorized implementation stages.
+The user subsequently authorized a coordinated renderer upgrade, including height reconstruction, parallax self-shadowing, scene reflections, atmospheric scattering, and image treatment. Its implementation and validation are recorded below. The earlier two-stage limits describe the historical work, not the current authorized scope.
 
 ## Normal orientation
 
@@ -54,11 +54,11 @@ Importer albedo resizing and grass/sunflower source-over compositing now operate
 
 References: `src/render/material/color.rs`, `src/render/material.rs`, `tools/jg_rtx/color.py`, `src/render/pipeline.rs`.
 
-## Rendering capabilities outside this fix
+## Rendering capabilities identified before this upgrade
 
-Only 18 of the 350 imported normal maps contained variable height. Most materials therefore have no parallax relief even with parallax enabled. This is primarily absent source height data, rather than discarded imported height. Bedrock conversions without authored height also use flat AO and height; reconstruction from normals is a separate quality improvement.
+At the initial audit, only 18 of the 350 imported normal maps contained variable height. Most materials therefore had no parallax relief even with parallax enabled. This was primarily absent source height data, rather than discarded imported height. Bedrock conversions without authored height also used flat AO and height. The coordinated upgrade below adds confidence-gated height reconstruction and restores two declared maps.
 
-Bloxgloom currently offsets texture coordinates without height self-shadowing. Its specular environment uses an analytic sky and approximate local transport rather than reflecting scene geometry. BSL has parallax self-shadowing and screen-space scene reflections when advanced materials are enabled. Its checked-in default disables advanced materials, so those features must not be assumed active in every BSL screenshot.
+Bloxgloom previously offset texture coordinates without height self-shadowing. Its specular environment used an analytic sky and approximate local transport without reflecting scene geometry. Both capabilities are implemented in the coordinated upgrade below. BSL has parallax self-shadowing and screen-space scene reflections when advanced materials are enabled. Its checked-in default disables advanced materials, so those features must not be assumed active in every BSL screenshot.
 
 References: `src/render/material/parallax.wgsl`, `companions.wgsl`, BSL `lib/surface/parallax.glsl`, `program/deferred1.glsl`, and `lib/settings.glsl`.
 
@@ -116,7 +116,7 @@ Matched noon captures before/after the sky correction were inspected. The blue/g
 
 Follow-up validation includes all 26 material tests with the Metal adapter, all 20 existing preview tests, and both daylight calibration checks with the normally ignored GPU test explicitly enabled. Formatting, all-target/all-feature clippy with warnings denied, the release build, and all eight Python conversion regressions pass. The final full suite passed 1,903 tests, with zero failures and 14 ignored; the ignored daylight GPU regression was also run explicitly and passed. Sealed-cave, lamp, bounced-lamp, and pond captures were inspected after the shared sky change: the cave remains dark, local illumination remains warm, and the water surface still renders its sky reflection.
 
-The original gameplay-scene cherry preview was regenerated after the sky correction as an additional comparison to the user-confirmed reproduction. The remaining mottled bark is a source-art limitation, not evidence of a swapped normal or metallic wood encoding.
+The original gameplay-scene cherry preview was regenerated after the sky correction as an additional comparison to the user-confirmed reproduction. The remaining mottling belongs to the source albedo, but these captures do not establish that the artwork is the cause of the unsatisfactory overall result. An albedo-only preview is not a reference for the appearance of the complete shader/material system. The subsequent renderer upgrade preserves the artwork and addresses lighting, display mapping, relief, reflections, and filtering together.
 
 
 ### Follow-up performance measurements
@@ -134,3 +134,69 @@ Commands and capture conditions match the stage 1 benchmark above (Apple M1 Pro/
 | GPU steady p95 milliseconds | 5.450 | 7.888 | 6.130 | 8.913 |
 
 Median GPU differences are approximately 0.3 percent and 0.6 percent, within single-run variability. An initial voxel after run measured CPU p50/p95 3.165/7.884 ms and GPU p50/p95 4.355/10.143 ms; the repeat in the table resolved the unexpectedly high median but does not establish stable frame-tail behavior. Mesh size, GPU material-array size, and scene identities are unchanged. These measurements exclude presentation and live gameplay.
+
+
+## Coordinated renderer upgrade — October 5, 2026
+
+The accepted goal is to improve the existing JG RTX pack through the production renderer, produce matched previews and measured performance, document the remaining approximation limits, and commit a build for a live play test. Three focused subagents implemented reflections, material relief/filtering, and atmosphere/water; the main agent integrated lighting, display mapping, previews, and validation.
+
+### Implemented changes
+
+- **Shaded material readability:** the old tone-map toe subtracted almost all low radiance (`0.02` became `0.0025` before display transfer). The new hue-preserving shoulder retains proportional dark detail, black, and HDR highlight gradation. Shared sun radiance is scaled by 2.4 and the broad sky fill is modestly recalibrated; exposure remains explicit, with no automatic cave brightening. Terrain, characters, foliage, water, and atmosphere share this basis.
+- **Environment and scene reflections:** deterministic GGX sky convolution and an integrated BRDF approximation replace the three-direction roughness blend. Half-resolution SSR resolves actual visible opaque geometry for block and water receivers. Opaque lit radiance is captured after AO and before water; its mip chain carries depth-masked geometry coverage so background sky cannot illuminate a rough geometry hit. Misses keep the existing sky/local transport fallback. Water receivers store their own linear distance rather than imprecise half-float device depth. Screen/range confidence and plane/normal-aware reconstruction limit edge artifacts. Reflections resolve before foreground fire/rain, then atmosphere and temporal AA.
+- **Stable material detail:** normal mips average vector directions and transfer unresolved normal variance into roughness. Source AO/height and categorical material channels retain their independent contracts. No new material GPU arrays were added. Temporal AA is now enabled by default on supported backends; explicit `BLOXGLOOM_TAA=0` disables it. Reactive water, rain, and fire intentionally do not accumulate history.
+- **Surface relief:** eight-sample parallax self-shadowing affects direct sunlight only. Flat and alpha-cutout maps skip relief marching. The importer restores two declared source height maps and infers height for 89 structural materials using a bounded, confidence-gated periodic Poisson solve. Four inferred candidates were rejected. There are now 109/350 variable-height maps: 20 source/authored and 89 inferred. Provenance distinguishes inferred data from authored height. Albedo, normal RGB/AO, specular, icons, and content identities are unchanged; 91 normal alpha maps changed. Default parallax depth is 0.125, retaining the 0.15 safety cap.
+- **Atmosphere and water:** half-resolution, 12-step shadowed single scattering uses a stable height profile and depth-aware upsampling. It starts beyond three metres, stops at water receiver surfaces, and contributes nothing for blocked/unknown shadow volumes, disabled maps, or night. Near and distant water share sun shadows and GGX highlights, correcting glints under bridges/canopies. Rebuilt sun/local shadow bindings refresh water and LOD consumers.
+
+### Reproducible inspection
+
+`showcase-preview <directory>` captures the same cherry grove, masonry shelter, planks, ore samples, and stream in noon and early-morning lighting, with fixed bark/overview/stream cameras. `showcase-motion-preview <directory>` checks moving actors, camera motion, disocclusion, and a first-person cut. `material-preview` remains the separate unobstructed companion-map comparison. All use production GPU paths and modify no world save.
+
+The baseline executable is preserved at `/private/tmp/bloxgloom-wow/bloxgloom-before`; matched baseline/final captures are under `/private/tmp/bloxgloom-wow/before` and `/private/tmp/bloxgloom-wow/after`. Set `BLOXGLOOM_PREVIEW_CONFIG` to an explicit configuration path for a read-only capture with saved lighting/exposure/bloom/parallax. This user's saved values include exposure about 1, bloom strength 1, and parallax depth 0.07; they are preserved. At 0.07, inferred cherry bark relief is about 1.42% of a block; the new 0.125 default produces about 2.53%.
+
+### Remaining approximation limits
+
+- SSR can reflect visible opaque hits; off-screen, hidden, and beyond-range geometry retains the analytic sky/local-light fallback. It is not ray tracing or a scene probe. Materials rougher than 0.82 use fallback only; rough SSR uses one cone with HDR mip filtering, not a full distribution of geometry rays. There are no multiple reflection bounces.
+- Inferred heights are conservative normal integration, not recovered authored geometry. They cannot repair nonintegrable artwork or change cube silhouettes; confidence/depth bounds reject unsuitable fields. Relief still fades with distance, mip level, and grazing angle.
+- Atmosphere is conservative, sun-visible, single scattering within the rendered shadow volume. It does not implement full ambient volumetric transport, colored volumetric transmission, volumetric clouds, or path-traced GI. It skips GL, shadow-off, and night, preserving existing fog and sky.
+- Supported-backend temporal AA stabilizes opaque surfaces; reactive translucent shading retains current-frame detail. Categorical G/B remain base-level point sampled rather than footprint-integrated material mixtures.
+- Preset metals retain the [LabPBR specification's albedo tint](https://shaderlabs.org/wiki/LabPBR_Material_Standard). BSL's default disables `ALBEDO_METAL` and also remaps conductor Fresnel and highlight colors, so its preset is an artistic reference rather than an identical material contract. Our Schlick approximation applies preset tint to normal-incidence F0 and approaches white at grazing angles; preserving tint across the complete reflection lobe remains a refinement.
+- GPU correctness and inspected headless captures do not establish exact BSL preset parity or the user's subjective visual acceptance. The existing source artwork remains intact for the live test.
+
+### Validation and performance
+
+The full `cargo test --offline --quiet -- --test-threads=4` run passed **1,912 tests, zero failures, 14 ignored**. The normally ignored production daylight GPU calibration was explicitly enabled and passed. Two final preview-only adjustments keep the motion camera in the showcase and report the explicit capture configuration; all 20 preview tests passed after these adjustments. Release build, `cargo fmt --all -- --check`, all-target/all-feature clippy with warnings denied, and `git diff --check` passed. All ten Python conversion regressions passed. `graphify update .` refreshed the repository graph.
+
+GPU regressions exercise real geometry reflections, water receivers above an opaque floor, geometry-only rough reflection mips, black cave fallback, shadowed/lit water, disabled/stale sun maps, water-bounded atmosphere, relief self-shadowing, normal variance filtering, and HDR dark-detail retention. An independent comparison against the pre-upgrade commit confirms alpha-only changes in exactly 91 normal PNGs, with unchanged normal RGB/AO, albedos, material maps, icons, and content identities.
+
+Final production captures include six fixed showcase views, six with the user's saved configuration, six cherry material controls, 30 motion frames, four lighting fixtures, 12 daylight/sky fixtures, and three natural water scenes. Inspected comparisons show more readable shaded bark/masonry, warmer lit foliage, visible grove reflections, and relief on the close stone floor. Inspected motion frames retain clean first-person/return camera cuts; dark and lamp-lit caves retain their distinct lighting. The fixture's simple tree shapes and flat ground remain diagnostic geometry, not a claim that world composition has been redesigned. The user still judges the live appearance.
+
+Local comparison artifacts (left before, right final; original rendered pixels, matched cameras):
+
+- [Cherry bark](/private/tmp/bloxgloom-wow/comparison-bark.png)
+- [Early-morning grove and stream](/private/tmp/bloxgloom-wow/comparison-grove.png)
+- [Close stream reflections](/private/tmp/bloxgloom-wow/comparison-stream.png)
+- [Motion/camera-cut contact sheet](/private/tmp/bloxgloom-wow/motion-contact-sheet.png)
+- [Cherry bark with the user's saved settings](/private/tmp/bloxgloom-wow/after/live-settings/noon-bark.png)
+
+The images and logs are local temporary artifacts; the documented commands regenerate them. The baseline binary contains commit `9aef20d` plus the same fixed showcase geometry, with the previous renderer and embedded assets. Baseline and final stills both request temporal AA; final saved-settings captures separately use the user's configuration. Gameplay settings and saves were not rewritten.
+
+Isolated release benchmarks use Apple M1 Pro/Metal, seed `0xB10C6100`, radius 6, 1280×720, medium sun shadows, and 300 steady frames. The following paired runs have AA off, using `perf 300 6` and `perf 300 6 bounced`. Heavy validation/capture jobs had finished before the final timing runs. Setup, mesh size, submit-side CPU time, and timestamped GPU work are reported separately.
+
+| Measurement | Voxel before | Voxel final | Bounced before | Bounced final |
+| --- | ---: | ---: | ---: | ---: |
+| Scene setup milliseconds | 3737.8 | 3628.4 | 4084.3 | 4074.5 |
+| Visible triangles | 92,028 | 92,028 | 96,340 | 96,340 |
+| Mesh bytes | 22,891,800 | 22,891,800 | 23,842,728 | 23,842,728 |
+| CPU steady p50 milliseconds | 3.102 | 5.912 | 2.605 | 5.953 |
+| CPU steady p95 milliseconds | 4.687 | 9.157 | 5.178 | 10.303 |
+| GPU steady p50 milliseconds | 3.989 | 6.010 | 4.049 | 6.019 |
+| GPU steady p95 milliseconds | 6.901 | 7.096 | 8.413 | 7.814 |
+
+A separate voxel comparison with **AA on in both binaries** measured GPU p50/p95 **4.364/4.767 → 6.483/6.915 ms** and CPU p50/p95 **4.135/5.261 → 6.423/8.640 ms**. Setup was 3644.6 → 3645.5 ms; triangle/mesh counts remained identical. Final gameplay enables AA by default, while the benchmark preserves its existing explicit opt-in.
+
+The coordinated effects add approximately **2.0–2.1 ms median GPU time** (about 49–51% over the previous renderer at equal AA settings). This is a measured quality/cost tradeoff, not a speedup. Submit-side CPU time also increases; it includes command encoding and queue submission and is not a measurement of pure CPU computation. Single-run tails vary, and the benchmark excludes presentation, server work, and live gameplay; these results are not a promised game FPS.
+
+SSR adds approximately **25.2 MiB** of render targets at 720p and nine passes (opaque capture, six radiance mips, half-resolution tracing, composition). Atmosphere adds approximately **2.64 MiB**, two passes, and at most 12 shadow comparisons per half-resolution pixel. Existing temporal resources are used when AA is enabled. Normal variance adds temporary CPU processing during material construction without enlarging material GPU arrays. Controls in `README.md` allow reflections, atmosphere, and AA to be isolated during a live comparison.
+
+The implementation is committed as `dfb5d59`. Restart the release client for the live test. Existing parallax depth 0.07 remains active; 0.125 is the new-config default, so the saved-settings image is the direct reference for this user's current configuration. No new world is required for these rendering changes.

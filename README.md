@@ -303,6 +303,10 @@ Run `cargo run --release -- calibration-preview calibration-previews` for matche
 
 Run `cargo run --release -- material-preview 'bloxgloom:cherry_log[axis=y]' material-previews` for a close, unobstructed block inspection. It produces matched morning/noon captures with albedo only, normal/AO/height detail, and full PBR. All variants use the production light, mesh, shadow, HDR and postprocessing paths at exposure 1.0; only companion-map presence flags change. The scene has a flat stone floor and no HUD or tree shadows. Log keys must specify an axis. Gameplay always uses full materials.
 
+Run `cargo run --release -- showcase-preview showcase-previews` for fixed noon and early-morning views of JG RTX cherry bark, foliage, masonry, planks, ores, and a stream. `showcase-motion-preview showcase-motion` adds moving characters, camera movement, disocclusion, and a first-person camera cut. These fixtures use production meshing, lighting, scene reflections, atmospheric scattering, and HDR display mapping without changing a saved world.
+
+Temporal AA is enabled by default on supported backends; `BLOXGLOOM_TAA=0` disables it. The performance benchmark keeps AA off unless `BLOXGLOOM_TAA=1` is requested. `BLOXGLOOM_REFLECTIONS=0` and `BLOXGLOOM_ATMOSPHERE=0` isolate those passes for comparison. Screen-space effects fall back on GL. Set `BLOXGLOOM_PREVIEW_CONFIG` to an explicit configuration-file path to capture the saved lighting, exposure, bloom, and parallax settings; previews only read it. Existing configuration values remain unchanged. New configurations use parallax depth 0.125.
+
 Run `cargo run -- vegetation-preview vegetation-preview.png` to inspect trees and plant cutouts through the production GPU path without opening a window.
 
 Run `cargo run -- drop-preview drops.png` to render a few textured world drops through the production GPU pipeline without opening a game window.
