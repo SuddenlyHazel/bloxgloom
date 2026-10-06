@@ -49,6 +49,8 @@ impl Presentation {
     }
     pub(crate) fn atmosphere(self, mut a: Atmosphere) -> Atmosphere {
         a.cloud = self.cloud;
+        a.rain_strength = self.rain.clamp(0.0, 1.0);
+        a.presentation_seconds = self.seconds.rem_euclid(3600.0);
         a.fog_exposure = self.exposure;
         a.fog = ((self.rain - 0.6) / 1.2).clamp(0.0, 1.0);
         // A slow, closed cloud-advection path avoids displacement jumps when

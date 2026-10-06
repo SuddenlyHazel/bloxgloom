@@ -147,7 +147,7 @@ fn render_recipe(
         model: AvatarModel::Player,
         pose: [0.0; 4],
         airborne: false,
-        id: 1,
+        id: if x < 0.0 { 1 } else { 2 },
         position: Vec3::new(x, 0.0, 0.0),
         cosmetics,
         light_levels: [15, 0, 0, 0],
@@ -462,10 +462,31 @@ fn both_bodies_all_hairstyles_support_independent_rgb_without_neighbor_changes()
             }
             for row in 0..HEIGHT as usize {
                 let start = row * WIDTH as usize * 4;
+                if red[start..start + WIDTH as usize * 2] != blue[start..start + WIDTH as usize * 2]
+                {
+                    let directory = std::env::temp_dir().join(format!(
+                        "bloxgloom-avatar-rgb-failure-{}",
+                        std::process::id()
+                    ));
+                    std::fs::create_dir_all(&directory).unwrap();
+                    for (name, pixels) in [("red", &red), ("blue", &blue)] {
+                        let path = directory.join(format!("body-{body}-hair-{hair}-{name}.png"));
+                        let file = std::fs::File::create(&path).unwrap();
+                        let mut encoder = png::Encoder::new(file, WIDTH, HEIGHT);
+                        encoder.set_color(png::ColorType::Rgba);
+                        encoder.set_depth(png::BitDepth::Eight);
+                        encoder
+                            .write_header()
+                            .unwrap()
+                            .write_image_data(pixels)
+                            .unwrap();
+                        eprintln!("avatar RGB failure image: {}", path.display());
+                    }
+                }
                 assert_eq!(
                     &red[start..start + WIDTH as usize * 2],
                     &blue[start..start + WIDTH as usize * 2],
-                    "hair RGB leaked to another actor"
+                    "hair RGB leaked to another actor: body {body}, hair {hair}, row {row}"
                 );
             }
         }

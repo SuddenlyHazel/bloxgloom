@@ -9,7 +9,7 @@ pub fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::write(
         directory.join("sequence.txt"),
         format!(
-            "Outdoor temporal motion v2\nAA requested: {}\nObject motion: previous submitted character/GLB skin palettes; reactive unsupported foliage\nContact occlusion request: {} (default 1)\nFrames 00-07 stationary warmup; 08-19 lateral camera pan, walking/translating actors, sinusoidal foliage geometry; 20-23 first-person cut and head clipping; 23 resize from 640x400 to 800x500; 24-27 return-to-canopy cut\nOne submitted sample per frame, persistent history, nominal 30 Hz animation\nFoliage motion is a deterministic deformation of production cutout mesh vertices, not a new runtime wind feature. Vertex lighting remains frozen to isolate temporal behavior. Character contact and sun shadows follow each frame.\nUse the same adapter, shadow settings, and executable for off/on comparison. Software GPU captures establish visual behavior, not performance.\n",
+            "Outdoor temporal motion v3\nAA requested: {}\nObject motion: previous submitted character/GLB skin palettes; reactive production foliage wind\nContact occlusion request: {} (default 1)\nFrames 00-07 stationary warmup; 08-19 lateral camera pan, walking/translating actors, production GPU foliage wind; 20-23 first-person cut and head clipping; 23 resize from 640x400 to 800x500; 24-27 return-to-canopy cut\nOne submitted sample per frame, persistent history, nominal 30 Hz animation\nFoliage uses production world-space GPU wind with anchored roots, paired-plant continuity and explicit temporal history rejection. Color, sun/local depth casters and ray intersections share the deformation and clock. No per-frame CPU foliage mesh uploads. Character contact and sun shadows follow each frame.\nUse the same adapter, shadow settings, and executable for off/on comparison. Software GPU captures establish visual behavior, not performance.\n",
             if render::post::temporal_requested() {
                 "1"
             } else {
@@ -89,29 +89,6 @@ pub(crate) fn camera(
     let mut camera = super::camera(View::Canopy);
     camera.position.x += frame.saturating_sub(7).min(12) as f32 * 0.08;
     (camera, None)
-}
-
-#[derive(Default)]
-pub(crate) struct Foliage {
-    pub buffers: Vec<(wgpu::Buffer, Vec<f32>)>,
-}
-
-impl Foliage {
-    pub(crate) fn update(&self, queue: &wgpu::Queue, frame: usize) {
-        let phase = seconds(frame) * 13.0;
-        for (buffer, source) in &self.buffers {
-            let mut vertices = source.clone();
-            for vertex in vertices.chunks_exact_mut(render::VERTEX_FLOATS) {
-                // There is no production foliage velocity palette: explicitly
-                // reject unsupported deformation instead of camera-only trails.
-                vertex[12] = -(vertex[12] + 1.0);
-                // Consistent world-space deformation keeps shared corners together.
-                vertex[0] += phase.sin() * 0.25 * ((vertex[1] - 37.0) * 0.4).clamp(0.0, 1.0);
-                vertex[2] += (phase * 0.7).sin() * 0.12;
-            }
-            queue.write_buffer(buffer, 0, bytemuck::cast_slice(&vertices));
-        }
-    }
 }
 
 #[cfg(test)]

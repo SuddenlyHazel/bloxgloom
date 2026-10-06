@@ -132,8 +132,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             return Err("LOD preview exceeded GPU budget".into());
         }
     }
-    let (sky, sky_buffer, sky_group) =
-        render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
+    let mut sky = render::SkyRenderer::new(&device, width, height, render::post::HDR_FORMAT);
     let transition_position = Vec3::new(
         100.0,
         world::terrain_height(100, -32, SEED) as f32 + 18.0,
@@ -189,7 +188,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             std::iter::empty(),
         );
         queue.write_buffer(
-            &sky_buffer,
+            &sky.camera,
             0,
             bytemuck::cast_slice(&render::sky_camera_data(camera, width, height, atmosphere)),
         );
@@ -197,8 +196,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &device,
             &queue,
             &gpu,
-            &sky,
-            &sky_group,
+            &mut sky,
             camera,
             atmosphere,
             width,
@@ -262,7 +260,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
                 .filter(|_| name == "bridge-cave-ready-3d"),
         );
         queue.write_buffer(
-            &sky_buffer,
+            &sky.camera,
             0,
             bytemuck::cast_slice(&render::sky_camera_data(camera, width, height, atmosphere)),
         );
@@ -270,8 +268,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &device,
             &queue,
             &gpu,
-            &sky,
-            &sky_group,
+            &mut sky,
             camera,
             atmosphere,
             width,
@@ -312,7 +309,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             std::iter::once(world::ChunkKey { x: 0, y: 0, z: 0 }).filter(|_| mask),
         );
         queue.write_buffer(
-            &sky_buffer,
+            &sky.camera,
             0,
             bytemuck::cast_slice(&render::sky_camera_data(
                 water_camera,
@@ -325,8 +322,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &device,
             &queue,
             &gpu,
-            &sky,
-            &sky_group,
+            &mut sky,
             water_camera,
             atmosphere,
             width,
@@ -446,8 +442,7 @@ fn draw_image(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     gpu: &Gpu,
-    sky: &wgpu::RenderPipeline,
-    sky_group: &wgpu::BindGroup,
+    sky: &mut render::SkyRenderer,
     camera: Camera,
     atmosphere: render::daylight::Atmosphere,
     width: u32,
@@ -487,6 +482,7 @@ fn draw_image(
     });
     let depth = depth_texture.create_view(&Default::default());
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    sky.prepare(device, &mut encoder, width, height);
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("LOD preview"),
@@ -507,8 +503,8 @@ fn draw_image(
             }),
             ..Default::default()
         });
-        pass.set_pipeline(sky);
-        pass.set_bind_group(0, sky_group, &[]);
+        pass.set_pipeline(&sky.pipeline);
+        pass.set_bind_group(0, &sky.group, &[]);
         pass.draw(0..3, 0..1);
         gpu.draw(&mut pass);
     }

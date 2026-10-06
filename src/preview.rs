@@ -18,7 +18,9 @@ mod sandbox;
 mod sun_shadow;
 pub use sandbox::{install_sandbox_materials, render_sandbox_previews};
 mod daylight;
+mod landscape;
 pub use calibration::render_calibration_previews;
+pub use landscape::render_landscape_previews;
 mod water;
 mod weather;
 pub use daylight::render_daylight_previews;
@@ -571,6 +573,7 @@ enum PreviewScene {
     Hoppers,
     Surface,
     SurfaceBare,
+    Landscape(landscape::Shot),
     Water { x: i32, z: i32, level: i64 },
     Effect,
     Fire,
@@ -686,8 +689,7 @@ async fn render_previews_weather(
             ..Default::default()
         })
         .await?;
-    let (sky_pipeline, sky_buffer, sky_group) =
-        render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
+    let mut sky = render::SkyRenderer::new(&device, 1, 1, render::post::HDR_FORMAT);
     let (mut pipeline, mut cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         if let PreviewScene::Material(_, mode) = scene {
             render::create_material_preview_pipeline(
@@ -811,6 +813,7 @@ async fn render_previews_weather(
         surface_height(target_xz.0, target_xz.1)
     };
     let (camera_position, target) = match scene {
+        PreviewScene::Landscape(shot) => shot.camera(),
         PreviewScene::Material(..) => (Vec3::new(2.5, 35.0, 3.0), Vec3::new(0.5, 33.5, 0.5)),
         PreviewScene::Water { x, z, level } => {
             let target = Vec3::new(x as f32 + 0.5, level as f32 + 1.0, z as f32 + 0.5);
@@ -922,17 +925,22 @@ async fn render_previews_weather(
     let mut chunks = HashMap::new();
     let bottom_chunk = if matches!(scene, PreviewScene::NaturalCavern) {
         -4
+    } else if matches!(scene, PreviewScene::Landscape(..)) {
+        -1
     } else {
         0
     };
-    let terrain_radius = if matches!(scene, PreviewScene::Water { .. }) {
+    let top_chunk = world::MAX_GENERATED_HEIGHT.div_euclid(world::CHUNK_SIZE as i32);
+    let terrain_radius = if matches!(scene, PreviewScene::Landscape(..)) {
+        6
+    } else if matches!(scene, PreviewScene::Water { .. }) {
         4
     } else {
         2
     };
     for z in -terrain_radius..=terrain_radius {
         for x in -terrain_radius..=terrain_radius {
-            for y in bottom_chunk..=4 {
+            for y in bottom_chunk..=top_chunk {
                 let key = ChunkKey {
                     x: center_chunk.0 + x,
                     y,
@@ -1191,13 +1199,13 @@ async fn render_previews_weather(
             outdoor::View::Motion | outdoor::View::Showcase(outdoor::showcase::View::Motion)
         )
     );
-    let mut foliage_motion = outdoor::motion::Foliage::default();
+    let mut trace_chunks = Vec::new();
     let mut water_meshes = Vec::new();
     let mut gpu_meshes = Vec::new();
     let mut local_sources = Vec::new();
     for z in -terrain_radius..=terrain_radius {
         for x in -terrain_radius..=terrain_radius {
-            for y in bottom_chunk..=4 {
+            for y in bottom_chunk..=top_chunk {
                 let key = ChunkKey {
                     x: center_chunk.0 + x,
                     y,
@@ -1256,11 +1264,7 @@ async fn render_previews_weather(
                     upload(&mesh.vertices, &mesh.indices),
                     upload(&mesh.cutout_vertices, &mesh.cutout_indices),
                 ));
-                if motion_sequence && let Some((buffer, _, _)) = &gpu_meshes.last().unwrap().1 {
-                    foliage_motion
-                        .buffers
-                        .push((buffer.clone(), mesh.cutout_vertices.clone()));
-                }
+                trace_chunks.push(mesh.trace.clone());
             }
         }
     }
@@ -1584,6 +1588,7 @@ async fn render_previews_weather(
     let motion_actor_base = shadow_avatars.clone();
     let mut motion_post: Option<render::post::PostProcess> = None;
     let mut local_maps_ready = false;
+    let mut sky_sample = 0u32;
     for (frame, output) in outputs.into_iter().enumerate() {
         if let (PreviewScene::Characters(clip, time, _), Some(visuals)) =
             (scene, &character_visuals)
@@ -1648,7 +1653,9 @@ async fn render_previews_weather(
             avatar_renderer.preview_animation_dt(if frame < 8 { 0.0 } else { 1.0 / 30.0 });
             avatar_renderer.preview_character_clip("walk", outdoor::motion::seconds(frame));
             avatar_renderer.set(&queue, &shadow_avatars);
-            foliage_motion.update(&queue, frame);
+            atmosphere.wind_seconds = ((world_time % 128_000) as f32 / 1_000.0
+                + outdoor::motion::seconds(frame))
+            .rem_euclid(128.0);
             let patches = render::contact_shadow::patches(
                 &shadow_avatars,
                 camera.position,
@@ -1686,13 +1693,14 @@ async fn render_previews_weather(
             camera.pitch = pitch;
         }
         queue.write_buffer(
-            &sky_buffer,
+            &sky.camera,
             0,
-            bytemuck::cast_slice(&render::sky_camera_data(
+            bytemuck::cast_slice(&render::sky_camera_data_at_sample(
                 camera,
                 output.width,
                 output.height,
                 atmosphere,
+                sky_sample,
             )),
         );
         rain_renderer.set_mesh(&queue, &weather.vertices(camera));
@@ -1799,6 +1807,7 @@ async fn render_previews_weather(
         if !matches!(
             scene,
             PreviewScene::SurfaceBare
+                | PreviewScene::Landscape(..)
                 | PreviewScene::Material(..)
                 | PreviewScene::Calibration(_)
                 | PreviewScene::Sandbox(_)
@@ -1818,6 +1827,22 @@ async fn render_previews_weather(
         let mut post = motion_post.take().unwrap_or_else(|| {
             render::post::PostProcess::new(&device, output.width, output.height, FORMAT)
         });
+        if !post.trace.ready() {
+            post.trace.prepare_scene(trace_chunks.iter().cloned());
+        }
+        atmosphere.scene_transport = post.trace.ready();
+        sky.configure(atmosphere);
+        queue.write_buffer(
+            &sky.camera,
+            0,
+            bytemuck::cast_slice(&render::sky_camera_data_at_sample(
+                camera,
+                output.width,
+                output.height,
+                atmosphere,
+                sky_sample,
+            )),
+        );
         let post_size = post.scene.texture().size();
         if post_size.width != output.width || post_size.height != output.height {
             post.resize(&device, output.width, output.height);
@@ -1853,7 +1878,7 @@ async fn render_previews_weather(
         let temporal = render::post::temporal_requested();
         post.enable_temporal(&device, temporal);
         let samples = if post.temporal_enabled() && !motion_sequence {
-            8
+            if post.trace.ready() { 32 } else { 8 }
         } else {
             1
         };
@@ -1880,6 +1905,17 @@ async fn render_previews_weather(
         let mut sample = 0;
         let mut encoder = loop {
             let (matrix, _) = post.prepare_temporal(&queue, camera);
+            queue.write_buffer(
+                &sky.camera,
+                0,
+                bytemuck::cast_slice(&render::sky_camera_data_at_sample(
+                    camera,
+                    output.width,
+                    output.height,
+                    atmosphere,
+                    sky_sample,
+                )),
+            );
             let mut camera_data = atmosphere.camera_data(matrix, camera.position);
             if let Some(config) = &preview_config {
                 camera_data[32..36].copy_from_slice(&config.parallax.uniform());
@@ -1888,6 +1924,7 @@ async fn render_previews_weather(
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("preview commands"),
             });
+            sky.prepare(&device, &mut encoder, output.width, output.height);
             local_shadows.update(&queue, camera.position, &local_sources, 1.0 / 60.0);
             sun_shadow::draw_local(
                 &mut encoder,
@@ -1931,8 +1968,8 @@ async fn render_previews_weather(
                     }),
                     ..Default::default()
                 });
-                pass.set_pipeline(&sky_pipeline);
-                pass.set_bind_group(0, &sky_group, &[]);
+                pass.set_pipeline(&sky.pipeline);
+                pass.set_bind_group(0, &sky.group, &[]);
                 pass.draw(0..3, 0..1);
                 pass.set_pipeline(&pipeline);
                 pass.set_bind_group(0, &camera_group, &[]);
@@ -2013,7 +2050,17 @@ async fn render_previews_weather(
                 }
             }
 
-            post.resolve_reflections(&device, &queue, &mut encoder, &depth_view, matrix);
+            post.resolve_transport(
+                &device,
+                &queue,
+                &mut encoder,
+                &depth_view,
+                matrix,
+                camera.position,
+                atmosphere,
+                &pipeline,
+                &texture_group,
+            );
             if (matches!(scene, PreviewScene::Fire) && !fire_renderer.is_empty())
                 || !rain_renderer.is_empty()
             {
@@ -2064,6 +2111,7 @@ async fn render_previews_weather(
             }
             // Separate submissions preserve each jitter/camera uniform update.
             queue.submit(Some(encoder.finish()));
+            sky_sample = sky_sample.wrapping_add(1);
             post.submitted();
             avatar_renderer.submitted();
         };
@@ -2097,6 +2145,7 @@ async fn render_previews_weather(
         if !matches!(
             scene,
             PreviewScene::SurfaceBare
+                | PreviewScene::Landscape(..)
                 | PreviewScene::Material(..)
                 | PreviewScene::Calibration(_)
                 | PreviewScene::Sandbox(_)
@@ -2141,6 +2190,7 @@ async fn render_previews_weather(
         );
         let submission = queue.submit(Some(encoder.finish()));
         post.submitted();
+        sky_sample = sky_sample.wrapping_add(1);
         avatar_renderer.submitted();
         let (sender, receiver) = mpsc::channel();
         readback.map_async(wgpu::MapMode::Read, .., move |result| {
@@ -2408,7 +2458,7 @@ fn set_preview_block(
 fn surface_height(x: i32, z: i32) -> i32 {
     let local_x = x.rem_euclid(world::CHUNK_SIZE as i32) as usize;
     let local_z = z.rem_euclid(world::CHUNK_SIZE as i32) as usize;
-    for chunk_y in (0..=4).rev() {
+    for chunk_y in (0..=world::MAX_GENERATED_HEIGHT.div_euclid(world::CHUNK_SIZE as i32)).rev() {
         let chunk = world::generate_chunk(
             ChunkKey {
                 x: x.div_euclid(world::CHUNK_SIZE as i32),

@@ -44,6 +44,7 @@ fn blur(uv: vec2<f32>, axis: vec2<f32>) -> vec4<f32> {
 // low radiance of bark under foliage: x=.02 became .0025 before display encoding.
 // Keep those details proportional, while reserving headroom for HDR sunlight.
 fn tone_map(value: vec3<f32>) -> vec3<f32> {
+    if BG_BSL_STYLE { return bg_bsl_tonemap_default(value); }
     let peak = max(value.r, max(value.g, value.b));
     let mapped = peak / sqrt(1.0 + peak * peak);
     let color = value * (mapped / max(peak, 0.000001));
@@ -57,6 +58,10 @@ fn tone_map(value: vec3<f32>) -> vec3<f32> {
     var color = max(hdr, vec3<f32>(0.0));
     if settings.w > 0.0 {
         if settings.y > 0.0 { hdr += textureSample(bloom, linear_sampler, input.uv).rgb * settings.y; }
+        if BG_BSL_STYLE {
+            let distance = length(input.uv - vec2f(0.5));
+            hdr *= 1.0 - (distance * distance * 0.3535 + distance * 0.75) * 1.06;
+        }
         color = tone_map(max(hdr * settings.x, vec3<f32>(0.0)));
     }
     if settings.z > 0.0 {

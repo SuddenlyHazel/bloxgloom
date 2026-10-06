@@ -53,7 +53,7 @@ fn bg_material_coordinates(input: VertexOutput, parallax: bool) -> MaterialCoord
     let px = dpdx(input.world_position);
     let py = dpdy(input.world_position);
     let unchanged = MaterialCoordinates(input.uv, dx, dy);
-    if !parallax || camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)].flags & 33u) != 33u
+    if BG_BSL_REFERENCE || !parallax || camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)].flags & 33u) != 33u
         || abs(dx.x * dy.y - dx.y * dy.x) < 0.000000000001
         || !bg_normal_frame_supported(input.normal,px,py) { return unchanged; }
     let eye = camera.eye.xyz - input.world_position;
@@ -71,7 +71,7 @@ fn bg_material_coordinates(input: VertexOutput, parallax: bool) -> MaterialCoord
 fn bg_material_relief_visibility(input: VertexOutput, coordinates: MaterialCoordinates) -> f32 {
     let px = dpdx(input.world_position);
     let py = dpdy(input.world_position);
-    if camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)].flags & 33u) != 33u
+    if BG_BSL_REFERENCE || camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)].flags & 33u) != 33u
         || abs(coordinates.dx.x*coordinates.dy.y-coordinates.dx.y*coordinates.dy.x) < 0.000000000001
         || !bg_normal_frame_supported(input.normal,px,py) { return 1.0; }
     let frame = bg_texture_frame(input.normal,px,py,coordinates.dx,coordinates.dy);

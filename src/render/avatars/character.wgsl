@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<storage, read> joints: array<mat4x4<f32>>;
 @group(1) @binding(1) var body: texture_2d_array<f32>;
@@ -118,7 +118,8 @@ fn character_albedo(input: Output) -> vec4f {
     // Evaluate local shadows after interpolation; indirect/bounce stays intact.
     let local_light = bg_shadowed_local_light(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
     let tint = vec3f(input.light.w, input.indirect.w, input.world_position.w);
-    let light = input.light.xyz + tint * local_light - input.direct.xyz * (1.0 - bg_sun_visibility(receiver));
+    let visibility = bg_sun_visibility(receiver)*bg_primary_sun_transmittance(input.world_position.xyz);
+    let light = input.light.xyz + tint * local_light - input.direct.xyz * (1.0 - visibility);
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world_position.xyz, normalize(input.normal_sky.xyz), input.radiance_eye_height.xyz, input.direction_height.xyz);
     return bg_scene_output(albedo.rgb*light,albedo.rgb*input.indirect.xyz,input.world_position.xyz,input.normal_sky.w,input.direct.w * history_sign);

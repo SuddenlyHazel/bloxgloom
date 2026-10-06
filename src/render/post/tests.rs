@@ -1,5 +1,26 @@
 use super::*;
 
+// Independently reduce composite5.glsl's checked-in defaults to neutral gray:
+// the desaturation matrix and its inverse preserve gray, EXPOSURE=0 gives
+// exp2(2)=4, WHITE_CURVE=2 and both contrast curves are 1. The first copied
+// pixel also exercises its default vignette before display transfer.
+fn displayed_gray(level: f64, width: u32, height: u32) -> u8 {
+    let mapped = if crate::render::sky::style_enabled() {
+        let distance = (0.5 / f64::from(width) - 0.5).hypot(0.5 / f64::from(height) - 0.5);
+        let vignette = 1.0 - (distance * distance * 0.3535 + distance * 0.75) * 1.06;
+        let exposed = level * vignette * 4.0;
+        exposed / (exposed * exposed + 1.0).sqrt()
+    } else {
+        level / (1.0 + level * level).sqrt()
+    };
+    let encoded = if mapped <= 0.0031308 {
+        mapped * 12.92
+    } else {
+        1.055 * mapped.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded * 255.0).round() as u8
+}
+
 #[test]
 fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
     pollster::block_on(async {
@@ -124,13 +145,24 @@ fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
                     pixels[8], pixels[1],
                     "re-enabling must restore tone mapping"
                 );
-                assert!(
-                    (175..=185).contains(&pixels[1]),
-                    "mid-gray must be encoded to sRGB exactly once"
-                );
+                for (index, level) in [
+                    (1, 0.5),
+                    (3, 2.0),
+                    (4, 4.0),
+                    (9, 0.004),
+                    (10, 0.02),
+                    (11, 0.08),
+                ] {
+                    let expected = displayed_gray(level, width, height);
+                    assert!(
+                        pixels[index].abs_diff(expected) <= 2,
+                        "tone/vignette/display oracle at {level}: {} vs {expected}",
+                        pixels[index]
+                    );
+                }
                 assert!(pixels[2] >= pixels[3], "bloom must add light");
                 assert!(
-                    pixels[4] > pixels[3] && pixels[4] < 255,
+                    pixels[1] < pixels[3] && pixels[3] < pixels[4],
                     "HDR values must retain highlight gradation"
                 );
                 assert!(

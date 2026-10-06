@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<storage, read> joints: array<mat4x4f>;
 struct Part { color: vec4f, flags: vec4u };
@@ -66,7 +66,8 @@ fn color(input: Output) -> vec4f {
     let local_light = bg_shadowed_local_light(input.world, normal, packed_color * glow * glow, unpack4x8snorm(input.light_levels.y).yzw);
     let light=bg_surface_light(normal,camera.sun,sky,local_light,vec3f(input.bounce.xyz)/255.0,vec3f(input.glow_bounce.xyz)/255.0,1.0);
     let direct=bg_direct_light(normal,camera.sun,sky);
-    let shaded=(light-direct*(1.0-bg_sun_visibility(receiver)))*input.tint;
+    let visibility=bg_sun_visibility(receiver)*bg_primary_sun_transmittance(input.world);
+    let shaded=(light-direct*(1.0-visibility))*input.tint;
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world, normal, packed_color * glow * glow, unpack4x8snorm(input.light_levels.y).yzw);
     return bg_scene_output(rgb*shaded,rgb*input.tint*bg_indirect_light(normal,camera.sun,sky,vec3f(input.bounce.xyz)/255.0,vec3f(input.glow_bounce.xyz)/255.0),input.world,sky,history_sign);

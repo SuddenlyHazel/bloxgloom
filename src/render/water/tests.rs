@@ -18,7 +18,7 @@ fn gpu_water_sun_visibility_preserves_indirect_and_sealed_cave_response() {
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     let source = super::shader(
         r#"
-struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<storage,read_write> colors: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {
@@ -27,6 +27,7 @@ struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f
     let result = bg_water_surface(vec4f(0.1,0.25,0.3,0.5),vec3f(0.0,1.0,0.0),sky,0.0,
         vec3f(0.0),vec3f(0.0,-10.0,0.0),true,0.0,visibility);
     colors[id.x] = result.color;
+    colors[id.x+4u] = result.indirect;
 }
 "#,
     );
@@ -53,13 +54,13 @@ struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 64,
+        size: 128,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 64,
+        size: 128,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -83,13 +84,19 @@ struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f
         pass.set_bind_group(1, &output_group, &[]);
         pass.dispatch_workgroups(4, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 64);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 128);
     queue.submit([encoder.finish()]);
     let slice = readback.slice(..);
     slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     let bytes = slice.get_mapped_range().unwrap();
     let colors: &[[f32; 4]] = bytemuck::cast_slice(&bytes);
+    assert!(
+        colors[4..]
+            .iter()
+            .all(|p| p[..3] == [0.0; 3] && p[3] == -2.0),
+        "water is explicitly tagged while its retained indirect RGB stays zero"
+    );
     for (channel, shadow) in colors[0][..3].iter().enumerate() {
         assert!(*shadow > 0.0, "water shadow removed sky fill");
         assert!(

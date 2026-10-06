@@ -1,6 +1,8 @@
 use super::*;
 use std::borrow::Cow;
 mod gpu;
+
+mod optics;
 mod parallax;
 mod pbr;
 mod sampling;
@@ -212,6 +214,45 @@ fn builtin_companions_are_registered_without_changing_original_layers() {
     assert_eq!(catalog.textures()[3].key, "bloxgloom:stone");
     assert_eq!(catalog.textures()[27].key, "bloxgloom:grass_top_n");
     assert_eq!(catalog.textures()[45].key, "bloxgloom:wood_side_n");
+    for (key, expected) in [
+        ("jg_large_fern_bottom", 72),
+        ("jg_large_fern_top", 200),
+        ("jg_amethyst_cluster", 0),
+    ] {
+        let id = catalog
+            .textures()
+            .iter()
+            .position(|t| t.key.as_ref() == format!("bloxgloom:{key}"))
+            .unwrap();
+        assert_eq!(
+            maps.flags[id] & (8 | 64 | 128),
+            expected,
+            "{key} botanical wind/paired-half metadata"
+        );
+    }
+    for (key, thickness) in [
+        ("jg_cherry_leaves", 4),
+        ("jg_oak_leaves", 7),
+        ("jg_spruce_leaves", 13),
+        ("jg_large_fern_bottom", 5),
+        ("jg_amethyst_cluster", 0),
+    ] {
+        let id = catalog
+            .textures()
+            .iter()
+            .position(|t| t.key.as_ref() == format!("bloxgloom:{key}"))
+            .unwrap();
+        assert_eq!(
+            (maps.flags[id] >> 27) & 31,
+            thickness,
+            "{key} optical path coefficient"
+        );
+        assert_eq!(
+            maps.flags[id] & (7 << 24),
+            0,
+            "botanical thickness must not corrupt auxiliary sampling"
+        );
+    }
 }
 
 #[test]

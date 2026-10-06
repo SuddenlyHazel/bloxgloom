@@ -75,7 +75,7 @@ pub(crate) fn create_material_preview_pipeline(
         "material texture array admitted"
     );
     let source = format!(
-        "{}\n{RELIEF_SHADER}\n{PBR_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
+        "{}\n{RELIEF_SHADER}\n{PBR_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{FOLIAGE_SHADER}\n{FOLIAGE_OPTICS_SHADER}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
         custom::TYPES
     );
     Ok(create_voxel_pipeline_source(
@@ -103,7 +103,7 @@ pub(crate) fn create_custom_voxel_pipeline(
         "material texture array admitted"
     );
     let source = format!(
-        "{}\n{}\n{RELIEF_SHADER}\n{PBR_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{SHADER}",
+        "{}\n{}\n{RELIEF_SHADER}\n{PBR_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{FOLIAGE_SHADER}\n{FOLIAGE_OPTICS_SHADER}\n{SHADER}",
         custom::TYPES,
         custom::compose(prepared)
     );
@@ -167,7 +167,7 @@ fn create_voxel_pipeline_source(
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
-        size: 208,
+        size: 224,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -325,7 +325,7 @@ fn create_voxel_pipeline_source(
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 5,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT | wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
@@ -437,7 +437,7 @@ pub(crate) fn create_sun_shadow_pipelines(
 ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
     let hooks = prepared.map_or_else(|| String::from("fn bg_vertex(input: BgVertex, layer: u32) -> BgVertex { return input; }\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface { return input; }"), custom::compose);
     let source = super::daylight::shader(&format!(
-        "{}\n{RELIEF_SHADER}\n{PBR_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{hooks}\n{SHADER}",
+        "{}\n{RELIEF_SHADER}\n{PBR_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{FOLIAGE_SHADER}\n{FOLIAGE_OPTICS_SHADER}\n{hooks}\n{SHADER}",
         custom::TYPES
     ));
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -497,6 +497,8 @@ pub(crate) fn create_sun_shadow_pipelines(
     )
 }
 
+const FOLIAGE_SHADER: &str = include_str!("material/foliage.wgsl");
+const FOLIAGE_OPTICS_SHADER: &str = include_str!("material/foliage_optics.wgsl");
 const RELIEF_SHADER: &str = include_str!("material/relief.wgsl");
 const PBR_SHADER: &str = include_str!("material/pbr.wgsl");
 const PARALLAX_SHADER: &str = include_str!("material/parallax.wgsl");

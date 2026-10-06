@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 struct Tile { relative: vec4f, origin: vec4i };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage,read> coverage: array<vec4i>;
@@ -66,7 +66,9 @@ fn bg_lod_coverage(v: Out) {
         albedo = mix(albedo, texel.rgb, detail);
         if (v.surface & 4096u) != 0u && mix(1.0, texel.a, detail) < 0.5 { discard; }
     }
-    return bg_scene_output(albedo*v.light, albedo*v.indirect, v.relative, max(v.sky,camera.eye.w), 1.0);
+    let cloud_visibility=bg_primary_sun_transmittance(v.local+vec3f(tile.origin.xyz));
+    let light=max(v.light-bg_direct_light(v.normal,camera.sun,v.sky)*(1.0-cloud_visibility),vec3f(0.0));
+    return bg_scene_output(albedo*light, albedo*v.indirect, v.relative, max(v.sky,camera.eye.w), 1.0);
 }
 @fragment fn fs_water(v: Out, @builtin(front_facing) front: bool) -> BgSceneOutput {
     let receiver = bg_shadow_receiver(v.local+vec3f(tile.origin.xyz));

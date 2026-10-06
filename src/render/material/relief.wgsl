@@ -77,7 +77,20 @@ fn bg_thin_direct(normal: vec3f, transmission_normal: vec3f, sun: vec4f,
     let cosine = dot(normal, direction);
     let diffuse = max((cosine + wrap) / (1.0 + wrap), 0.0);
     let through = max(-dot(transmission_normal, direction), 0.0) * transmission;
-    return sky * min(diffuse + through, 1.0) * sun_radiance;
+    return sky * min(diffuse + through, 1.0) * sun_radiance / 3.14159265359;
+}
+
+// A leaf is a thin sheet: the reverse side transmits most strongly when the
+// viewer looks toward the sun. It is a bounded direct-light redistribution,
+// never additive ambient/emission, and callers shadow the entire response.
+fn bg_thin_scattering(normal: vec3f, plane_normal: vec3f, view: vec3f, sun: vec4f,
+    sky: f32, wrap: f32, transmission: f32, sun_radiance: vec3f) -> vec3f {
+    let direction = normalize(sun.xyz);
+    let sheet = select(-plane_normal,plane_normal,dot(plane_normal,view)>=0.0);
+    let forward = 0.35 + 0.65*pow(max(dot(-direction,view),0.0),4.0);
+    let diffuse = max((dot(normal,direction)+wrap)/(1.0+wrap),0.0);
+    let through = max(-dot(sheet,direction),0.0)*clamp(transmission,0.0,1.0)*forward;
+    return clamp(sky,0.0,1.0)*min(diffuse+through,1.0)*sun_radiance/3.14159265359;
 }
 
 // oldPBR: R smoothness, G metalness. Missing companions retain legacy diffuse.

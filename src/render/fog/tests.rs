@@ -50,13 +50,13 @@ fn gpu_storm_fog_preserves_near_contrast_and_obscures_distant_shadows() {
     });
     let output = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 208,
+        size: 224,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 208,
+        size: 224,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -102,7 +102,7 @@ fn gpu_storm_fog_preserves_near_contrast_and_obscures_distant_shadows() {
 }
 
 const COMPUTE_FIXTURE: &str = r#"
-struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f };
+struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax:vec4f, sun_radiance:vec4f, sky_zenith:vec4f, ambient_lower:vec4f, ambient_upper:vec4f, cloud:vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {

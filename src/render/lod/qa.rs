@@ -18,6 +18,7 @@ pub(crate) struct EditGpu {
     queue: wgpu::Queue,
     gpu: Gpu,
     post: post::PostProcess,
+    sky: super::super::SkyRenderer,
     color: wgpu::Texture,
     view: wgpu::TextureView,
     depth: wgpu::TextureView,
@@ -54,6 +55,7 @@ impl EditGpu {
             super::super::create_voxel_pipeline(&device, &queue, post::HDR_FORMAT);
         let gpu = Gpu::new(&device, post::HDR_FORMAT, &materials, &textures);
         let post = post::PostProcess::new(&device, WIDTH, HEIGHT, FORMAT);
+        let sky = super::super::SkyRenderer::new(&device, WIDTH, HEIGHT, post::HDR_FORMAT);
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("network edit GPU QA framebuffer"),
             size: wgpu::Extent3d {
@@ -81,6 +83,7 @@ impl EditGpu {
             queue,
             gpu,
             post,
+            sky,
             color,
             view,
             depth,
@@ -145,6 +148,17 @@ impl EditGpu {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("network LOD edit draw"),
             });
+        self.queue.write_buffer(
+            &self.sky.camera,
+            0,
+            bytemuck::cast_slice(&super::super::sky_camera_data(
+                camera,
+                WIDTH,
+                HEIGHT,
+                Atmosphere::at(crate::daylight::INITIAL_MS),
+            )),
+        );
+        self.sky.prepare(&self.device, &mut encoder, WIDTH, HEIGHT);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("network production LOD HDR pass"),
@@ -165,6 +179,9 @@ impl EditGpu {
                 }),
                 ..Default::default()
             });
+            pass.set_pipeline(&self.sky.pipeline);
+            pass.set_bind_group(0, &self.sky.group, &[]);
+            pass.draw(0..3, 0..1);
             assert!(self.gpu.draw(&mut pass) > 0);
         }
         self.post

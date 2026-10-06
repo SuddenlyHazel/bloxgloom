@@ -302,7 +302,13 @@ fn gpu_terrain_shadow_edits_cutouts_and_sky_glow_invariance() {
                 "transparent foliage must not cast a solid card"
             );
         } else {
-            assert_eq!(shaded, image);
+            // Both casters must use the leaf material's wind transform. The
+            // stationary stone quad is no longer the same geometry.
+            let solid_card = scene.render(Some((&cutout, false)), time, SunShadowQuality::Low);
+            assert_eq!(
+                solid_card, image,
+                "opaque leaf texels must cast their actual moving card"
+            );
         }
     }
     for (sky, glow) in [(0.0, 0.0), (0.0, 1.0)] {

@@ -21,6 +21,7 @@ pub(crate) struct PostProcess {
     temporal: Option<temporal::Temporal>,
     pub(crate) ambient: super::scene_ao::AmbientOcclusion,
     pub(crate) reflections: super::reflections::Reflections,
+    pub(crate) trace: super::trace::TraceLighting,
     atmosphere: super::atmosphere::AtmospherePass,
     bloom: [wgpu::TextureView; 2],
     groups: [wgpu::BindGroup; 3],
@@ -99,7 +100,15 @@ impl PostProcess {
             targets::Targets::new(device, width, height, &layout, &sampler, &settings, None);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("HDR and bloom shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("post.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                format!(
+                    "{}\nconst BG_BSL_STYLE: bool = {};\n{}",
+                    super::sky::STYLE_SHADER,
+                    super::sky::style_enabled(),
+                    include_str!("post.wgsl")
+                )
+                .into(),
+            ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("post pipeline layout"),
@@ -138,6 +147,7 @@ impl PostProcess {
             temporal: None,
             ambient: super::scene_ao::AmbientOcclusion::new(device, width, height),
             reflections: super::reflections::Reflections::new(device, width, height),
+            trace: super::trace::TraceLighting::new(device),
             atmosphere: super::atmosphere::AtmospherePass::new(device, width, height),
             bloom: targets.bloom,
             groups: targets.groups,
@@ -172,6 +182,7 @@ impl PostProcess {
         }
         self.ambient.resize(device, width, height);
         self.reflections.resize(device, width, height);
+        self.trace.resize(device, targets.scene.texture().size());
         self.atmosphere.resize(device, width, height);
         self.scene = targets.scene;
         self.bloom = targets.bloom;
@@ -223,10 +234,12 @@ impl PostProcess {
         depth: &wgpu::TextureView,
         matrix: glam::Mat4,
     ) {
-        self.ambient
-            .resolve(device, queue, encoder, &self.scene, depth, matrix);
-        self.reflections
-            .capture_opaque(device, encoder, &self.scene, depth);
+        if !self.trace.ready() {
+            self.ambient
+                .resolve(device, queue, encoder, &self.scene, depth, matrix);
+            self.reflections
+                .capture_opaque(device, encoder, &self.scene, depth);
+        }
     }
 
     pub(crate) fn resolve_reflections(
@@ -237,8 +250,49 @@ impl PostProcess {
         depth: &wgpu::TextureView,
         matrix: glam::Mat4,
     ) {
-        self.reflections
-            .resolve(device, queue, encoder, &self.scene, depth, matrix);
+        self.reflections.resolve(
+            device,
+            queue,
+            encoder,
+            &self.scene,
+            &self.ambient.indirect,
+            depth,
+            matrix,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn resolve_transport(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        depth: &wgpu::TextureView,
+        matrix: glam::Mat4,
+        eye: glam::Vec3,
+        atmosphere: super::daylight::Atmosphere,
+        pipeline: &wgpu::RenderPipeline,
+        materials: &wgpu::BindGroup,
+    ) {
+        if self.trace.ready() {
+            self.trace.resolve(
+                device,
+                queue,
+                encoder,
+                &self.scene,
+                depth,
+                &self.reflections.normal,
+                &self.reflections.response,
+                &self.ambient.indirect,
+                pipeline,
+                materials,
+                matrix,
+                eye,
+                atmosphere,
+            );
+        } else {
+            self.resolve_reflections(device, queue, encoder, depth, matrix);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -253,6 +307,9 @@ impl PostProcess {
         atmosphere: super::daylight::Atmosphere,
         shadows: &super::sun_shadow::SunShadows,
     ) {
+        if self.trace.ready() {
+            return;
+        }
         self.atmosphere.resolve(
             device,
             queue,

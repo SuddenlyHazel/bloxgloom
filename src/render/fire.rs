@@ -7,6 +7,15 @@ const VERTICES_PER_FIRE: usize = 15; // four flame triangles and one rising embe
 const FLOATS: usize = 9; // position, uv, rgba
 pub(crate) const MAX_BYTES: u64 = (MAX_FIRES * VERTICES_PER_FIRE * FLOATS * 4) as u64;
 
+fn shader() -> String {
+    format!(
+        "{}\n{}\n{}",
+        super::sky::CLOUD_SHADER,
+        include_str!("fire/transport.wgsl"),
+        include_str!("fire.wgsl")
+    )
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisualFire {
     pub center: Vec3,
@@ -115,13 +124,13 @@ impl FireRenderer {
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("burn flame shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("fire.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shader().into()),
         });
         let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("burn flame camera layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -222,3 +231,7 @@ impl FireRenderer {
         self.count as usize / 3
     }
 }
+
+#[cfg(test)]
+#[path = "fire/tests.rs"]
+mod tests;

@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 @group(0) @binding(0) var<uniform> camera:Camera;
 @group(1) @binding(0) var<uniform> clock:vec4f;
 struct Input { @location(0) position:vec3f,@location(1) normal:vec3f,@location(2) color:vec4f,@location(3) light:vec2f };

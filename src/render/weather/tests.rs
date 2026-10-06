@@ -98,3 +98,28 @@ fn severe_storm_increases_rain_wind_and_fog_with_bounded_geometry() {
     );
     assert_eq!(Presentation::default().atmosphere(base).fog, 0.0);
 }
+
+#[test]
+fn precipitation_strength_does_not_follow_cloud_coverage_or_reset_moon_phase() {
+    let base = Atmosphere::at(crate::daylight::CYCLE_MS * 4 + crate::daylight::INITIAL_MS);
+    let dry_overcast = Presentation::new(1.0, 0.0, [0.0; 2], 1.0, 0.0, 0.0).atmosphere(base);
+    let rain = Presentation::new(0.2, 0.75, [0.0; 2], 1.0, 0.0, 0.0).atmosphere(base);
+    let heavy = Presentation::new(0.2, 1.8, [0.0; 2], 1.0, 0.0, 0.0).atmosphere(base);
+    assert_eq!((dry_overcast.cloud, dry_overcast.rain_strength), (1.0, 0.0));
+    assert_eq!((rain.cloud, rain.rain_strength), (0.2, 0.75));
+    assert_eq!(heavy.rain_strength, 1.0);
+    assert_eq!(rain.moon_phase, 4);
+    assert_eq!(rain.moon_multiplier(), 0.5);
+    assert_eq!(
+        Presentation::new(0.0, 0.0, [0.0; 2], 1.0, 3601.25, 0.0)
+            .atmosphere(base)
+            .presentation_seconds,
+        1.25
+    );
+    assert_eq!(
+        Presentation::new(1.0, f32::NAN, [0.0; 2], 1.0, 0.0, 0.0)
+            .atmosphere(base)
+            .rain_strength,
+        0.0
+    );
+}

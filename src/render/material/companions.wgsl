@@ -17,7 +17,7 @@ fn bg_material_normal(input: VertexOutput, coordinates: MaterialCoordinates) -> 
     let ux = coordinates.dx;
     let uy = coordinates.dy;
     let determinant = ux.x * uy.y - ux.y * uy.x;
-    if (material_map_flags[u32(input.layer)].flags & 1u) == 0u || abs(determinant) < 0.000000000001 {
+    if BG_BSL_REFERENCE || (material_map_flags[u32(input.layer)].flags & 1u) == 0u || abs(determinant) < 0.000000000001 {
         return input.normal;
     }
     let texel = textureSampleGrad(material_normal, material_sampler, coordinates.uv, bg_material_layer(input.layer), ux, uy);
@@ -26,17 +26,19 @@ fn bg_material_normal(input: VertexOutput, coordinates: MaterialCoordinates) -> 
 
 fn bg_material_occlusion(input: VertexOutput, coordinates: MaterialCoordinates) -> f32 {
     let flags = material_map_flags[u32(input.layer)].flags;
-    if (flags & 17u) != 17u { return 1.0; }
+    if BG_BSL_REFERENCE || (flags & 17u) != 17u { return 1.0; }
     return textureSampleGrad(material_normal, material_sampler, coordinates.uv,
         bg_material_layer(input.layer), coordinates.dx, coordinates.dy).b;
 }
 fn bg_material_specular(input: VertexOutput, coordinates: MaterialCoordinates, albedo: vec3f) -> BgPbr {
+    if BG_BSL_REFERENCE {return bg_bsl_default_material();}
     let flags = material_map_flags[u32(input.layer)].flags;
     if (flags & 2u) == 0u { return bg_decode_pbr(vec4f(0.0), albedo, false, false); }
     let layer = bg_material_layer(input.layer);
     let filtered = textureSampleGrad(material_specular, material_sampler, coordinates.uv, layer, coordinates.dx, coordinates.dy);
     let lab = (flags & 16u) != 0u;
     let texel = bg_material_channels(filtered, coordinates.uv, layer, lab);
+    if BG_BSL_ADVANCED_REFERENCE {return bg_decode_bsl_advanced(texel,albedo,lab,true);}
     return bg_decode_pbr(texel, albedo, lab, true);
 }
 
@@ -48,7 +50,8 @@ fn bg_material_highlight(input: VertexOutput, surface: BgSurface, specular: BgPb
     if !specular.present { return vec3f(0.0); }
     let eye = camera.eye.xyz - input.world_position;
     let v = eye / max(length(eye), 0.0001);
-    let n = normalize(surface.normal);
+    let original = normalize(surface.normal);
+    let n = select(-original,original,dot(original,v)>=0.0);
     let roughness = specular.roughness;
     let reflected = reflect(-v,n);
     let environment = bg_pbr_prefiltered_sky(reflected,roughness,camera.horizon.xyz,camera.sky_zenith);
@@ -65,9 +68,16 @@ fn bg_material_highlight(input: VertexOutput, surface: BgSurface, specular: BgPb
 // Explicit material metadata, never inferred from alpha or texture names. This
 // replaces (rather than adds to) the direct lobe; shadow visibility gates all of
 // it, so thin surfaces cannot emit light or illuminate a sealed cave.
-fn bg_foliage_direct(normal: vec3f, transmission_normal: vec3f, sun: vec4f, sky: f32, layer: u32, subsurface: f32) -> vec3f {
+fn bg_foliage_direct(normal: vec3f, transmission_normal: vec3f, view: vec3f, sun: vec4f, sky: f32, layer: u32, subsurface: f32, albedo:vec3f) -> vec3f {
     let flags = material_map_flags[layer].flags;
     let wrap = f32((flags >> 8u) & 255u) / 255.0;
     let transmission = max(subsurface, f32((flags >> 16u) & 255u) / 255.0);
-    return bg_thin_direct(normal, transmission_normal, sun, sky, wrap, transmission, bg_sun_radiance());
+    if (flags&64u)!=0u {
+        let optics=bg_foliage_optics(albedo,subsurface,flags);
+        // The established material path later multiplies lighting by albedo.
+        // Normalize only this lobe to retain independently calibrated tint.
+        return bg_foliage_optical_direct(normal,transmission_normal,view,sun,sky,
+            wrap,optics,bg_sun_radiance())/max(albedo,vec3f(0.005));
+    }
+    return bg_thin_scattering(normal, transmission_normal, view, sun, sky, wrap, transmission, bg_sun_radiance());
 }

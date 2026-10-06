@@ -61,6 +61,13 @@ fn continuous(previous: crate::render::Camera, current: crate::render::Camera) -
 }
 
 impl Temporal {
+    fn shader() -> String {
+        format!(
+            "{}\n{}",
+            include_str!("temporal/sky.wgsl"),
+            include_str!("temporal.wgsl")
+        )
+    }
     pub(crate) fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
         let texture = |label, format| {
             device
@@ -118,7 +125,7 @@ impl Temporal {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("temporal resolve"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("temporal.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(Self::shader().into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("temporal layout"),
@@ -212,7 +219,12 @@ impl Temporal {
         // camera has zero output motion and can accumulate different samples.
         data.extend(matrix.inverse().to_cols_array());
         data.extend(previous.to_cols_array());
-        data.extend([0.9, if valid { 1.0 } else { 0.0 }, 0.01, 0.0]);
+        data.extend([
+            0.9,
+            if valid { 1.0 } else { 0.0 },
+            0.01,
+            f32::from(crate::render::bsl_reference::enabled()),
+        ]);
         data.extend([
             crate::render::visibility::CAMERA_NEAR,
             crate::render::visibility::CAMERA_FAR,

@@ -5,6 +5,7 @@ use crate::world::{self, BlockId, CHUNK_SIZE, Chunk, ChunkKey};
 use super::VERTEX_FLOATS;
 use super::material::face_uv;
 
+mod foliage;
 mod sources;
 pub(crate) mod water;
 
@@ -15,6 +16,7 @@ pub struct ChunkMesh {
     pub version: u64,
     pub(crate) lighting_revision: u64,
     pub(crate) local_sources: Vec<super::local_shadow::Source>,
+    pub(crate) trace: std::sync::Arc<super::trace::scene::Chunk>,
     pub(crate) vertices: Vec<f32>,
     pub(crate) indices: Vec<u32>,
     pub(crate) cutout_vertices: Vec<f32>,
@@ -24,7 +26,7 @@ pub struct ChunkMesh {
 }
 
 impl ChunkMesh {
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(crate) fn draw_byte_len(&self) -> usize {
         (self.vertices.len()
             + self.indices.len()
             + self.cutout_vertices.len()
@@ -32,7 +34,13 @@ impl ChunkMesh {
             + self.water_vertices.len()
             + self.water_indices.len())
             * 4
+    }
+
+    /// Full worker payload used to bound admission, including retained ray geometry.
+    pub(crate) fn byte_len(&self) -> usize {
+        self.draw_byte_len()
             + self.local_sources.len() * std::mem::size_of::<super::local_shadow::Source>()
+            + self.trace.byte_len()
     }
 
     #[cfg(test)]
@@ -100,6 +108,7 @@ fn mesh_chunk_with_catalog(
         version: chunk.version,
         lighting_revision,
         local_sources: Vec::new(),
+        trace: Default::default(),
         vertices: Vec::new(),
         indices: Vec::new(),
         cutout_vertices: Vec::new(),
@@ -236,7 +245,12 @@ fn mesh_chunk_with_catalog(
             for x in 0..n {
                 let p = [x, y, z];
                 let block = resolved.block_at(p, n);
-                if block.has(content::CUTOUT) && !block.has(content::PLANT) {
+                if block.botanical && block.has(content::CUTOUT) && !block.has(content::PLANT) {
+                    let exposed = foliage::leaf_exposure(p, chunk.key, &resolved, catalog, known);
+                    if exposed > 0 {
+                        foliage::emit_leaf_cluster(&mut out, origin, p, block, exposed, light);
+                    }
+                } else if block.has(content::CUTOUT) && !block.has(content::PLANT) {
                     for axis in 0..3 {
                         let u = (axis + 1) % 3;
                         let v = (axis + 2) % 3;
@@ -291,12 +305,20 @@ fn mesh_chunk_with_catalog(
                         }
                     }
                 } else if block.has(content::PLANT) {
-                    emit_plant(&mut out, origin, p, block.face_layer(1, 1), light);
+                    emit_plant(
+                        &mut out,
+                        origin,
+                        p,
+                        block.face_layer(1, 1),
+                        block.plant_upper,
+                        light,
+                    );
                 }
             }
         }
     }
     water::append(&mut out, chunk, light, catalog, known);
+    out.trace = std::sync::Arc::new(super::trace::scene::Chunk::from_mesh(&out));
     out
 }
 
@@ -305,6 +327,9 @@ struct ResolvedBlock {
     id: BlockId,
     flags: u8,
     face_layers: [u32; 6],
+    botanical: bool,
+    plant_upper: bool,
+    timber: bool,
 }
 
 impl ResolvedBlock {
@@ -325,6 +350,22 @@ impl ResolvedBlock {
             id,
             flags: catalog.block_flags(id),
             face_layers,
+            plant_upper: state.is_some_and(|s| {
+                s.properties
+                    .iter()
+                    .any(|(name, value)| name == "half" && value == "upper")
+            }),
+            timber: state.is_some_and(|s| {
+                let key = s.key.split('[').next().unwrap_or(&s.key);
+                key.ends_with(":wood") || key.ends_with("_log") || key.ends_with("_wood")
+            }),
+            botanical: catalog
+                .texture(crate::content::TextureId::new(face_layers[3]))
+                .is_some_and(|t| {
+                    t.alpha_cutout
+                        && t.key.starts_with("bloxgloom:")
+                        && (t.foliage.wrap > 0.0 || t.foliage.transmission > 0.0)
+                }),
         }
     }
 
@@ -466,6 +507,7 @@ fn emit_plant(
     origin: [f32; 3],
     p: [usize; 3],
     layer: u32,
+    upper: bool,
     light: Option<&LightField>,
 ) {
     let layer = layer as f32;
@@ -484,8 +526,11 @@ fn emit_plant(
             (1.0, 0.98, [1.0, 0.0]),
             (0.0, 0.98, [0.0, 0.0]),
         ] {
-            let x = start[0] + (end[0] - start[0]) * t;
-            let z = start[1] + (end[1] - start[1]) * t;
+            let [x, z] = foliage::plant_position(
+                [world[0], world[1] - if upper { 1.0 } else { 0.0 }, world[2]],
+                start[0] + (end[0] - start[0]) * t,
+                start[1] + (end[1] - start[1]) * t,
+            );
             let (sample, visibility) =
                 light.map_or(([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0), |field| {
                     field.spatial_with_visibility([

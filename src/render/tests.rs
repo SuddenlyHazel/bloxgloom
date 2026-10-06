@@ -519,7 +519,7 @@ fn plants_have_two_crossed_cutout_quads_and_do_not_hide_ground() {
 }
 
 #[test]
-fn adjacent_leaves_skip_interior_cutout_faces() {
+fn adjacent_leaves_use_bounded_card_clusters() {
     let mut chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
@@ -529,7 +529,7 @@ fn adjacent_leaves_skip_interior_cutout_faces() {
     chunk.blocks.set(Chunk::index([4, 2, 4]).unwrap(), LEAVES);
     let mesh = mesh_chunk(&chunk);
     assert!(mesh.indices.is_empty());
-    assert_eq!(mesh.cutout_indices.len(), 60);
+    assert_eq!(mesh.cutout_indices.len(), 36);
 }
 
 #[test]

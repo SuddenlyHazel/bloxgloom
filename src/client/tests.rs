@@ -536,6 +536,7 @@ fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
         app.queue_relight(right, false);
         let old_revision = app.lighting_revisions[&right];
         app.pending_upload.push_back(ChunkMesh {
+            trace: Default::default(),
             key: right,
             version: 0,
             lighting_revision: old_revision,

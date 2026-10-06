@@ -32,6 +32,13 @@ pub fn render_motion(directory: &Path) -> Result<(), Box<dyn Error>> {
 
 pub fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
+    let selected_view = std::env::var("BLOXGLOOM_SHOWCASE_VIEW").ok();
+    if selected_view
+        .as_deref()
+        .is_some_and(|v| !["overview", "bark", "stream"].contains(&v))
+    {
+        return Err("BLOXGLOOM_SHOWCASE_VIEW must be overview, bark, or stream".into());
+    }
     for (light, time) in [
         ("noon", crate::daylight::INITIAL_MS),
         ("golden", crate::daylight::CYCLE_MS / 16),
@@ -41,6 +48,9 @@ pub fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
             ("bark", View::Bark),
             ("stream", View::Stream),
         ] {
+            if selected_view.as_deref().is_some_and(|v| v != name) {
+                continue;
+            }
             pollster::block_on(render_previews_at(
                 vec![PreviewOutput {
                     path: directory.join(format!("{light}-{name}.png")),
@@ -60,9 +70,12 @@ pub fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::write(
         directory.join("capture-settings.txt"),
         format!(
-            "JG RTX showcase v1: fixed geometry/cameras, 1280x800, production materials and shadows. Noon and early morning. AA requested: {}. Defaults use exposure 1; explicit preview config: {}. No saved world modified.\n",
+            "JG RTX showcase v1: fixed geometry/cameras, 1280x800, production materials and shadows. Noon and early morning. AA requested: {}. Defaults use exposure 1; explicit preview config: {}. No saved world modified.\nGI requested: {}; target scale: {}; BSL reference mode: {}.\n",
             u8::from(render::post::temporal_requested()),
-            std::env::var("BLOXGLOOM_PREVIEW_CONFIG").unwrap_or_else(|_| "none".into())
+            std::env::var("BLOXGLOOM_PREVIEW_CONFIG").unwrap_or_else(|_| "none".into()),
+            std::env::var("BLOXGLOOM_GI").unwrap_or_else(|_| "0".into()),
+            std::env::var("BLOXGLOOM_GI_SCALE").unwrap_or_else(|_| "2".into()),
+            std::env::var("BLOXGLOOM_BSL_REFERENCE").unwrap_or_else(|_| "enhanced".into()),
         ),
     )?;
     Ok(())

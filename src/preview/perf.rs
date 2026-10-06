@@ -1,4 +1,5 @@
 pub(crate) mod characters;
+mod upload;
 
 use super::*;
 
@@ -161,20 +162,29 @@ pub(super) async fn run_perf_benchmark_async(
         .iter()
         .map(|mesh| mesh.cutout_vertices.len() / render::VERTEX_FLOATS)
         .sum::<usize>();
+    let draw_mesh_bytes: usize = precomputed_meshes.iter().map(|m| m.draw_byte_len()).sum();
+    let trace_triangle_bytes: usize = precomputed_meshes.iter().map(|m| m.trace.byte_len()).sum();
     let cutout_index_count = precomputed_meshes
         .iter()
         .map(|mesh| mesh.cutout_indices.len())
         .sum::<usize>();
 
     let mut post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
+    if std::env::var("BLOXGLOOM_GI_PROFILE").is_ok_and(|value| value == "1") {
+        if timestamp_supported {
+            post.trace.profile(&device, steady_frames)?;
+        } else {
+            eprintln!("trace stage profiling unavailable: adapter has no GPU timestamps");
+        }
+    }
     let temporal = std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1");
     post.enable_temporal(&device, temporal);
     eprintln!(
         "temporal AA: {}",
         if post.temporal_enabled() { "on" } else { "off" }
     );
-    let (sky_pipeline, sky_buffer, sky_group) =
-        render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
+    let mut sky =
+        render::SkyRenderer::new(&device, PERF_WIDTH, PERF_HEIGHT, render::post::HDR_FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let shadow_quality = super::sun_shadow::quality()?;
@@ -261,6 +271,22 @@ pub(super) async fn run_perf_benchmark_async(
     let mut lod_source: VecDeque<_> = lod_meshes.into();
     let mut near_ready = std::collections::HashSet::new();
 
+    // Benchmark a stable scene, without racing asynchronous BVH admission
+    // during steady samples. Setup is already outside the measured frame loop.
+    let ray_setup_start = Instant::now();
+    post.trace
+        .prepare_scene(precomputed_meshes.iter().map(|m| m.trace.clone()));
+    let ray_setup_ms = ray_setup_start.elapsed().as_secs_f64() * 1000.0;
+    eprintln!(
+        "scene transport: {}, BVH setup {:.1} ms, {} node/triangle bytes (excluded from frame samples)",
+        post.trace.ready(),
+        ray_setup_ms,
+        post.trace.scene_bytes()
+    );
+    let atmosphere = render::daylight::Atmosphere {
+        scene_transport: post.trace.ready(),
+        ..render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+    };
     let mut precomputed_source = precomputed_meshes;
     let mut mesher_results = VecDeque::<ChunkMesh>::with_capacity(MESHER_RESULT_CAPACITY);
     let mut pending_upload = VecDeque::<ChunkMesh>::with_capacity(CLIENT_PENDING_UPLOADS);
@@ -274,6 +300,40 @@ pub(super) async fn run_perf_benchmark_async(
     let mut final_visible = 0usize;
     let mut steady_done = 0usize;
     let mut last_submission = None;
+
+    if std::env::var("BLOXGLOOM_PERF_PRELOAD").is_ok_and(|value| value == "1") {
+        let preload_start = Instant::now();
+        while let Some(mesh) = precomputed_source.pop_front() {
+            near_ready.insert(mesh.key);
+            let uploaded = upload::mesh(&device, &mesh);
+            if uploaded.opaque.is_some() || uploaded.cutout.is_some() || uploaded.water.is_some() {
+                total_uploaded += 1;
+                total_upload_bytes += mesh.byte_len();
+                gpu_meshes.insert(mesh.key, uploaded);
+            }
+        }
+        while let Some(mesh) = lod_source.pop_front() {
+            lod_gpu
+                .enqueue(mesh)
+                .map_err(|_| "LOD diagnostic preload exceeded residency budget")?;
+            if lod_gpu.upload(&device) == 0 {
+                return Err("LOD diagnostic preload stalled".into());
+            }
+        }
+        // Drain setup uploads before measuring; this diagnostic mode deliberately
+        // excludes the client upload ramp without changing scene or shader quality.
+        let setup_submission = queue.submit([]);
+        device.poll(wgpu::PollType::Wait {
+            submission_index: Some(setup_submission),
+            timeout: Some(GPU_READBACK_TIMEOUT),
+        })?;
+        eprintln!(
+            "diagnostic preload: {} chunks, {} bytes, {:.1} ms excluded from frame samples; upload ramp bypassed",
+            total_uploaded,
+            total_upload_bytes,
+            preload_start.elapsed().as_secs_f64() * 1000.0
+        );
+    }
 
     loop {
         let loading = !precomputed_source.is_empty()
@@ -333,32 +393,7 @@ pub(super) async fn run_perf_benchmark_async(
                 gpu_meshes.remove(&mesh.key);
                 continue;
             }
-            let upload = |vertices: &[f32], indices: &[u32]| {
-                if indices.is_empty() {
-                    return None;
-                }
-                Some(PerfGpuSubmesh {
-                    vertex: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("perf chunk vertices"),
-                        contents: bytemuck::cast_slice(vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    index: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("perf chunk indices"),
-                        contents: bytemuck::cast_slice(indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-                    indices: indices.len() as u32,
-                })
-            };
-            gpu_meshes.insert(
-                mesh.key,
-                PerfGpuMesh {
-                    opaque: upload(&mesh.vertices, &mesh.indices),
-                    cutout: upload(&mesh.cutout_vertices, &mesh.cutout_indices),
-                    water: upload(&mesh.water_vertices, &mesh.water_indices),
-                },
-            );
+            gpu_meshes.insert(mesh.key, upload::mesh(&device, &mesh));
             uploaded_chunks += 1;
             uploaded_bytes += mesh_bytes;
         }
@@ -429,23 +464,24 @@ pub(super) async fn run_perf_benchmark_async(
             hovered: None,
         };
         ui_renderer.prepare(&queue, PERF_WIDTH, PERF_HEIGHT, &ui_frame);
+        sky.configure(atmosphere);
         queue.write_buffer(
-            &sky_buffer,
+            &sky.camera,
             0,
-            bytemuck::cast_slice(&render::sky_camera_data(
+            bytemuck::cast_slice(&render::sky_camera_data_at_sample(
                 camera,
                 PERF_WIDTH,
                 PERF_HEIGHT,
-                render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+                atmosphere,
+                u32::try_from(samples.len())?,
             )),
         );
         queue.write_buffer(
             &camera_buffer,
             0,
             bytemuck::cast_slice(&{
-                let mut data = render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                    .camera_data(matrix, camera.position);
-                if lod_horizon > 0 {
+                let mut data = atmosphere.camera_data(matrix, camera.position);
+                if lod_horizon > 0 && !render::bsl_reference::enabled() {
                     data[28] = f32::from(lod_horizon) * 0.65;
                     data[29] = f32::from(lod_horizon);
                 }
@@ -465,24 +501,24 @@ pub(super) async fn run_perf_benchmark_async(
             bytemuck::cast_slice(&render::target_outline_vertices(target_block)),
         );
 
-        sun_shadows.update(
-            &queue,
-            camera,
-            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
-        );
+        sun_shadows.update(&queue, camera, atmosphere);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless perf frame"),
         });
         let first_query = u32::try_from(samples.len() * 2)?;
         let frame_query_set = query_set.as_ref();
-        if let Some(mut pass) = sun_shadows.begin_timed(
+        sky.prepare_timed(
+            &device,
             &mut encoder,
+            PERF_WIDTH,
+            PERF_HEIGHT,
             frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
                 query_set: set,
                 beginning_of_pass_write_index: Some(first_query),
                 end_of_pass_write_index: None,
             }),
-        ) {
+        );
+        if let Some(mut pass) = sun_shadows.begin_timed(&mut encoder, None) {
             pass.set_bind_group(0, &sun_shadows.caster_group, &[]);
             pass.set_bind_group(1, &texture_group, &[]);
             for cutout in [false, true] {
@@ -522,17 +558,10 @@ pub(super) async fn run_perf_benchmark_async(
                     }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: frame_query_set
-                    .filter(|_| !sun_shadows.projection.enabled)
-                    .map(|set| wgpu::RenderPassTimestampWrites {
-                        query_set: set,
-                        beginning_of_pass_write_index: Some(first_query),
-                        end_of_pass_write_index: None,
-                    }),
                 ..Default::default()
             });
-            pass.set_pipeline(&sky_pipeline);
-            pass.set_bind_group(0, &sky_group, &[]);
+            pass.set_pipeline(&sky.pipeline);
+            pass.set_bind_group(0, &sky.group, &[]);
             pass.draw(0..3, 0..1);
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
@@ -567,10 +596,7 @@ pub(super) async fn run_perf_benchmark_async(
                 }
             }
         }
-        post.reflections.configure(
-            camera.position,
-            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
-        );
+        post.reflections.configure(camera.position, atmosphere);
         post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
         {
             let mut attachments = render::scene_ao::attachments(
@@ -612,7 +638,19 @@ pub(super) async fn run_perf_benchmark_async(
                 final_triangles += water_renderer.draw(&mut pass, &m.vertex, &m.index, m.indices);
             }
         }
-        post.resolve_reflections(&device, &queue, &mut encoder, &depth_view, matrix);
+        post.trace
+            .profile_active(matches!(phase, PerfPhase::Steady));
+        post.resolve_transport(
+            &device,
+            &queue,
+            &mut encoder,
+            &depth_view,
+            matrix,
+            camera.position,
+            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+            &pipeline,
+            &texture_group,
+        );
         post.resolve_atmosphere(
             &device,
             &queue,
@@ -760,6 +798,15 @@ pub(super) async fn run_perf_benchmark_async(
         None
     };
 
+    if let Some(stages) = post.trace.profile_results(&device, &queue)? {
+        for (stage, samples) in render::trace::profiling::STAGES.iter().zip(&stages) {
+            print_percentiles(&format!("GPU trace {stage}"), samples);
+        }
+        eprintln!(
+            "trace profiling: per-pass GPU timestamps, steady frames only; final stage readback excluded from all frame samples"
+        );
+    }
+
     let (upload_samples, steady_samples): (Vec<_>, Vec<_>) = samples
         .iter()
         .partition(|sample| matches!(sample.phase, PerfPhase::Upload));
@@ -857,6 +904,9 @@ pub(super) async fn run_perf_benchmark_async(
     eprintln!(
         "scene setup: {} mesh vertices ({} cutout), {} indices ({} cutout), generated in {:.1} ms (excluded from frame samples)",
         vertex_count, cutout_vertex_count, index_count, cutout_index_count, generation_ms
+    );
+    eprintln!(
+        "mesh payload: {draw_mesh_bytes} raster vertex/index bytes, {trace_triangle_bytes} retained CPU ray triangle bytes; mesh/upload budget figures include the full worker payload"
     );
     eprintln!(
         "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover sun caster pass (when enabled) and world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",

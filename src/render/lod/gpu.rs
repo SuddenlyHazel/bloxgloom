@@ -252,7 +252,9 @@ impl Gpu {
         let vp = super::super::visibility::view_projection(relative, width, height);
         let vp = super::super::post::temporal::jitter_matrix(vp, self.jitter, width, height);
         let mut data = atmosphere.camera_data(vp, Vec3::ZERO);
-        if self.horizon > 0 {
+        if super::super::bsl_reference::enabled() {
+            data[28] = camera.position.y;
+        } else if self.horizon > 0 {
             data[28] = f32::from(self.horizon) * 0.65;
             data[29] = f32::from(self.horizon);
         }

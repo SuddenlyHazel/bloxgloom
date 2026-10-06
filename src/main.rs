@@ -442,6 +442,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_weather_previews(std::path::Path::new(&directory))?;
             println!("wrote weather previews to {directory}");
         }
+        Some("landscape-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "landscape-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: landscape-preview [output-dir]".into());
+            }
+            preview::render_landscape_previews(std::path::Path::new(&directory))?;
+            println!("wrote generated landscape previews to {directory}");
+        }
         Some("daylight-preview") => {
             let directory = args
                 .next()

@@ -1,9 +1,10 @@
 // Camera/object TAA. Explicit actor motion includes previous presented skinning.
-// Reactive surfaces and sky always use this frame.
+// Reactive surfaces use this frame. Enhanced sky remains current; explicit
+// source-reference sky accumulates directional, sky-classified history.
 struct Settings {
     inverse_current: mat4x4f,
     previous: mat4x4f,
-    // history weight, history valid, relative depth tolerance, unused
+    // history weight, history valid, relative depth tolerance, reference sky history
     params: vec4f,
     depth_range: vec4f,
 };
@@ -34,7 +35,14 @@ fn linear_depth(z: f32) -> f32 { return settings.depth_range.x / max(1.0 - z * (
     out.color = vec4f(color, 1.0);
     out.depth = linear_depth(z);
     let motion_sample = textureLoad(object_motion, pixel, 0);
-    if settings.params.y == 0.0 || z >= 1.0 || motion_sample.a < 0.0 || textureLoad(indirect_reactive, pixel, 0).a < 0.0 { return out; }
+    let reactive=motion_sample.a<0.0||textureLoad(indirect_reactive,pixel,0).a<0.0;
+    let reference_sky=z>=1.0&&settings.params.w>0.5;
+    if reference_sky&&!reactive {out.depth=-1.0;}
+    if settings.params.y == 0.0 || reactive { return out; }
+    if z>=1.0 {
+        if reference_sky {out.color=vec4f(bg_reference_temporal_sky(uv,color,pixel,size),1.0);}
+        return out;
+    }
     var old_uv: vec2f;
     var expected: f32;
     if motion_sample.a > 0.0 {

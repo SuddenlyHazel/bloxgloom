@@ -5,6 +5,22 @@ use wgpu::util::DeviceExt;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {
+    if id.x >= 24u {
+        let variant = (id.x-24u)/2u;
+        let energy = vec3f(2.0,1.0,0.5);
+        let direct = vec3f(0.5,0.25,0.125);
+        var visibility = 0.3;
+        var occlusion = 0.8;
+        var diffuse_weight = 0.6;
+        if variant == 1u {visibility=0.05;occlusion=0.15;}
+        if variant == 2u {occlusion=0.0;diffuse_weight=1.0;}
+        if variant == 3u {diffuse_weight=0.0;}
+        let record = bg_occluded_indirect_record(energy,visibility,occlusion,diffuse_weight);
+        let color = bg_occlude_indirect(direct+energy*visibility,energy,visibility,occlusion)*diffuse_weight;
+        if id.x%2u == 0u {result[id.x]=vec4f(color,1.0);}
+        else {result[id.x]=vec4f(record.rgb*abs(-record.a),record.a);}
+        return;
+    }
     if id.x >= 18u {
         var ray = vec3f(0.0,-1.0,0.0);
         if id.x == 19u { ray = vec3f(1.0,-0.081,0.0); }
@@ -91,12 +107,12 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
     });
     let output = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: &[0; 24 * 16],
+        contents: &[0; 32 * 16],
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 24 * 16,
+        size: 32 * 16,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -113,9 +129,9 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
         let mut pass = encoder.begin_compute_pass(&Default::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(24, 1, 1);
+        pass.dispatch_workgroups(32, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 24 * 16);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 32 * 16);
     queue.submit([encoder.finish()]);
     let slice = readback.slice(..);
     slice.map_async(wgpu::MapMode::Read, |result| result.unwrap());
@@ -123,6 +139,27 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
     let bytes = slice.get_mapped_range().unwrap();
     let rows: &[[f32; 4]] = bytemuck::cast_slice(&bytes);
     let light: Vec<_> = rows.iter().map(|v| Vec3::new(v[0], v[1], v[2])).collect();
+    for (case, (visibility, occlusion, weight)) in [
+        (0.3, 0.8, 0.6),
+        (0.05, 0.15, 0.6),
+        (0.3, 0.0, 1.0),
+        (0.3, 0.8, 0.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let retained = Vec3::new(2.0, 1.0, 0.5) * visibility * occlusion * weight;
+        let direct = Vec3::new(0.5, 0.25, 0.125) * weight;
+        assert!(
+            light[24 + case * 2].distance(direct + retained) < 0.00001,
+            "texture AO must preserve direct energy under overlapping baked/contact suppression, case{case}"
+        );
+        assert!(
+            light[25 + case * 2].distance(retained) < 0.00001,
+            "normalized RGB times visibility must exactly reconstruct ambient, case{case}"
+        );
+        assert!((rows[25 + case * 2][3] - visibility * occlusion).abs() < 0.00001);
+    }
 
     assert_eq!(
         light[18],

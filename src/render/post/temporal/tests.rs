@@ -210,8 +210,21 @@ fn gpu_temporal_history_rejects_disocclusion_and_offscreen_motion() {
                     false,
                     [6.0, 0.0, 0.1, 1.0],
                 ),
-            ]);
-        for (history_depth, previous, valid, expected_blend, uniform_black, object) in cases {
+            ])
+            .map(|(d, p, v, b, black, object)| (d, p, v, b, black, object, 1.0))
+            .chain(
+                [-1.0, -2.0]
+                    .map(|reactive| (0.5, Mat4::IDENTITY, true, false, false, [0.0; 4], reactive)),
+            );
+        let indirect = texture(
+            super::super::HDR_FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+        let indirect = indirect.create_view(&Default::default());
+
+        for (history_depth, previous, valid, expected_blend, uniform_black, object, reactive) in
+            cases
+        {
             let mut uniforms = Vec::new();
             uniforms.extend(Mat4::IDENTITY.to_cols_array());
             uniforms.extend(previous.to_cols_array());
@@ -296,7 +309,32 @@ fn gpu_temporal_history_rejects_disocclusion_and_offscreen_motion() {
                     ..Default::default()
                 });
             }
-            taa.resolve(&device, &mut encoder, &scene_view, &depth_view, None);
+            {
+                let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &indirect,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: reactive,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    ..Default::default()
+                });
+            }
+            taa.resolve(
+                &device,
+                &mut encoder,
+                &scene_view,
+                &depth_view,
+                Some(&indirect),
+            );
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
                     texture: &scene,
@@ -346,7 +384,7 @@ fn gpu_temporal_history_rejects_disocclusion_and_offscreen_motion() {
                 );
             }
         }
-        assert_eq!(taa.frame, 11);
+        assert_eq!(taa.frame, 13);
         let (_, first_offset) = taa.prepare(&queue, camera(), 5, 5);
         let stable = taa.pending.unwrap().0;
         let (_, repeated_offset) = taa.prepare(&queue, camera(), 5, 5);
@@ -372,3 +410,6 @@ fn gpu_temporal_history_rejects_disocclusion_and_offscreen_motion() {
         assert_eq!(reset.colors[0].texture().size().height, 3);
     });
 }
+
+#[path = "sky_tests.rs"]
+mod sky;

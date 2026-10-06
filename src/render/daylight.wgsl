@@ -7,9 +7,11 @@ fn bg_local_light(normal: vec3f, radiance: vec3f, direction: vec3f) -> vec3f {
     let lambert = max(dot(normalize(normal), direction / max(length(direction), 0.00001)), 0.0);
     return radiance * mix(1.0, lambert, confidence);
 }
-// Atmosphere radiance is packed once after weather and lighting controls.
-// All consumers use this linear-light basis, with no automatic exposure.
-fn bg_sun_radiance() -> vec3f { return camera.sun_radiance.xyz; }
+// The historical uniform name stores directional irradiance, shared by the
+// diffuse and GGX BRDFs. Diffuse converts irradiance to radiance with 1/pi;
+// the solar disc uses its own presentation scale, not this receiver BRDF.
+fn bg_sun_irradiance() -> vec3f { return camera.sun_radiance.xyz; }
+fn bg_sun_radiance() -> vec3f { return bg_sun_irradiance(); }
 fn bg_environment_radiance(direction: vec3f) -> vec3f {
     // This is an analytic sky, not a ground/scene reflection. Downward rays
     // must not return blue horizon light; local transport is supplied separately.
@@ -18,7 +20,7 @@ fn bg_environment_radiance(direction: vec3f) -> vec3f {
         smoothstep(-0.08, 0.86, direction.y)) * camera.sky_zenith.w * sky;
 }
 fn bg_direct_light(normal: vec3f, sun: vec4f, sky: f32) -> vec3f {
-    return sky * max(dot(normal, normalize(sun.xyz)), 0.0) * bg_sun_radiance();
+    return sky * max(dot(normal, normalize(sun.xyz)), 0.0) * bg_sun_irradiance() / 3.14159265359;
 }
 fn bg_indirect_daylight(normal: vec3f, sun: vec4f, sky: f32) -> vec3f {
     let hemisphere = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
@@ -47,4 +49,16 @@ fn bg_indirect_light(normal: vec3f, sun: vec4f, sky: f32, bounce: vec3f, glow_bo
 fn bg_local_indirect_record(sky_fill: vec3f, bounce: vec3f, baked: f32, contact: f32) -> vec4f {
     let visibility=max(baked*contact,0.00001);
     return vec4f((sky_fill*contact+bounce)/visibility,visibility);
+}
+
+// The indirect record is normalized energy, not already-visible radiance.
+// Remove only its retained portion, preserving direct/emissive light when
+// texture AO overlaps baked corner/contact visibility.
+fn bg_occlude_indirect(color: vec3f, energy: vec3f, visibility: f32, occlusion: f32) -> vec3f {
+    return max(vec3f(0.0),color-energy*visibility*(1.0-clamp(occlusion,0.0,1.0)));
+}
+fn bg_occluded_indirect_record(energy: vec3f, visibility: f32, occlusion: f32, diffuse_weight: f32) -> vec4f {
+    // AO occurs exactly once in alpha. RGB*abs(alpha) reconstructs the
+    // retained ambient removed by GI, and scene AO unions this visibility.
+    return vec4f(energy*diffuse_weight,visibility*clamp(occlusion,0.0,1.0));
 }

@@ -1,6 +1,6 @@
 const BG_MATERIAL_HISTORY_SIGN: f32 = 1.0;
 
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -25,6 +25,7 @@ struct VertexOutput {
     @location(7) @interpolate(flat) history_sign: f32,
     @location(8) local_radiance: vec3f,
     @location(9) local_direction: vec3f,
+    @location(10) block_level:f32,
 };
 @group(1) @binding(0) var material: texture_2d_array<f32>;
 @group(1) @binding(1) var material_sampler: sampler;
@@ -54,15 +55,25 @@ fn bg_material_auxiliary(uv: vec2f, texture_id: u32) -> vec4f {
 }
 fn voxel_vertex(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    let vertex = bg_vertex(BgVertex(input.position, input.normal, input.uv), u32(input.layer));
+    var vertex = bg_vertex(BgVertex(input.position, input.normal, input.uv), u32(input.layer));
+    let moving_foliage = (material_map_flags[u32(input.layer)].flags & 64u) != 0u;
+    if moving_foliage {
+        var wind_uv = vertex.uv;
+        let flags = material_map_flags[u32(input.layer)].flags;
+        if (flags & 8u) != 0u {
+            wind_uv.y = wind_uv.y*0.5 + select(0.5,0.0,(flags & 128u) != 0u);
+        }
+        vertex.position = bg_foliage_wind(vertex.position, vertex.normal, wind_uv, camera.fog_range.z);
+    }
     output.position = camera.view_projection * vec4<f32>(vertex.position, 1.0);
     let sky = input.light_levels.x;
     let glow = input.light_levels.y;
+    output.block_level=glow;
     let encoded = u32(input.bounce_packed);
     let bounce = vec3<f32>(f32(encoded & 255u), f32((encoded >> 8u) & 255u), f32((encoded >> 16u) & 255u)) / 255.0;
     let reactive = input.glow_bounce_packed < 0.0;
     let glow_encoded = u32(select(input.glow_bounce_packed, -input.glow_bounce_packed - 1.0, reactive));
-    output.history_sign = select(1.0, -1.0, reactive);
+    output.history_sign = select(1.0, -1.0, reactive || moving_foliage);
     let glow_bounce = vec3<f32>(f32(glow_encoded & 255u), f32((glow_encoded >> 8u) & 255u), f32((glow_encoded >> 16u) & 255u)) / 255.0;
     output.local_radiance = unpack4x8unorm(u32(input.local_rgb_packed)).xyz * glow;
     output.local_direction = unpack4x8snorm(u32(input.local_direction_packed)).xyz;
@@ -89,8 +100,9 @@ fn surface(input: VertexOutput, albedo: vec4f, coordinates: MaterialCoordinates,
     let transmission_normal = bg_thin_transmission_normal(input.normal, normal,
         cross(dpdx(input.world_position), dpdy(input.world_position)),
         camera.eye.xyz - input.world_position);
-    let direct = bg_foliage_direct(normal, transmission_normal, camera.sun,
-        input.sky_level, u32(input.layer), specular.subsurface);
+    let view = normalize(camera.eye.xyz-input.world_position);
+    let direct = bg_foliage_direct(normal, transmission_normal, view, camera.sun,
+        input.sky_level, u32(input.layer), specular.subsurface,albedo.rgb);
     let flat = bg_surface_light(input.normal, camera.sun, input.sky_level, vec3f(0.0), vec3f(0.0), vec3f(0.0), 1.0);
     let mapped = bg_surface_light(normal, camera.sun, input.sky_level, vec3f(0.0), vec3f(0.0), vec3f(0.0), 1.0);
     var light = max(vec3f(0.0), input.light + (mapped - flat) + bg_shadowed_local_light(input.world_position, normal, input.local_radiance, input.local_direction));
@@ -122,19 +134,60 @@ fn surface(input: VertexOutput, albedo: vec4f, coordinates: MaterialCoordinates,
 }
 fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr, receiver: BgShadowReceiver) -> BgSceneOutput {
     let surface = material_surface.shaded;
-    let sun_visibility = bg_sun_visibility(receiver)*material_surface.relief_visibility;
+    if BG_BSL_REFERENCE || BG_BSL_ADVANCED_REFERENCE {
+        let flags=material_map_flags[u32(input.layer)].flags;
+        var basic=0.0;
+        if (flags&64u)!=0u {basic=select(1.0,0.5,input.normal.y>0.9999);}
+        let view=normalize(camera.eye.xyz-input.world_position);
+        let emission=max(material_emission[u32(input.layer)],specular.emission);
+        var color=bg_bsl_default_surface(surface.albedo.rgb,normalize(surface.normal),view,
+            vec2f(input.block_level,input.sky_level),max(input.indirect_bounce.w,0.0),basic,
+            emission,bg_sun_visibility(receiver),bg_bsl_reference_frame());
+        if BG_BSL_REFERENCE || !specular.present {
+            return bg_scene_output(color,vec3f(0.0),input.world_position,input.sky_level,input.history_sign);
+        }
+        let original=normalize(surface.normal);
+        let normal=select(-original,original,dot(original,view)>=0.0);
+        let nv=clamp(dot(normal,view),0.0,1.0);
+        let smoothness=1.0-specular.roughness;
+        let fresnel=bg_pbr_fresnel(nv,specular)*material_surface.occlusion*material_surface.occlusion;
+        // Actual gbuffers_terrain artistic attenuation: metals retain their
+        // lit base texture; only dielectrics lose diffuse to Fresnel.
+        color*=1.0-fresnel*smoothness*smoothness*(1.0-specular.metal);
+        let raw_sun=select(camera.sun.xyz,-camera.sun.xyz,
+            camera.ambient_lower.w<0.5 && camera.sun.y>0.0);
+        let reflected=reflect(-view,normal);
+        let environment=bg_bsl_artistic_environment(reflected,vec4f(raw_sun,camera.sun.w),
+            vec2f(camera.sun_radiance.w,camera.sky_zenith.w));
+        let response=bg_pbr_material_environment_weight(nv,specular)
+            *material_surface.occlusion*material_surface.occlusion;
+        color+=bg_pbr_sun(normal,view,camera.sun,input.sky_level,
+            bg_sun_visibility(receiver),specular,bg_sun_radiance())
+            +response*environment*input.sky_level;
+        let output=bg_scene_output(color,vec3f(0.0),input.world_position,input.sky_level,input.history_sign);
+        return bg_scene_reflection(output,normal,specular.roughness,
+            length(camera.eye.xyz-input.world_position),response*bg_fog_transmittance(
+                input.world_position,input.sky_level),input.sky_level);
+    }
+    let sun_visibility = bg_sun_visibility(receiver)*material_surface.relief_visibility
+        *bg_primary_sun_transmittance(input.world_position);
     let highlight = bg_material_highlight(input,surface,specular,sun_visibility,material_surface.visibility*material_surface.occlusion);
     let shadowed = max(vec3f(0.0),material_surface.light-material_surface.direct*(1.0-sun_visibility));
     let ratio = clamp(shadowed/max(material_surface.light,vec3f(0.00001)),vec3f(0.0),vec3f(1.0));
     let eye = camera.eye.xyz-input.world_position;
-    let nv = dot(normalize(surface.normal),eye/max(length(eye),0.0001));
+    let view = eye/max(length(eye),0.0001);
+    let original_normal = normalize(surface.normal);
+    let reflection_normal = select(-original_normal,original_normal,dot(original_normal,view)>=0.0);
+    let nv = dot(reflection_normal,view);
     let diffuse_weight = bg_pbr_diffuse_weight(specular,nv);
-    let color = max(vec3f(0.0),surface.albedo.rgb*surface.light*ratio-material_surface.indirect*(1.0-material_surface.occlusion))*diffuse_weight+surface.emission+highlight;
-    let output = bg_scene_output(color,material_surface.indirect*material_surface.occlusion*diffuse_weight,input.world_position,input.sky_level,
-        material_surface.visibility * material_surface.occlusion * min(min(BG_MATERIAL_HISTORY_SIGN, input.history_sign), bg_local_history_sign(input.world_position, surface.normal, input.local_radiance, input.local_direction)));
+    let color = bg_occlude_indirect(surface.albedo.rgb*surface.light*ratio,
+        material_surface.indirect,material_surface.visibility,material_surface.occlusion)*diffuse_weight+surface.emission+highlight;
+    let indirect = bg_occluded_indirect_record(material_surface.indirect,material_surface.visibility,material_surface.occlusion,diffuse_weight);
+    let output = bg_scene_output(color,indirect.rgb,input.world_position,input.sky_level,
+        indirect.a * min(min(BG_MATERIAL_HISTORY_SIGN, input.history_sign), bg_local_history_sign(input.world_position, surface.normal, input.local_radiance, input.local_direction)));
     if !specular.present {return output;}
-    return bg_scene_reflection(output,surface.normal,specular.roughness,length(eye),
-        bg_pbr_environment_weight(nv,specular.roughness,specular.f0)*bg_fog_transmittance(input.world_position,input.sky_level),
+    return bg_scene_reflection(output,reflection_normal,specular.roughness,length(eye),
+        bg_pbr_material_environment_weight(nv,specular)*bg_fog_transmittance(input.world_position,input.sky_level),
         input.sky_level*material_surface.visibility*material_surface.occlusion);
 }
 @fragment fn fs_main(input: VertexOutput) -> BgSceneOutput {

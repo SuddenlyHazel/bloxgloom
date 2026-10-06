@@ -1,5 +1,5 @@
 struct ReflectionSettings {
- inverse:mat4x4f, projection:mat4x4f, eye:vec4f, horizon:vec4f, zenith:vec4f, size:vec4f,
+ inverse:mat4x4f, projection:mat4x4f, eye:vec4f, horizon:vec4f, zenith:vec4f, size:vec4f, sun:vec4f, climate:vec4f,
 };
 @group(0) @binding(0) var depth:texture_depth_2d;
 @group(0) @binding(1) var normals:texture_2d<f32>;
@@ -8,6 +8,7 @@ struct ReflectionSettings {
 @group(0) @binding(4) var replacement:texture_2d<f32>;
 @group(0) @binding(5) var<uniform> settings:ReflectionSettings;
 @group(0) @binding(6) var linear_sampler:sampler;
+@group(0) @binding(7) var indirect:texture_2d<f32>;
 @vertex fn vs_main(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {
  let p=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));return vec4f(p[i],0.0,1.0);
 }
@@ -93,7 +94,13 @@ fn onscreen(p:vec3f)->bool {return all(p.xy>vec2f(0.002))&&all(p.xy<vec2f(0.998)
  let filtered=textureSampleLevel(radiance,linear_sampler,hit,lod);
  let scene=filtered.rgb/max(filtered.a,0.00001);
  let coverage=smoothstep(0.05,0.5,filtered.a);
- let fallback=bg_pbr_prefiltered_sky(ray,data.z,settings.horizon.xyz,settings.zenith)*weight.a;
+ var fallback=bg_pbr_prefiltered_sky(ray,data.z,settings.horizon.xyz,settings.zenith);
+ // Water has an explicit receiver marker; its independent optical fallback
+ // stays enhanced even in the artistic opaque-material comparison.
+ if settings.climate.z>0.5 && textureLoad(indirect,p,0).a>=-1.5 {
+  fallback=bg_bsl_artistic_environment(ray,settings.sun,settings.climate.xy);
+ }
+ fallback*=weight.a;
  return vec4f((max(scene,vec3f(0.0))-fallback)*weight.rgb*confidence*coverage,confidence*coverage);
 }
 @fragment fn composite(@builtin(position) frag:vec4f)->@location(0) vec4f {

@@ -25,6 +25,7 @@ pub(crate) mod parameters;
 mod preparation;
 pub(crate) use preparation::{Preparation, Ready as ReadyVisuals};
 pub(crate) mod atmosphere;
+pub(crate) mod bsl_reference;
 pub(crate) mod daylight;
 pub(crate) mod local_shadow;
 mod pipeline;
@@ -35,6 +36,7 @@ mod scene_contact;
 mod sky;
 pub(crate) mod sun_shadow;
 mod target;
+pub(crate) mod trace;
 mod visibility;
 
 #[cfg(test)]
@@ -71,7 +73,7 @@ pub use mesh::{ChunkMesh, mesh_chunk_lit_with_neighbors};
 pub(crate) use pipeline::{MaterialPreviewMode, create_material_preview_pipeline};
 pub(crate) use pipeline::{create_custom_voxel_pipeline, create_voxel_pipeline};
 pub(crate) use pipeline::{create_sun_shadow_pipelines, create_voxel_pipeline_with_catalog};
-pub(crate) use sky::{create_sky_pipeline, sky_camera_data};
+pub(crate) use sky::{SkyRenderer, sky_camera_data, sky_camera_data_at_sample};
 pub(crate) use target::{create_target_pipeline, target_outline_vertices};
 pub(crate) use visibility::{chunk_visible, view_projection};
 
@@ -156,9 +158,7 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     depth: wgpu::TextureView,
     post: post::PostProcess,
-    sky_pipeline: wgpu::RenderPipeline,
-    sky_buffer: wgpu::Buffer,
-    sky_group: wgpu::BindGroup,
+    sky: SkyRenderer,
     pipeline: wgpu::RenderPipeline,
     cutout_pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
@@ -179,6 +179,7 @@ pub struct Renderer {
     sun_shadows: sun_shadow::SunShadows,
     local_shadows: local_shadow::LocalShadows,
     local_shadow_frame: std::time::Instant,
+    sky_sample: u32,
     sun_pipelines: (wgpu::RenderPipeline, wgpu::RenderPipeline),
     fire: fire::FireRenderer,
     water: water::WaterRenderer,
@@ -315,7 +316,7 @@ impl Renderer {
         let depth = create_depth(&device, config.width, config.height);
         let mut post = post::PostProcess::new(&device, config.width, config.height, format);
         post.enable_temporal(&device, post::temporal_requested());
-        let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
+        let sky = SkyRenderer::new(&device, config.width, config.height, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
@@ -389,9 +390,7 @@ impl Renderer {
             config,
             depth,
             post,
-            sky_pipeline,
-            sky_buffer,
-            sky_group,
+            sky,
             pipeline,
             cutout_pipeline,
             camera_buffer,
@@ -412,6 +411,7 @@ impl Renderer {
             sun_shadows,
             local_shadows,
             local_shadow_frame: std::time::Instant::now(),
+            sky_sample: 0,
             sun_pipelines,
             fire,
             water,
@@ -608,6 +608,7 @@ impl Renderer {
         self.ready_near.remove(&key);
         self.pending_immediate.remove(&key);
         self.meshes.remove(&key);
+        self.post.trace.set(key, None);
         self.pending.remove(&key);
         self.pending_order.retain(|pending_key| *pending_key != key);
     }
@@ -634,6 +635,7 @@ impl Renderer {
                 break;
             }
             let mesh = self.pending.remove(&key).unwrap();
+            self.post.trace.set(key, Some(mesh.trace.clone()));
             crate::client::trace::event(format_args!(
                 "upload {key:?} version={} rev={}",
                 mesh.version, mesh.lighting_revision
@@ -697,7 +699,20 @@ impl Renderer {
         ui_frame: &UiFrame<'_>,
     ) -> Result<RenderStats, RendererError> {
         let uploaded_chunks = self.upload_pending();
-        let atmosphere = self.weather.atmosphere(self.atmosphere);
+        self.post.trace.install(&self.device);
+        self.post.trace.prepare_gpu(
+            &self.device,
+            &self.pipeline,
+            wgpu::Extent3d {
+                width: self.config.width,
+                height: self.config.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let atmosphere = daylight::Atmosphere {
+            scene_transport: self.post.trace.ready(),
+            ..self.weather.atmosphere(self.atmosphere)
+        };
         if uploaded_chunks < UPLOAD_MESHES_PER_FRAME {
             self.lod.upload(&self.device);
         }
@@ -724,19 +739,21 @@ impl Renderer {
         if self.size.width == 0 || self.size.height == 0 {
             return Ok(stats);
         }
+        self.sky.configure(atmosphere);
         self.queue.write_buffer(
-            &self.sky_buffer,
+            &self.sky.camera,
             0,
-            bytemuck::cast_slice(&sky_camera_data(
+            bytemuck::cast_slice(&sky_camera_data_at_sample(
                 camera,
                 self.config.width,
                 self.config.height,
                 atmosphere,
+                self.sky_sample,
             )),
         );
         self.post.reflections.configure(camera.position, atmosphere);
         let mut camera_data = atmosphere.camera_data(view_projection, camera.position);
-        if self.lod_horizon > 0 {
+        if self.lod_horizon > 0 && !bsl_reference::enabled() {
             camera_data[28] = f32::from(self.lod_horizon) * 0.65;
             camera_data[29] = f32::from(self.lod_horizon);
         }
@@ -798,6 +815,12 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
+        self.sky.prepare(
+            &self.device,
+            &mut encoder,
+            self.config.width,
+            self.config.height,
+        );
         self.draw_sun_shadows(&mut encoder);
         self.draw_local_shadows(&mut encoder);
         {
@@ -820,8 +843,8 @@ impl Renderer {
                 }),
                 ..Default::default()
             });
-            pass.set_pipeline(&self.sky_pipeline);
-            pass.set_bind_group(0, &self.sky_group, &[]);
+            pass.set_pipeline(&self.sky.pipeline);
+            pass.set_bind_group(0, &self.sky.group, &[]);
             pass.draw(0..3, 0..1);
             stats.drawn_triangles += self.lod.draw(&mut pass);
             pass.set_pipeline(&self.pipeline);
@@ -935,12 +958,16 @@ impl Renderer {
             }
         }
 
-        self.post.resolve_reflections(
+        self.post.resolve_transport(
             &self.device,
             &self.queue,
             &mut encoder,
             &self.depth,
             view_projection,
+            camera.position,
+            atmosphere,
+            &self.pipeline,
+            &self.texture_group,
         );
         if !self.fire.is_empty() || !self.rain.is_empty() {
             let mut attachments = scene_ao::attachments(
@@ -1025,6 +1052,7 @@ impl Renderer {
             &self.catalog,
         );
         self.queue.submit(Some(encoder.finish()));
+        self.sky_sample = self.sky_sample.wrapping_add(1);
         self.post.submitted();
         self.avatars.submitted();
         self.queue.present(frame);

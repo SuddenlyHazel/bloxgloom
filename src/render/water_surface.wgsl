@@ -14,15 +14,18 @@ fn bg_water_surface(tint: vec4f, normal: vec3f, sky: f32, glow: f32,
     let roughness = 0.12;
     let reflection_weight = bg_pbr_environment_weight(max(dot(n,view),0.0),roughness,vec3f(0.02));
     let reflection = bg_pbr_prefiltered_sky(reflect(-view,n),roughness,camera.horizon.xyz,camera.sky_zenith)*reflection_weight*sky;
-    let pbr = BgPbr(roughness,vec3f(0.02),0.0,0.0,0.0,0.0,true);
-    let specular = bg_pbr_sun(n,view,camera.sun,sky,sun_visibility,pbr,bg_sun_radiance());
+    let pbr = BgPbr(roughness,vec3f(0.02),0.0,0.0,0.0,0.0,vec3f(1.0),0u,false,true);
+    let visibility=sun_visibility*bg_primary_sun_transmittance(world);
+    let specular = bg_pbr_sun(n,view,camera.sun,sky,visibility,pbr,bg_sun_radiance());
     // Direct diffuse and the solar reflection share geometric visibility.
     // Sky/local transport remains independent, including under bridges.
-    let shadowed_light = max(light-bg_direct_light(n,camera.sun,sky)*(1.0-sun_visibility),vec3f(0.0));
+    let shadowed_light = max(light-bg_direct_light(n,camera.sun,sky)*(1.0-visibility),vec3f(0.0));
     let color = tint.rgb*shadowed_light*(1.0-fresnel)+reflection+specular;
     let alpha = clamp(tint.a+fresnel*(1.0-tint.a), 0.05, 0.96);
     let fog_sky = max(sky,camera.eye.w);
-    var result = bg_scene_output(color,vec3f(0.0),relative+camera.eye.xyz,fog_sky,-1.0);
+    // -2 identifies water independently of reactive foliage (visibility >= -1).
+    // Temporal AA still rejects every negative marker; indirect RGB is zero.
+    var result = bg_scene_output(color,vec3f(0.0),relative+camera.eye.xyz,fog_sky,-2.0);
     result.color.a = alpha;
     // SSR replaces the same prefiltered fallback already in the color. Its
     // response includes alpha because this receiver blends over opaque ground.

@@ -16,6 +16,7 @@ pub(crate) struct Reflections {
     eye: Vec3,
     atmosphere: super::daylight::Atmosphere,
     enabled: bool,
+    artistic: bool,
 }
 struct Gpu {
     layout: wgpu::BindGroupLayout,
@@ -38,6 +39,7 @@ impl Reflections {
             gpu: super::post::temporal::supported(device).then(|| Gpu::new(device)),
             eye: Vec3::ZERO,
             atmosphere: super::daylight::Atmosphere::at(6000),
+            artistic: super::bsl_reference::advanced_materials(),
             enabled: std::env::var("BLOXGLOOM_REFLECTIONS")
                 .map_or(true, |value| value.trim() != "0"),
         }
@@ -105,12 +107,14 @@ impl Reflections {
             );
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn resolve(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         scene: &wgpu::TextureView,
+        indirect: &wgpu::TextureView,
         depth: &wgpu::TextureView,
         matrix: Mat4,
     ) {
@@ -121,14 +125,21 @@ impl Reflections {
             return;
         }
         let size = scene.texture().size();
-        let mut data = [0.0f32; 48];
+        let mut data = [0.0f32; 56];
         data[..16].copy_from_slice(&matrix.inverse().to_cols_array());
         data[16..32].copy_from_slice(&matrix.to_cols_array());
         data[32..35].copy_from_slice(&self.eye.to_array());
         data[36..39].copy_from_slice(&self.atmosphere.horizon.to_array());
         data[40..43].copy_from_slice(&self.atmosphere.zenith.to_array());
-        data[43] = self.atmosphere.lighting.environment_intensity;
+        // Match the actual surface camera packing, including the reference
+        // moon-strength alias used by the independent water fallback.
+        data[43] = self.atmosphere.camera_data(Mat4::IDENTITY, self.eye)[43];
         data[44..46].copy_from_slice(&[size.width as f32, size.height as f32]);
+        data[48..51].copy_from_slice(&self.atmosphere.sun.to_array());
+        data[51] = self.atmosphere.time_brightness();
+        data[52] = self.atmosphere.rain_strength;
+        data[53] = self.atmosphere.moon_multiplier();
+        data[54] = f32::from(self.artistic);
         queue.write_buffer(&gpu.uniform, 0, bytemuck::cast_slice(&data));
         let group = |replacement: &wgpu::TextureView| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -162,6 +173,10 @@ impl Reflections {
                     wgpu::BindGroupEntry {
                         binding: 6,
                         resource: wgpu::BindingResource::Sampler(&gpu.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::TextureView(indirect),
                     },
                 ],
             })
@@ -245,6 +260,7 @@ impl Gpu {
                     6,
                     wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 ),
+                entry(7, texture(float)),
             ],
         });
         let downsample_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -260,7 +276,7 @@ impl Gpu {
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("reflection projection and sky"),
-            size: 192,
+            size: 224,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -339,7 +355,9 @@ impl Gpu {
 }
 fn shader_source() -> String {
     format!(
-        "{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}",
+        super::sky::STYLE_SHADER,
+        super::bsl_reference::REFLECTION_SHADER,
         include_str!("material/pbr.wgsl"),
         include_str!("reflections/normal.wgsl"),
         include_str!("reflections.wgsl")

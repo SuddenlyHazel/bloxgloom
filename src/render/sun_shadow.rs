@@ -57,11 +57,11 @@ impl Projection {
     pub(crate) fn new(camera: Camera, atmosphere: Atmosphere, settings: Settings) -> Self {
         // Fade grazing-angle shadows before skipping their expensive map. The
         // atmosphere still has twilight energy here, so a boolean cutoff pops.
-        let horizon = ((atmosphere.sun.y - 0.01) / 0.09).clamp(0.0, 1.0);
+        let horizon = ((atmosphere.light_direction().y - 0.01) / 0.09).clamp(0.0, 1.0);
         let horizon_weight = horizon * horizon * (3.0 - 2.0 * horizon);
         let enabled = settings.distance > 0.0 && horizon_weight > 0.0 && atmosphere.strength > 0.0;
         let radius = settings.distance.max(1.0) * 1.25;
-        let sun = atmosphere.sun.normalize_or_zero();
+        let sun = atmosphere.light_direction().normalize_or_zero();
         let up = if sun.dot(Vec3::Y).abs() > 0.98 {
             Vec3::Z
         } else {

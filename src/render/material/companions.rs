@@ -23,6 +23,17 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
     let mut specular = Vec::new();
     let mut categorical = Vec::new();
     let mut flags = Vec::new();
+    let mut tall_layers = HashMap::new();
+    for state in catalog
+        .states()
+        .filter(|s| s.key.starts_with("bloxgloom:") && s.flags & crate::content::PLANT != 0)
+    {
+        if let Some((_, half)) = state.properties.iter().find(|(name, _)| name == "half")
+            && let Some(layer) = state.face_texture(1, 1)
+        {
+            tall_layers.insert(layer.get() as usize, half == "upper");
+        }
+    }
     for (id, texture) in catalog.textures().iter().enumerate() {
         let n = definitions
             .get(format!("{}_n", texture.key).as_str())
@@ -36,9 +47,35 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
             u32::from(n.is_some())
                 | (u32::from(s.is_some()) << 1)
                 | (u32::from(catalog.is_lab_pbr_texture(TextureId::new(id as u32))) << 4)
+                | (u32::from(tall_layers.contains_key(&id)) << 3)
+                | (u32::from(tall_layers.get(&id).copied().unwrap_or(false)) << 7)
+                | (u32::from(
+                    texture.alpha_cutout
+                        && texture.key.starts_with("bloxgloom:")
+                        && (texture.foliage.wrap > 0.0 || texture.foliage.transmission > 0.0),
+                ) << 6)
                 | (((texture.foliage.wrap * 255.0).round() as u32) << 8)
                 | (((texture.foliage.transmission * 255.0).round() as u32) << 16),
         );
+        if flags[id] & 64 != 0 {
+            // Thin optical paths are explicit botanical presentation metadata.
+            // Keep auxiliary companion sampling bits 24..26 untouched.
+            let key = texture.key.as_ref();
+            let thickness = if key.contains("cherry") || key.contains("petals") {
+                4
+            } else if key.contains("spruce") {
+                13
+            } else if key.contains("jungle") || key.contains("mangrove") {
+                11
+            } else if key.contains("acacia") {
+                8
+            } else if key.contains("leaves") {
+                7
+            } else {
+                5
+            };
+            flags[id] |= thickness << 27;
+        }
     }
     for id in layers.definitions {
         let texture = &catalog.textures()[id];

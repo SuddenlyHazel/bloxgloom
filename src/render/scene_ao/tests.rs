@@ -224,7 +224,10 @@ struct Out { @location(0) color:vec4f,@location(1) indirect:vec4f,@builtin(frag_
     if let Some((alpha, uv_y)) = particle {
         let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&Mat4::IDENTITY.to_cols_array()),
+            contents: bytemuck::cast_slice(
+                &super::super::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                    .camera_data(Mat4::IDENTITY, glam::Vec3::ZERO),
+            ),
             usage: wgpu::BufferUsages::UNIFORM,
         });
         let mut fire = super::super::fire::FireRenderer::new(device, &camera);

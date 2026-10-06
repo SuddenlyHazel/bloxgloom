@@ -1,6 +1,6 @@
 //! Execute production WGSL math, including mirrored faces and darkness gates.
 use wgpu::util::DeviceExt;
-const CASES: u32 = 34;
+const CASES: u32 = 40;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -63,17 +63,30 @@ const FIXTURE: &str = r#"
         let daylight = select(0.0,1.0,id.x % 2u == 1u);
         let glow = select(0.0,1.0,id.x >= 30u);
         result[id.x] = vec4f(bg_local_material_radiance(glow*glow*vec3f(1.0,0.57,0.23),vec3f(0.0),vec3f(0.0),daylight),1.0);
-    } else {
+    } else if id.x < 34u {
         let up = vec3f(0.0,1.0,0.0);
         let px = select(vec3f(1.0,0.0,0.0),vec3f(0.0),id.x==33u);
         result[id.x] = vec4f(bg_normal_frame(up,px,up,vec2f(1.0,0.0),vec2f(0.0,1.0),
             normalize(vec3f(0.3,0.4,0.8660254))),1.0);
+    } else if id.x < 37u {
+        let uv = select(vec2f(0.5,0.0),vec2f(0.5,1.0),id.x == 34u);
+        let time = select(7.0,135.0,id.x == 36u);
+        result[id.x] = vec4f(bg_foliage_wind(vec3f(2.0,33.0,7.0),vec3f(0.0,1.0,0.0),uv,time),1.0);
+    } else {
+        let view = select(vec3f(0.0,0.0,1.0),vec3f(1.0,0.0,0.0),id.x == 38u);
+        let sky = select(1.0,0.0,id.x == 39u);
+        result[id.x] = vec4f(bg_thin_scattering(vec3f(0.0,1.0,0.0),vec3f(0.0,0.0,1.0),view,
+            vec4f(0.0,0.0,-1.0,1.0),sky,0.35,0.7,vec3f(1.0)),1.0);
     }
 }
 "#;
 
 fn source() -> String {
-    format!("{}\n{FIXTURE}", include_str!("../../relief.wgsl"))
+    format!(
+        "{}\n{}\n{FIXTURE}",
+        include_str!("../../relief.wgsl"),
+        include_str!("../../foliage.wgsl")
+    )
 }
 
 #[test]
@@ -214,7 +227,7 @@ fn gpu_normal_frames_and_specular_preserve_mirrors_caves_shadows_and_missing_map
     assert!(rows[11][..3].iter().all(|v| *v > 0.0));
     // Daytime upward diffuse normal still receives a backlit card transmission
     // lobe. Reversed winding is identical; looking from the lit side removes it.
-    assert!(rows[12][0] > rows[15][0] + 0.1);
+    assert!(rows[12][0] > rows[15][0] + 0.1 * std::f32::consts::FRAC_1_PI);
     assert_eq!(rows[12], rows[13]);
     assert_eq!(rows[14], rows[15]);
     assert_eq!(&rows[16][..3], &[0.0; 3]);
@@ -223,6 +236,24 @@ fn gpu_normal_frames_and_specular_preserve_mirrors_caves_shadows_and_missing_map
         "cube leaves keep their surface response"
     );
     assert_eq!(rows[18], rows[15], "degenerate derivatives remain finite");
+    assert_eq!(&rows[34][..3], &[2.0, 33.0, 7.0], "plant roots stay fixed");
+    assert_ne!(rows[34], rows[35], "plant tips move");
+    assert!(
+        rows[35]
+            .iter()
+            .zip(rows[36])
+            .all(|(a, b)| (*a - b).abs() < 0.00001),
+        "wind wraps without a clock seam"
+    );
+    assert!(
+        rows[37][0] > rows[38][0],
+        "thin leaves have a forward scattering lobe"
+    );
+    assert_eq!(
+        &rows[39][..3],
+        &[0.0; 3],
+        "transmission cannot light a sealed cave"
+    );
     for (actual, bound) in rows[19][..3].iter().zip([0.72, 0.67, 0.56]) {
         assert!(
             *actual <= bound + 0.00001,
@@ -234,9 +265,11 @@ fn gpu_normal_frames_and_specular_preserve_mirrors_caves_shadows_and_missing_map
 #[test]
 fn explicit_local_transport_validates_with_custom_vertex_normals() {
     let source = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
         crate::render::custom::TYPES,
         include_str!("../../relief.wgsl"),
+        include_str!("../../foliage.wgsl"),
+        include_str!("../../foliage_optics.wgsl"),
         include_str!("../../pbr.wgsl"),
         include_str!("../../parallax.wgsl"),
         include_str!("../../companions.wgsl"),

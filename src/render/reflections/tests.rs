@@ -172,6 +172,49 @@ fn gpu_reflections_hit_scene_color_preserve_misses_and_do_not_invent_cave_light(
         replaced > 40,
         "confident hits replace sky instead of adding a second reflection, pixels={replaced}"
     );
+    // Real SSR replacement must subtract the artistic raster fallback, while
+    // explicitly marked water retains its own enhanced fallback in that mode.
+    reflections.artistic = true;
+    reflections.atmosphere.moon_phase = 4;
+    for receiver_height in [0.0, 0.3] {
+        let base = fixture(
+            &device,
+            &queue,
+            &reflections,
+            matrix,
+            eye,
+            1.0,
+            0.2,
+            receiver_height,
+            0.0,
+            0.0,
+        );
+        let sky = fixture(
+            &device,
+            &queue,
+            &reflections,
+            matrix,
+            eye,
+            1.0,
+            0.2,
+            receiver_height,
+            1.0,
+            0.0,
+        );
+        let replaced = base
+            .chunks_exact(4)
+            .zip(sky.chunks_exact(4))
+            .filter(|(base, sky)| {
+                base[0] - base[1] > 0.02
+                    && (base[0] - sky[0]).abs() < 0.005
+                    && (base[1] - sky[1]).abs() < 0.005
+            })
+            .count();
+        assert!(
+            replaced > 40,
+            "artistic/water fallback replaced once: height{receiver_height}, pixels{replaced}"
+        );
+    }
     reflections.resize(&device, 1, 1);
     assert_eq!(reflections.normal.texture().width(), 1);
     assert_eq!(reflections.targets.levels.len(), 1);
@@ -224,11 +267,13 @@ fn fixture(
         })
         .create_view(&Default::default());
     let source = format!(
-        "{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}",
+        super::super::sky::STYLE_SHADER,
+        super::super::bsl_reference::REFLECTION_SHADER,
         include_str!("../material/pbr.wgsl"),
         include_str!("normal.wgsl"),
         r#"
-struct Parameters {inverse:mat4x4f,projection:mat4x4f,eye:vec4f,options:vec4f};
+struct Parameters {inverse:mat4x4f,projection:mat4x4f,eye:vec4f,options:vec4f,sun:vec4f,climate:vec4f};
 @group(0) @binding(0) var<uniform> params:Parameters;
 @vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {
  let p=array<vec2f,3>(vec2f(-1.0,-1.0),vec2f(3.0,-1.0),vec2f(-1.0,3.0));return vec4f(p[i],0.0,1.0);
@@ -246,8 +291,12 @@ struct Out {@location(0) color:vec4f,@location(1) indirect:vec4f,@location(2) no
  let point=origin+ray*distance;let clip=params.projection*vec4f(point,1.0);
  if floor {
   let receiver_t=(params.options.z-origin.y)/ray.y;
-  let sky=bg_pbr_prefiltered_sky(reflect(ray,vec3f(0.0,1.0,0.0)),params.options.y,vec3f(0.59,0.72,0.82),vec4f(0.20,0.45,0.75,1.0));
-  return Out(vec4f(vec3f(0.02)*select(0.0,1.0,params.options.x>0.0)+sky*0.2*params.options.w,1.0),vec4f(0.0),vec4f(bg_reflection_oct_encode(vec3f(0.0,1.0,0.0)),params.options.y,receiver_t),vec4f(0.2,0.2,0.2,params.options.w),clip.z/clip.w);
+  let reflected=reflect(ray,vec3f(0.0,1.0,0.0));
+  var sky=bg_pbr_prefiltered_sky(reflected,params.options.y,vec3f(0.59,0.72,0.82),vec4f(0.20,0.45,0.75,params.climate.w));
+  if params.climate.z>0.5 && params.options.z<=0.0 {
+   sky=bg_bsl_artistic_environment(reflected,params.sun,params.climate.xy);
+  }
+  return Out(vec4f(vec3f(0.02)*select(0.0,1.0,params.options.x>0.0)+sky*0.2*params.options.w,1.0),vec4f(0.0,0.0,0.0,select(0.0,-2.0,params.options.z>0.0)),vec4f(bg_reflection_oct_encode(vec3f(0.0,1.0,0.0)),params.options.y,receiver_t),vec4f(0.2,0.2,0.2,params.options.w),clip.z/clip.w);
  }
  return Out(vec4f(vec3f(2.0,0.05,0.02)*params.options.x,1.0),vec4f(0.0),vec4f(0.0),vec4f(0.0),clip.z/clip.w);
 }
@@ -257,12 +306,18 @@ struct Out {@location(0) color:vec4f,@location(1) indirect:vec4f,@location(2) no
         label: Some("reflection synthetic geometry fixture"),
         source: wgpu::ShaderSource::Wgsl(source.into()),
     });
-    let mut parameters = [0.0f32; 40];
+    let mut parameters = [0.0f32; 48];
     parameters[..16].copy_from_slice(&matrix.inverse().to_cols_array());
     parameters[16..32].copy_from_slice(&matrix.to_cols_array());
     parameters[32..35].copy_from_slice(&eye.to_array());
     parameters[35] = invalid_background;
     parameters[36..40].copy_from_slice(&[wall, roughness, receiver_height, sky_visibility]);
+    parameters[40..43].copy_from_slice(&reflections.atmosphere.sun.to_array());
+    parameters[43] = reflections.atmosphere.time_brightness();
+    parameters[44] = reflections.atmosphere.rain_strength;
+    parameters[45] = reflections.atmosphere.moon_multiplier();
+    parameters[46] = f32::from(reflections.artistic);
+    parameters[47] = reflections.atmosphere.camera_data(Mat4::IDENTITY, eye)[43];
     let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
         contents: bytemuck::cast_slice(&parameters),
@@ -329,7 +384,15 @@ struct Out {@location(0) color:vec4f,@location(1) indirect:vec4f,@location(2) no
         pass.draw(0..3, 0..1);
     }
     reflections.capture_opaque(device, &mut encoder, &scene, &depth);
-    reflections.resolve(device, queue, &mut encoder, &scene, &depth, matrix);
+    reflections.resolve(
+        device,
+        queue,
+        &mut encoder,
+        &scene,
+        &indirect,
+        &depth,
+        matrix,
+    );
     let row = (WIDTH * 8).div_ceil(256) * 256;
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,

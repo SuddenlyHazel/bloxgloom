@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f, parallax: vec4f, sun_radiance: vec4f, sky_zenith: vec4f, ambient_lower: vec4f, ambient_upper: vec4f, cloud: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct VertexInput {
@@ -93,7 +93,8 @@ fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     let receiver = bg_shadow_receiver(input.world_position);
     // Local visibility is evaluated per fragment, retaining voxel scattering.
     let local_light = bg_shadowed_local_light(input.world_position, normalize(input.normal), input.local_radiance, input.local_direction);
-    let color = input.color + input.surface_color * local_light - input.direct * (1.0 - bg_sun_visibility(receiver));
+    let visibility = bg_sun_visibility(receiver)*bg_primary_sun_transmittance(input.world_position);
+    let color = input.color + input.surface_color * local_light - input.direct * (1.0 - visibility);
     // Mark local-source influence reactive before a moving shadow reaches it.
     let history_sign = bg_local_history_sign(input.world_position, normalize(input.normal), input.local_radiance, input.local_direction);
     return bg_scene_output(color,input.indirect,input.world_position,input.sky,history_sign);
