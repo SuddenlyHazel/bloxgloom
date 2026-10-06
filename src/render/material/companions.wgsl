@@ -45,16 +45,13 @@ fn bg_material_specular(input: VertexOutput, coordinates: MaterialCoordinates, a
 // is only the existing voxel glow/bounce estimate, never a fabricated room map.
 fn bg_material_highlight(input: VertexOutput, surface: BgSurface, specular: BgPbr,
     sun_visibility: f32, local_visibility: f32) -> vec3f {
+    if !specular.present { return vec3f(0.0); }
     let eye = camera.eye.xyz - input.world_position;
     let v = eye / max(length(eye), 0.0001);
     let n = normalize(surface.normal);
     let roughness = specular.roughness;
     let reflected = reflect(-v,n);
-    // Blend the reflected ray toward broad hemisphere samples as the lobe widens.
-    let sharp = bg_environment_radiance(reflected);
-    let broad = (bg_environment_radiance(n) + bg_environment_radiance(vec3f(0.0,1.0,0.0))
-        + bg_environment_radiance(vec3f(0.0,-1.0,0.0))) / 3.0;
-    let environment = mix(sharp,broad,roughness*roughness);
+    let environment = bg_pbr_prefiltered_sky(reflected,roughness,camera.horizon.xyz,camera.sky_zenith);
     // Explicit local transport avoids subtracting interpolated directional light:
     // custom vertex hooks may bend normals across a triangle and its terminator.
     let indirect = bg_pbr_environment(n,v,specular,

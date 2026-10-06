@@ -40,17 +40,17 @@ fn blur(uv: vec2<f32>, axis: vec2<f32>) -> vec4<f32> {
 @fragment fn horizontal(input: Vertex) -> @location(0) vec4<f32> { return blur(input.uv, vec2<f32>(1.0, 0.0)); }
 @fragment fn vertical(input: Vertex) -> @location(0) vec4<f32> { return blur(input.uv, vec2<f32>(0.0, 1.0)); }
 
-// Neutral shoulder: retain hue through highlight compression; black remains black.
+// Hue-preserving filmic shoulder. The old subtractive toe crushed the already
+// low radiance of bark under foliage: x=.02 became .0025 before display encoding.
+// Keep those details proportional, while reserving headroom for HDR sunlight.
 fn tone_map(value: vec3<f32>) -> vec3<f32> {
-    let x = min(value.r, min(value.g, value.b));
-    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
-    var color = value - offset;
-    let peak = max(color.r, max(color.g, color.b));
-    if peak < 0.76 { return color; }
-    let new_peak = 1.0 - 0.24 * 0.24 / (peak + 0.24 - 0.76);
-    color *= new_peak / peak;
-    let desaturation = 1.0 - 1.0 / (0.15 * (peak - new_peak) + 1.0);
-    return mix(color, vec3<f32>(new_peak), desaturation);
+    let peak = max(value.r, max(value.g, value.b));
+    let mapped = peak / sqrt(1.0 + peak * peak);
+    let color = value * (mapped / max(peak, 0.000001));
+    // Only intense highlights converge toward white; everyday material colors
+    // retain their hue. Black stays exactly black, with no exposure adaptation.
+    let white = 0.12 * smoothstep(1.0, 5.0, peak);
+    return mix(color, vec3f(mapped), white);
 }
 @fragment fn composite(input: Vertex) -> @location(0) vec4<f32> {
     var hdr = textureSample(scene, linear_sampler, input.uv).rgb;

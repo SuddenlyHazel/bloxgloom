@@ -10,7 +10,11 @@ pub fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
         directory.join("sequence.txt"),
         format!(
             "Outdoor temporal motion v2\nAA requested: {}\nObject motion: previous submitted character/GLB skin palettes; reactive unsupported foliage\nContact occlusion request: {} (default 1)\nFrames 00-07 stationary warmup; 08-19 lateral camera pan, walking/translating actors, sinusoidal foliage geometry; 20-23 first-person cut and head clipping; 23 resize from 640x400 to 800x500; 24-27 return-to-canopy cut\nOne submitted sample per frame, persistent history, nominal 30 Hz animation\nFoliage motion is a deterministic deformation of production cutout mesh vertices, not a new runtime wind feature. Vertex lighting remains frozen to isolate temporal behavior. Character contact and sun shadows follow each frame.\nUse the same adapter, shadow settings, and executable for off/on comparison. Software GPU captures establish visual behavior, not performance.\n",
-            std::env::var("BLOXGLOOM_TAA").unwrap_or_else(|_| "0".into()),
+            if render::post::temporal_requested() {
+                "1"
+            } else {
+                "0"
+            },
             std::env::var("BLOXGLOOM_CONTACT_OCCLUSION").unwrap_or_else(|_| "1".into())
         ),
     )?;

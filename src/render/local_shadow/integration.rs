@@ -29,6 +29,8 @@ impl Renderer {
             .bind_local(&self.device, &self.camera_buffer, &self.local_shadows);
         self.camera_group = self.sun_shadows.camera_group.clone();
         self.avatars.set_camera_group(self.camera_group.clone());
+        self.water.set_camera_group(self.camera_group.clone());
+        self.lod.set_sun_shadows(self.camera_group.clone());
     }
 
     pub(in crate::render) fn prepare_local_shadows(&mut self, camera: Camera) {

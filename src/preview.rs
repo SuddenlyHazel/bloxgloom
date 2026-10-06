@@ -7,6 +7,8 @@ pub use third_person::{
 };
 mod calibration;
 mod outdoor;
+pub use outdoor::showcase::render as render_showcase_previews;
+pub use outdoor::showcase::render_motion as render_showcase_motion;
 pub use outdoor::workshop::local_shadow::render as render_local_shadow_previews;
 pub use outdoor::workshop::render_workshop_previews;
 pub use outdoor::{
@@ -660,7 +662,12 @@ async fn render_previews_weather(
     world_time: u64,
     weather: render::weather::Presentation,
 ) -> Result<(), Box<dyn Error>> {
-    let atmosphere = weather.atmosphere(render::daylight::Atmosphere::at(world_time));
+    let preview_config =
+        std::env::var_os("BLOXGLOOM_PREVIEW_CONFIG").map(crate::config::Config::load);
+    let mut atmosphere = weather.atmosphere(render::daylight::Atmosphere::at(world_time));
+    if let Some(config) = &preview_config {
+        atmosphere.lighting = config.lighting;
+    }
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -693,7 +700,7 @@ async fn render_previews_weather(
         } else {
             render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT)
         };
-    let water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
+    let mut water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut rain_renderer = render::fire::FireRenderer::with_capacity(
         &device,
@@ -728,10 +735,10 @@ async fn render_previews_weather(
     sun_shadows.bind_local(&device, &camera_buffer, &local_shadows);
     let camera_group = sun_shadows.camera_group.clone();
     avatar_renderer.set_camera_group(camera_group.clone());
+    water_renderer.set_camera_group(camera_group.clone());
     avatar_renderer.preview_animation_dt(0.0);
     avatar_renderer.enable_motion(
-        render::post::temporal::supported(&device)
-            && std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1"),
+        render::post::temporal::supported(&device) && render::post::temporal_requested(),
     );
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
@@ -1178,7 +1185,12 @@ async fn render_previews_weather(
             }
         }
     }
-    let motion_sequence = matches!(scene, PreviewScene::Outdoor(outdoor::View::Motion));
+    let motion_sequence = matches!(
+        scene,
+        PreviewScene::Outdoor(
+            outdoor::View::Motion | outdoor::View::Showcase(outdoor::showcase::View::Motion)
+        )
+    );
     let mut foliage_motion = outdoor::motion::Foliage::default();
     let mut water_meshes = Vec::new();
     let mut gpu_meshes = Vec::new();
@@ -1624,6 +1636,14 @@ async fn render_previews_weather(
             shadow_avatars = outdoor::motion::actors(&motion_actor_base, frame);
             let (motion_camera, first_person) = outdoor::motion::camera(frame, &shadow_avatars);
             camera = motion_camera;
+            if matches!(
+                scene,
+                PreviewScene::Outdoor(outdoor::View::Showcase(outdoor::showcase::View::Motion))
+            ) && first_person.is_none()
+            {
+                camera = camera_template;
+                camera.position.x += frame.saturating_sub(7).min(12) as f32 * 0.08;
+            }
             avatar_renderer.set_first_person(first_person);
             avatar_renderer.preview_animation_dt(if frame < 8 { 0.0 } else { 1.0 / 30.0 });
             avatar_renderer.preview_character_clip("walk", outdoor::motion::seconds(frame));
@@ -1818,7 +1838,19 @@ async fn render_previews_weather(
                 gpu.update(&queue);
             }
         }
-        let temporal = std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1");
+        if let Some(config) = &preview_config {
+            post.configure(
+                &queue,
+                config.post_processing,
+                config.exposure,
+                if config.bloom_enabled {
+                    config.bloom_strength
+                } else {
+                    0.0
+                },
+            );
+        }
+        let temporal = render::post::temporal_requested();
         post.enable_temporal(&device, temporal);
         let samples = if post.temporal_enabled() && !motion_sequence {
             8
@@ -1848,11 +1880,11 @@ async fn render_previews_weather(
         let mut sample = 0;
         let mut encoder = loop {
             let (matrix, _) = post.prepare_temporal(&queue, camera);
-            queue.write_buffer(
-                &camera_buffer,
-                0,
-                bytemuck::cast_slice(&atmosphere.camera_data(matrix, camera.position)),
-            );
+            let mut camera_data = atmosphere.camera_data(matrix, camera.position);
+            if let Some(config) = &preview_config {
+                camera_data[32..36].copy_from_slice(&config.parallax.uniform());
+            }
+            queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("preview commands"),
             });
@@ -1885,6 +1917,8 @@ async fn render_previews_weather(
                     color_attachments: &render::scene_ao::attachments(
                         &post.scene,
                         &post.ambient.indirect,
+                        &post.reflections.normal,
+                        &post.reflections.response,
                         render::SKY_COLOR,
                     ),
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -1942,11 +1976,14 @@ async fn render_previews_weather(
                     pass.draw_indexed(0..*count, 0, 0..1);
                 }
             }
+            post.reflections.configure(camera.position, atmosphere);
             post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
             {
                 let mut attachments = render::scene_ao::attachments(
                     &post.scene,
                     &post.ambient.indirect,
+                    &post.reflections.normal,
+                    &post.reflections.response,
                     wgpu::Color::TRANSPARENT,
                 );
                 for attachment in attachments.iter_mut().flatten() {
@@ -1974,12 +2011,50 @@ async fn render_previews_weather(
                 for (_, vertices, indices, count) in &water_meshes {
                     water_renderer.draw(&mut pass, vertices, indices, *count);
                 }
+            }
+
+            post.resolve_reflections(&device, &queue, &mut encoder, &depth_view, matrix);
+            if (matches!(scene, PreviewScene::Fire) && !fire_renderer.is_empty())
+                || !rain_renderer.is_empty()
+            {
+                let mut attachments = render::scene_ao::attachments(
+                    &post.scene,
+                    &post.ambient.indirect,
+                    &post.reflections.normal,
+                    &post.reflections.response,
+                    wgpu::Color::TRANSPARENT,
+                );
+                for attachment in attachments.iter_mut().flatten() {
+                    attachment.ops.load = wgpu::LoadOp::Load;
+                }
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("preview particles over resolved reflections"),
+                    color_attachments: &attachments,
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    ..Default::default()
+                });
                 if matches!(scene, PreviewScene::Fire) {
                     fire_renderer.draw(&mut pass);
                 }
                 rain_renderer.draw(&mut pass);
             }
-
+            post.resolve_atmosphere(
+                &device,
+                &queue,
+                &mut encoder,
+                &depth_view,
+                matrix,
+                camera.position,
+                atmosphere,
+                &sun_shadows,
+            );
             post.draw_motion(&queue, &mut encoder, &depth_view, Some(&avatar_renderer));
             post.resolve_temporal(&device, &mut encoder, &depth_view);
             post.encode(&device, &queue, &mut encoder, &color_view);

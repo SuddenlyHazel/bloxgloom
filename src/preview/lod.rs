@@ -200,6 +200,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &sky,
             &sky_group,
             camera,
+            atmosphere,
             width,
             height,
             &directory.join(format!("{name}.png")),
@@ -272,6 +273,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &sky,
             &sky_group,
             camera,
+            atmosphere,
             width,
             height,
             &directory.join(format!("{name}.png")),
@@ -326,6 +328,7 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             &sky,
             &sky_group,
             water_camera,
+            atmosphere,
             width,
             height,
             &directory.join(format!("{name}.png")),
@@ -446,11 +449,13 @@ fn draw_image(
     sky: &wgpu::RenderPipeline,
     sky_group: &wgpu::BindGroup,
     camera: Camera,
+    atmosphere: render::daylight::Atmosphere,
     width: u32,
     height: u32,
     path: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let mut post = render::post::PostProcess::new(device, width, height, FORMAT);
+    post.reflections.configure(camera.position, atmosphere);
     let color = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("LOD preview image"),
         size: wgpu::Extent3d {
@@ -488,6 +493,8 @@ fn draw_image(
             color_attachments: &render::scene_ao::attachments(
                 &post.scene,
                 &post.ambient.indirect,
+                &post.reflections.normal,
+                &post.reflections.response,
                 render::SKY_COLOR,
             ),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -512,7 +519,21 @@ fn draw_image(
         &depth,
         render::view_projection(camera, width, height),
     );
-    gpu.draw_water_pass(&mut encoder, &post.scene, &post.ambient.indirect, &depth);
+    gpu.draw_water_pass(
+        &mut encoder,
+        &post.scene,
+        &post.ambient.indirect,
+        &post.reflections.normal,
+        &post.reflections.response,
+        &depth,
+    );
+    post.resolve_reflections(
+        device,
+        queue,
+        &mut encoder,
+        &depth,
+        render::view_projection(camera, width, height),
+    );
     post.encode(device, queue, &mut encoder, &view);
     queue.submit(Some(encoder.finish()));
     super::capture::save_texture(device, queue, &color, width, height, path)

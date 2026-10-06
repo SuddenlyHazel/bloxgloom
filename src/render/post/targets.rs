@@ -33,7 +33,9 @@ impl Targets {
                     format: HDR_FORMAT,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_DST,
+                        | wgpu::TextureUsages::COPY_DST
+                        | wgpu::TextureUsages::COPY_SRC,
+                    // Opaque radiance is captured before transparent receivers.
                     view_formats: &[],
                 })
                 .create_view(&Default::default())

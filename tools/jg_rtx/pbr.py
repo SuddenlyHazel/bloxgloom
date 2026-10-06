@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+import height as relief_height
 
 EDITION_NAMES = json.loads(Path(__file__).with_name('edition_names.json').read_text())
 MER = 'metalness_emissive_roughness'
@@ -136,9 +137,16 @@ def repair_companions(directory, stem, normal, specular, java_normal, size):
         details['normal_source'] = n_path
     else:
         details['normal_fallback'] = 'Java LabPBR DirectX' if java_normal else 'flat normal'
-    if java_normal is None and height:
+    flat_height = bool(np.all(data[:, :, 3] == 255))
+    if height and (java_normal is None or flat_height):
         data[:, :, 3] = np.array(data_image(height, size))[:, :, 0]
         details['height_source'] = height
+    elif flat_height and n_path and relief_height.structural(name):
+        inferred, measurement = relief_height.reconstruct(canonical)
+        details['height_reconstruction'] = measurement
+        if inferred is not None:
+            data[:, :, 3] = inferred
+            details['height_source_kind'] = 'inferred from canonical RGB normal; not authored height'
     normal = Image.fromarray(data)
     if mer is not None:
         if isinstance(mer, list):

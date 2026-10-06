@@ -59,11 +59,21 @@ pub(super) fn new(
     let texture_layout = materials.get_bind_group_layout(1);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("LOD shader"),
-        source: wgpu::ShaderSource::Wgsl(water::shader(include_str!("shader.wgsl")).into()),
+        source: wgpu::ShaderSource::Wgsl(water::lod_shader(include_str!("shader.wgsl")).into()),
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("LOD pipeline"),
         bind_group_layouts: &[Some(&layout), Some(&tile_layout), Some(&texture_layout)],
+        immediate_size: 0,
+    });
+    let water_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("LOD water shadows"),
+        bind_group_layouts: &[
+            Some(&layout),
+            Some(&tile_layout),
+            Some(&texture_layout),
+            Some(&super::super::sun_shadow::camera_layout(device)),
+        ],
         immediate_size: 0,
     });
     let attrs = wgpu::vertex_attr_array![0=>Float32x3,1=>Unorm8x4,2=>Uint32];
@@ -74,7 +84,11 @@ pub(super) fn new(
             } else {
                 "distant terrain"
             }),
-            layout: Some(&pipeline_layout),
+            layout: Some(if fluid {
+                &water_layout
+            } else {
+                &pipeline_layout
+            }),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),

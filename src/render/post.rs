@@ -10,10 +10,18 @@ mod tests;
 
 pub(crate) const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+/// Temporal stability is the normal rendering path. Explicit zero preserves
+/// single-frame comparisons and callers can independently opt out (benchmarks).
+pub(crate) fn temporal_requested() -> bool {
+    std::env::var("BLOXGLOOM_TAA").map_or(true, |value| value.trim() != "0")
+}
+
 pub(crate) struct PostProcess {
     pub scene: wgpu::TextureView,
     temporal: Option<temporal::Temporal>,
     pub(crate) ambient: super::scene_ao::AmbientOcclusion,
+    pub(crate) reflections: super::reflections::Reflections,
+    atmosphere: super::atmosphere::AtmospherePass,
     bloom: [wgpu::TextureView; 2],
     groups: [wgpu::BindGroup; 3],
     composite_group: wgpu::BindGroup,
@@ -129,6 +137,8 @@ impl PostProcess {
             scene: targets.scene,
             temporal: None,
             ambient: super::scene_ao::AmbientOcclusion::new(device, width, height),
+            reflections: super::reflections::Reflections::new(device, width, height),
+            atmosphere: super::atmosphere::AtmospherePass::new(device, width, height),
             bloom: targets.bloom,
             groups: targets.groups,
             extract: pipeline("extract", HDR_FORMAT),
@@ -161,13 +171,15 @@ impl PostProcess {
             self.temporal = Some(temporal::Temporal::new(device, width, height));
         }
         self.ambient.resize(device, width, height);
+        self.reflections.resize(device, width, height);
+        self.atmosphere.resize(device, width, height);
         self.scene = targets.scene;
         self.bloom = targets.bloom;
         self.groups = targets.groups;
         self.composite_group = targets.composite_group;
     }
 
-    /// Temporal AA remains opt-in until scene-specific motion acceptance is done.
+    /// Callers may disable temporal accumulation for single-frame captures.
     pub(crate) fn enable_temporal(&mut self, device: &wgpu::Device, enabled: bool) {
         let enabled = if enabled && !temporal::supported(device) {
             eprintln!("temporal AA unavailable on GL backend; keeping single-sample rendering");
@@ -213,6 +225,46 @@ impl PostProcess {
     ) {
         self.ambient
             .resolve(device, queue, encoder, &self.scene, depth, matrix);
+        self.reflections
+            .capture_opaque(device, encoder, &self.scene, depth);
+    }
+
+    pub(crate) fn resolve_reflections(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        depth: &wgpu::TextureView,
+        matrix: glam::Mat4,
+    ) {
+        self.reflections
+            .resolve(device, queue, encoder, &self.scene, depth, matrix);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn resolve_atmosphere(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        depth: &wgpu::TextureView,
+        matrix: glam::Mat4,
+        eye: glam::Vec3,
+        atmosphere: super::daylight::Atmosphere,
+        shadows: &super::sun_shadow::SunShadows,
+    ) {
+        self.atmosphere.resolve(
+            device,
+            queue,
+            encoder,
+            &self.scene,
+            depth,
+            &self.reflections.normal,
+            matrix,
+            eye,
+            atmosphere,
+            shadows,
+        );
     }
 
     pub(crate) fn draw_motion(

@@ -32,6 +32,7 @@ struct Tile {
 pub(crate) struct Gpu {
     pipeline: wgpu::RenderPipeline,
     water_pipeline: wgpu::RenderPipeline,
+    shadow_group: wgpu::BindGroup,
     materials: wgpu::BindGroup,
     options: wgpu::Buffer,
     textured: bool,
@@ -65,6 +66,7 @@ impl Gpu {
         Self {
             pipeline: p.opaque,
             water_pipeline: p.water,
+            shadow_group: super::super::sun_shadow::fallback_camera_group(device, &p.camera),
             materials: materials.clone(),
             options: p.options,
             textured: std::env::var("BLOXGLOOM_LOD_TEXTURES").as_deref() != Ok("0"),
@@ -320,8 +322,12 @@ impl Gpu {
         }
         triangles
     }
+    pub(crate) fn set_sun_shadows(&mut self, group: wgpu::BindGroup) {
+        self.shadow_group = group;
+    }
     pub(crate) fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
         pass.set_pipeline(&self.water_pipeline);
+        pass.set_bind_group(3, &self.shadow_group, &[]);
         pass.set_bind_group(0, &self.group, &[]);
         pass.set_bind_group(2, &self.materials, &[]);
         let mut visible = self.visible.clone();
@@ -353,10 +359,17 @@ impl Gpu {
         encoder: &mut wgpu::CommandEncoder,
         scene: &wgpu::TextureView,
         indirect: &wgpu::TextureView,
+        reflection_normal: &wgpu::TextureView,
+        reflection_response: &wgpu::TextureView,
         depth: &wgpu::TextureView,
     ) -> usize {
-        let mut attachments =
-            super::super::scene_ao::attachments(scene, indirect, wgpu::Color::TRANSPARENT);
+        let mut attachments = super::super::scene_ao::attachments(
+            scene,
+            indirect,
+            reflection_normal,
+            reflection_response,
+            wgpu::Color::TRANSPARENT,
+        );
         for attachment in attachments.iter_mut().flatten() {
             attachment.ops.load = wgpu::LoadOp::Load;
         }

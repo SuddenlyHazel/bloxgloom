@@ -24,10 +24,12 @@ pub(crate) mod model_renderer;
 pub(crate) mod parameters;
 mod preparation;
 pub(crate) use preparation::{Preparation, Ready as ReadyVisuals};
+pub(crate) mod atmosphere;
 pub(crate) mod daylight;
 pub(crate) mod local_shadow;
 mod pipeline;
 pub(crate) mod post;
+pub(crate) mod reflections;
 pub(crate) mod scene_ao;
 mod scene_contact;
 mod sky;
@@ -312,17 +314,14 @@ impl Renderer {
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
         let mut post = post::PostProcess::new(&device, config.width, config.height, format);
-        post.enable_temporal(
-            &device,
-            std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1"),
-        );
+        post.enable_temporal(&device, post::temporal_requested());
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
-        let lod = lod::Gpu::new(&device, post::HDR_FORMAT, &pipeline, &texture_group);
+        let mut lod = lod::Gpu::new(&device, post::HDR_FORMAT, &pipeline, &texture_group);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
-        let water = water::WaterRenderer::new(&device, &camera_buffer);
+        let mut water = water::WaterRenderer::new(&device, &camera_buffer);
         let rain =
             fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
         let mut avatars = avatars::AvatarRenderer::new(
@@ -340,6 +339,8 @@ impl Renderer {
         let local_shadows = local_shadow::LocalShadows::new(&device, &camera_buffer);
         sun_shadows.bind_local(&device, &camera_buffer, &local_shadows);
         avatars.set_camera_group(sun_shadows.camera_group.clone());
+        water.set_camera_group(sun_shadows.camera_group.clone());
+        lod.set_sun_shadows(sun_shadows.camera_group.clone());
         avatars.enable_motion(post.temporal_enabled());
         let camera_group = sun_shadows.camera_group.clone();
         let sun_pipelines = create_sun_shadow_pipelines(&device, &pipeline, None);
@@ -453,6 +454,8 @@ impl Renderer {
                 .bind_local(&self.device, &self.camera_buffer, &self.local_shadows);
             self.camera_group = self.sun_shadows.camera_group.clone();
             self.avatars.set_camera_group(self.camera_group.clone());
+            self.water.set_camera_group(self.camera_group.clone());
+            self.lod.set_sun_shadows(self.camera_group.clone());
         }
     }
 
@@ -731,6 +734,7 @@ impl Renderer {
                 atmosphere,
             )),
         );
+        self.post.reflections.configure(camera.position, atmosphere);
         let mut camera_data = atmosphere.camera_data(view_projection, camera.position);
         if self.lod_horizon > 0 {
             camera_data[28] = f32::from(self.lod_horizon) * 0.65;
@@ -802,6 +806,8 @@ impl Renderer {
                 color_attachments: &scene_ao::attachments(
                     &self.post.scene,
                     &self.post.ambient.indirect,
+                    &self.post.reflections.normal,
+                    &self.post.reflections.response,
                     SKY_COLOR,
                 ),
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -889,6 +895,8 @@ impl Renderer {
             let mut attachments = scene_ao::attachments(
                 &self.post.scene,
                 &self.post.ambient.indirect,
+                &self.post.reflections.normal,
+                &self.post.reflections.response,
                 wgpu::Color::TRANSPARENT,
             );
             for attachment in attachments.iter_mut().flatten() {
@@ -925,10 +933,52 @@ impl Renderer {
                     self.water
                         .draw(&mut pass, &mesh.vertex, &mesh.index, mesh.indices);
             }
+        }
+
+        self.post.resolve_reflections(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.depth,
+            view_projection,
+        );
+        if !self.fire.is_empty() || !self.rain.is_empty() {
+            let mut attachments = scene_ao::attachments(
+                &self.post.scene,
+                &self.post.ambient.indirect,
+                &self.post.reflections.normal,
+                &self.post.reflections.response,
+                wgpu::Color::TRANSPARENT,
+            );
+            for attachment in attachments.iter_mut().flatten() {
+                attachment.ops.load = wgpu::LoadOp::Load;
+            }
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("particles over resolved water reflections"),
+                color_attachments: &attachments,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
             stats.drawn_triangles += self.fire.draw(&mut pass);
             stats.drawn_triangles += self.rain.draw(&mut pass);
         }
-
+        self.post.resolve_atmosphere(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.depth,
+            view_projection,
+            camera.position,
+            atmosphere,
+            &self.sun_shadows,
+        );
         self.post
             .draw_motion(&self.queue, &mut encoder, &self.depth, Some(&self.avatars));
         self.post

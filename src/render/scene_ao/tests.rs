@@ -193,11 +193,19 @@ struct Out { @location(0) color:vec4f,@location(1) indirect:vec4f,@builtin(frag_
             resource: uniform.as_entire_binding(),
         }],
     });
+    let normal = create_indirect(device, SIDE, SIDE);
+    let response = create_indirect(device, SIDE, SIDE);
     let mut encoder = device.create_command_encoder(&Default::default());
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("AO matched fixture"),
-            color_attachments: &attachments(&scene, &ao.indirect, wgpu::Color::BLACK),
+            color_attachments: &attachments(
+                &scene,
+                &ao.indirect,
+                &normal,
+                &response,
+                wgpu::Color::BLACK,
+            ),
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &depth,
                 depth_ops: Some(wgpu::Operations {
@@ -226,7 +234,7 @@ struct Out { @location(0) color:vec4f,@location(1) indirect:vec4f,@builtin(frag_
             vertices.extend_from_slice(&[0.5, uv_y, 4.0, 2.0, 1.0, alpha]);
         }
         fire.set_mesh(queue, &vertices);
-        let mut targets = attachments(&scene, &ao.indirect, wgpu::Color::BLACK);
+        let mut targets = attachments(&scene, &ao.indirect, &normal, &response, wgpu::Color::BLACK);
         for target in targets.iter_mut().flatten() {
             target.ops.load = wgpu::LoadOp::Load;
         }

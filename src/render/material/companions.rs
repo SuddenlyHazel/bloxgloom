@@ -2,6 +2,7 @@
 use super::{TEXTURE_MIPS, TEXTURE_SIZE};
 use crate::content::{Catalog, TextureDef, TextureId};
 use std::{collections::HashMap, io::Cursor};
+mod normal_mips;
 
 pub(crate) struct Maps {
     pub normal: Vec<Vec<u8>>,
@@ -47,7 +48,14 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
         let s = definitions
             .get(format!("{}_s", texture.key).as_str())
             .copied();
-        normal.extend(tile(n, [128, 128, 255, 255]));
+        let normal_tile = tile(n, [128, 128, 255, 255]);
+        // Height is data, not coverage. Flat alpha has no occluding relief and
+        // does not justify either camera or light-direction height marching.
+        let height = normal_tile[3];
+        if !texture.alpha_cutout && normal_tile.chunks_exact(4).any(|p| p[3] != height) {
+            flags[id] |= 1 << 5;
+        }
+        normal.extend(normal_tile);
         let mut specular_tile = tile(s, [0, 0, 0, 255]);
         let lab = catalog.is_lab_pbr_texture(TextureId::new(id as u32));
         categorical.push(lab);
@@ -60,9 +68,10 @@ pub(crate) fn prepare(catalog: &Catalog) -> Maps {
         }
         specular.extend(specular_tile);
     }
+    let (normal, specular) = normal_mips::prepare(normal, specular, &categorical);
     Maps {
-        normal: mips(normal, &[]),
-        specular: mips(specular, &categorical),
+        normal,
+        specular,
         flags,
         layers: layers.by_texture,
         auxiliary_flags: layers.auxiliary_flags,
@@ -96,56 +105,6 @@ fn tile(definition: Option<&TextureDef>, fallback: [u8; 4]) -> Vec<u8> {
         }
     }
     pixels
-}
-
-fn mips(base: Vec<u8>, categorical: &[bool]) -> Vec<Vec<u8>> {
-    let layers = base.len() / (TEXTURE_SIZE * TEXTURE_SIZE * 4) as usize;
-    let mut levels = vec![base];
-    for level in 1..TEXTURE_MIPS {
-        let previous_size = (TEXTURE_SIZE >> (level - 1)) as usize;
-        let size = previous_size / 2;
-        let previous = levels.last().unwrap();
-        let mut pixels = Vec::with_capacity(layers * size * size * 4);
-        for layer in 0..layers {
-            for y in 0..size {
-                for x in 0..size {
-                    for channel in 0..4 {
-                        if categorical.get(layer).copied().unwrap_or(false)
-                            && matches!(channel, 1 | 2)
-                        {
-                            // Never invent F0/metal IDs or cross the porosity/SSS
-                            // boundary. Runtime selects these channels at LOD 0;
-                            // the stored chain also keeps valid original values.
-                            pixels.push(
-                                previous[(layer * previous_size * previous_size
-                                    + y * 2 * previous_size
-                                    + x * 2)
-                                    * 4
-                                    + channel],
-                            );
-                            continue;
-                        }
-                        let sum: u32 = [(0, 0), (1, 0), (0, 1), (1, 1)]
-                            .into_iter()
-                            .map(|(dx, dy)| {
-                                u32::from(
-                                    previous[(layer * previous_size * previous_size
-                                        + (y * 2 + dy) * previous_size
-                                        + x * 2
-                                        + dx)
-                                        * 4
-                                        + channel],
-                                )
-                            })
-                            .sum();
-                        pixels.push((sum / 4) as u8);
-                    }
-                }
-            }
-        }
-        levels.push(pixels);
-    }
-    levels
 }
 
 pub(crate) fn upload(

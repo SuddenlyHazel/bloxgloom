@@ -207,6 +207,10 @@ impl FireRenderer {
         }
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
     pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
         if self.count == 0 {
             return 0;

@@ -1,7 +1,7 @@
 //! Read back the production height trace against analytic synthetic surfaces.
 use wgpu::util::DeviceExt;
 
-const CASES: usize = 15;
+const CASES: usize = 21;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @group(0) @binding(1) var material_normal: texture_2d_array<f32>;
@@ -10,6 +10,15 @@ const FIXTURE: &str = r#"
     let uv = vec2f(0.6, 0.4);
     if id.x < 4u {
         result[id.x] = vec4f(bg_parallax_trace(uv, i32(id.x), vec2f(0.0), vec2f(0.0), vec2f(0.08, 0.0), 32u), 0.0, 1.0);
+    } else if id.x >= 15u {
+        var layer = 4;
+        var light = normalize(vec3f(1.0,0.0,0.5));
+        if id.x == 15u { layer = 0; }
+        if id.x == 16u { layer = 1; }
+        if id.x == 18u { light.x = -light.x; }
+        if id.x == 19u { light = vec3f(0.0,0.0,1.0); }
+        if id.x == 20u { light.z = -light.z; }
+        result[id.x] = vec4f(bg_parallax_shadow(vec2f(0.55,0.4),layer,vec2f(0.0),vec2f(0.0),light,0.08),0.0,0.0,1.0);
     } else {
         var view = normalize(vec3f(0.6, 0.0, 0.8));
         var distance = 2.0;
@@ -77,7 +86,7 @@ fn gpu_height_trace_intersects_surfaces_and_fades_without_grazing_instability() 
         size: wgpu::Extent3d {
             width: 128,
             height: 1,
-            depth_or_array_layers: 4,
+            depth_or_array_layers: 5,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -86,14 +95,21 @@ fn gpu_height_trace_intersects_surfaces_and_fades_without_grazing_instability() 
         usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    let pixels: Vec<u8> = (0..4)
+    let pixels: Vec<u8> = (0..5)
         .flat_map(|layer| {
             (0..128).flat_map(move |x| {
                 let alpha = match layer {
                     0 => 255,
                     1 => 128,
                     2 => 0,
-                    _ => x * 2,
+                    3 => x * 2,
+                    _ => {
+                        if x >= 77 {
+                            255
+                        } else {
+                            128
+                        }
+                    }
                 };
                 [128, 128, 255, alpha]
             })
@@ -183,4 +199,16 @@ fn gpu_height_trace_intersects_surfaces_and_fades_without_grazing_instability() 
     }
     assert!((0.6 - rows[12][0] - 2.0 * (0.6 - rows[4][0])).abs() < 1e-5);
     assert!((rows[14][0] - rows[4][0]).abs() < 1e-5);
+    assert_eq!(rows[15][0], 1.0, "flat face has no relief shadow");
+    assert_eq!(rows[16][0], 1.0, "uniform recess cannot shadow itself");
+    assert!(rows[17][0] < 0.1, "ridge occludes oblique sun");
+    assert_eq!(
+        rows[18][0], 1.0,
+        "opposite light direction clears the ridge"
+    );
+    assert_eq!(rows[19][0], 1.0, "overhead light clears the ridge");
+    assert_eq!(
+        rows[20][0], 0.0,
+        "recess cannot see light through its backing plane"
+    );
 }

@@ -178,10 +178,11 @@ pub(super) async fn run_perf_benchmark_async(
     let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let shadow_quality = super::sun_shadow::quality()?;
-    let water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
+    let mut water_renderer = render::water::WaterRenderer::new(&device, &camera_buffer);
     let mut sun_shadows =
         render::sun_shadow::SunShadows::new(&device, &camera_buffer, shadow_quality);
     let camera_group = sun_shadows.camera_group.clone();
+    water_renderer.set_camera_group(camera_group.clone());
     let sun_pipelines = render::create_sun_shadow_pipelines(&device, &pipeline, None);
     eprintln!(
         "sun shadows: {} ({}px, {}m); GPU timestamps include shadow pass",
@@ -250,6 +251,7 @@ pub(super) async fn run_perf_benchmark_async(
     let mut lod_gpu =
         render::lod::Gpu::new(&device, render::post::HDR_FORMAT, &pipeline, &texture_group);
     lod_gpu.set_horizon(lod_horizon);
+    lod_gpu.set_sun_shadows(camera_group.clone());
     let (lod_meshes, lod_summary_bytes) = if lod_horizon > 0 {
         super::lod::terrain_meshes(camera, lod_horizon)?
     } else {
@@ -508,6 +510,8 @@ pub(super) async fn run_perf_benchmark_async(
                 color_attachments: &render::scene_ao::attachments(
                     &post.scene,
                     &post.ambient.indirect,
+                    &post.reflections.normal,
+                    &post.reflections.response,
                     render::SKY_COLOR,
                 ),
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -563,11 +567,17 @@ pub(super) async fn run_perf_benchmark_async(
                 }
             }
         }
+        post.reflections.configure(
+            camera.position,
+            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+        );
         post.resolve_ambient(&device, &queue, &mut encoder, &depth_view, matrix);
         {
             let mut attachments = render::scene_ao::attachments(
                 &post.scene,
                 &post.ambient.indirect,
+                &post.reflections.normal,
+                &post.reflections.response,
                 wgpu::Color::TRANSPARENT,
             );
             for attachment in attachments.iter_mut().flatten() {
@@ -602,6 +612,17 @@ pub(super) async fn run_perf_benchmark_async(
                 final_triangles += water_renderer.draw(&mut pass, &m.vertex, &m.index, m.indices);
             }
         }
+        post.resolve_reflections(&device, &queue, &mut encoder, &depth_view, matrix);
+        post.resolve_atmosphere(
+            &device,
+            &queue,
+            &mut encoder,
+            &depth_view,
+            matrix,
+            camera.position,
+            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+            &sun_shadows,
+        );
         post.draw_motion(&queue, &mut encoder, &depth_view, None);
         post.resolve_temporal(&device, &mut encoder, &depth_view);
         post.encode(&device, &queue, &mut encoder, &color_view);

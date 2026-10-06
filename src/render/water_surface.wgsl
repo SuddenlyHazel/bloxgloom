@@ -1,6 +1,6 @@
 // Shared near/distant water response. Normal ripples leave geometry seams flat.
 fn bg_water_surface(tint: vec4f, normal: vec3f, sky: f32, glow: f32,
-    world: vec3f, relative: vec3f, front: bool, time: f32) -> BgSceneOutput {
+    world: vec3f, relative: vec3f, front: bool, time: f32, sun_visibility: f32) -> BgSceneOutput {
     var n = normal;
     if abs(n.y) > 0.5 {
         let ripple = vec2f(sin(world.x*1.4+world.z*0.7+time*0.9),
@@ -11,11 +11,21 @@ fn bg_water_surface(tint: vec4f, normal: vec3f, sky: f32, glow: f32,
     let view = -relative/max(length(relative), 0.00001);
     let fresnel = 0.02+0.98*pow(1.0-max(dot(n, view), 0.0), 5.0);
     let light = bg_surface_light(n, camera.sun, sky, glow*glow*vec3f(1.0, 0.57, 0.23), vec3f(0.0), vec3f(0.0), 1.0);
-    let reflection = bg_environment_radiance(reflect(-view, n))*sky;
-    let halfway = view+normalize(camera.sun.xyz);
-    let half_vector = halfway/max(length(halfway), 0.00001);
-    let specular = pow(max(dot(n, half_vector), 0.0), 180.0)*bg_sun_radiance()*sky*0.7;
-    let color = bg_apply_fog(mix(tint.rgb*light, reflection, fresnel)+specular, relative+camera.eye.xyz, max(sky, camera.eye.w));
+    let roughness = 0.12;
+    let reflection_weight = bg_pbr_environment_weight(max(dot(n,view),0.0),roughness,vec3f(0.02));
+    let reflection = bg_pbr_prefiltered_sky(reflect(-view,n),roughness,camera.horizon.xyz,camera.sky_zenith)*reflection_weight*sky;
+    let pbr = BgPbr(roughness,vec3f(0.02),0.0,0.0,0.0,0.0,true);
+    let specular = bg_pbr_sun(n,view,camera.sun,sky,sun_visibility,pbr,bg_sun_radiance());
+    // Direct diffuse and the solar reflection share geometric visibility.
+    // Sky/local transport remains independent, including under bridges.
+    let shadowed_light = max(light-bg_direct_light(n,camera.sun,sky)*(1.0-sun_visibility),vec3f(0.0));
+    let color = tint.rgb*shadowed_light*(1.0-fresnel)+reflection+specular;
     let alpha = clamp(tint.a+fresnel*(1.0-tint.a), 0.05, 0.96);
-    return BgSceneOutput(vec4f(color, alpha), vec4f(0.0, 0.0, 0.0, -1.0));
+    let fog_sky = max(sky,camera.eye.w);
+    var result = bg_scene_output(color,vec3f(0.0),relative+camera.eye.xyz,fog_sky,-1.0);
+    result.color.a = alpha;
+    // SSR replaces the same prefiltered fallback already in the color. Its
+    // response includes alpha because this receiver blends over opaque ground.
+    return bg_scene_reflection(result,n,roughness,length(relative),
+        reflection_weight*alpha*bg_fog_transmittance(relative+camera.eye.xyz,fog_sky),sky);
 }

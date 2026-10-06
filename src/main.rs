@@ -90,6 +90,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "world-v31"
     };
     match args.next().as_deref() {
+        Some("showcase-motion-preview") => {
+            let directory = args.next().unwrap_or_else(|| "showcase-motion".into());
+            if args.next().is_some() {
+                return Err("usage: showcase-motion-preview [output-dir]".into());
+            }
+            preview::render_showcase_motion(std::path::Path::new(&directory))?;
+        }
+        Some("showcase-preview") => {
+            let directory = args.next().unwrap_or_else(|| "showcase-previews".into());
+            if args.next().is_some() {
+                return Err("usage: showcase-preview [output-dir]".into());
+            }
+            preview::render_showcase_previews(std::path::Path::new(&directory))?;
+        }
         Some("water-preview") => {
             let directory = args
                 .next()

@@ -9,9 +9,41 @@ from PIL import Image
 
 import pbr
 import color
+import height
 
 
 class ConversionTests(unittest.TestCase):
+    def test_inferred_height_recovers_periodic_orientation_and_physical_scale(self):
+        size = 64
+        x = np.arange(size)[None, :]
+        field = np.repeat(np.cos(x * 4 * np.pi / size), size, axis=0)
+        gradient = np.repeat(-np.sin(x * 4 * np.pi / size) * 4 * np.pi / size, size, axis=0)
+        normals = np.stack([-gradient, np.zeros_like(field), np.ones_like(field)], axis=2)
+        normals /= np.linalg.norm(normals, axis=2, keepdims=True)
+        encoded = np.rint((normals * .5 + .5) * 255).astype(np.uint8)
+        alpha, details = height.reconstruct(encoded)
+        self.assertIsNotNone(alpha)
+        self.assertGreater(np.corrcoef(field.ravel(), alpha.ravel())[0, 1], .99)
+        # Damping attenuates the sinusoid; no arbitrary min/max stretch to full
+        # depth. This one-texel surface stays shallow, rather than becoming 25%.
+        self.assertLess(details['depth_fraction'], .032)
+        self.assertGreater(int(alpha.min()), 230)
+        self.assertLess(int(alpha.min()), 255)
+
+    def test_nonintegrable_and_flat_normal_fields_do_not_invent_height(self):
+        self.assertIsNone(height.reconstruct(np.full((16, 16, 3), [128, 128, 255]))[0])
+        x = np.arange(64)[None, :]
+        y = np.arange(64)[:, None]
+        gx = np.repeat(np.sin(y * 2 * np.pi / 64), 64, axis=1)
+        gy = np.repeat(np.sin(x * 2 * np.pi / 64), 64, axis=0)
+        normals = np.stack([-gx, -gy, np.ones_like(gx)], axis=2)
+        normals /= np.linalg.norm(normals, axis=2, keepdims=True)
+        alpha, details = height.reconstruct(np.rint((normals * .5 + .5) * 255))
+        self.assertIsNone(alpha)
+        self.assertLess(details['normal_fit'], .1)
+        self.assertFalse(height.structural('cherry_leaves'))
+        self.assertFalse(height.structural('poppy'))
+
     def test_ore_presets_and_low_copper_metalness(self):
         original = Image.new('RGBA', (2, 1), (177, 0, 19, 255))
         for name, target, byte in [('iron_ore', 230, 195), ('gold_ore', 231, 195),

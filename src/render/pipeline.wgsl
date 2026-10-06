@@ -81,7 +81,7 @@ fn voxel_vertex(input: VertexInput) -> VertexOutput {
     output.position = bg_shadow.view_projection * vec4f(output.world_position, 1.0);
     return output;
 }
-struct MaterialSurface { shaded: BgSurface, light: vec3f, direct: vec3f, indirect: vec3f, visibility: f32, occlusion: f32 };
+struct MaterialSurface { shaded: BgSurface, light: vec3f, direct: vec3f, indirect: vec3f, visibility: f32, occlusion: f32, relief_visibility: f32 };
 fn surface(input: VertexOutput, albedo: vec4f, coordinates: MaterialCoordinates, specular: BgPbr) -> MaterialSurface {
     let normal = bg_material_normal(input, coordinates);
     // Compute the card plane before any cutout discard, in both color/caster
@@ -117,11 +117,12 @@ fn surface(input: VertexOutput, albedo: vec4f, coordinates: MaterialCoordinates,
     let baked = max(input.indirect_bounce.w,0.00001);
     let indirect = bg_local_indirect_record(bg_indirect_daylight(normal,camera.sun,input.sky_level),input.indirect_bounce.xyz,baked,contact);
     let hook_scale = clamp(shaded.light/max(light,vec3f(0.00001)),vec3f(0.0),vec3f(16.0));
-    return MaterialSurface(shaded, light, direct, shaded.albedo.rgb*indirect.xyz*hook_scale, indirect.w, bg_material_occlusion(input, coordinates));
+    let relief_visibility = bg_material_relief_visibility(input, coordinates);
+    return MaterialSurface(shaded, light, direct, shaded.albedo.rgb*indirect.xyz*hook_scale, indirect.w, bg_material_occlusion(input, coordinates), relief_visibility);
 }
 fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr, receiver: BgShadowReceiver) -> BgSceneOutput {
     let surface = material_surface.shaded;
-    let sun_visibility = bg_sun_visibility(receiver);
+    let sun_visibility = bg_sun_visibility(receiver)*material_surface.relief_visibility;
     let highlight = bg_material_highlight(input,surface,specular,sun_visibility,material_surface.visibility*material_surface.occlusion);
     let shadowed = max(vec3f(0.0),material_surface.light-material_surface.direct*(1.0-sun_visibility));
     let ratio = clamp(shadowed/max(material_surface.light,vec3f(0.00001)),vec3f(0.0),vec3f(1.0));
@@ -129,8 +130,12 @@ fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: BgPbr
     let nv = dot(normalize(surface.normal),eye/max(length(eye),0.0001));
     let diffuse_weight = bg_pbr_diffuse_weight(specular,nv);
     let color = max(vec3f(0.0),surface.albedo.rgb*surface.light*ratio-material_surface.indirect*(1.0-material_surface.occlusion))*diffuse_weight+surface.emission+highlight;
-    return bg_scene_output(color,material_surface.indirect*material_surface.occlusion*diffuse_weight,input.world_position,input.sky_level,
+    let output = bg_scene_output(color,material_surface.indirect*material_surface.occlusion*diffuse_weight,input.world_position,input.sky_level,
         material_surface.visibility * material_surface.occlusion * min(min(BG_MATERIAL_HISTORY_SIGN, input.history_sign), bg_local_history_sign(input.world_position, surface.normal, input.local_radiance, input.local_direction)));
+    if !specular.present {return output;}
+    return bg_scene_reflection(output,surface.normal,specular.roughness,length(eye),
+        bg_pbr_environment_weight(nv,specular.roughness,specular.f0)*bg_fog_transmittance(input.world_position,input.sky_level),
+        input.sky_level*material_surface.visibility*material_surface.occlusion);
 }
 @fragment fn fs_main(input: VertexOutput) -> BgSceneOutput {
     let receiver = bg_shadow_receiver(input.world_position);

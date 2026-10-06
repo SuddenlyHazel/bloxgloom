@@ -12,6 +12,7 @@ pub(crate) fn distance(key: ChunkKey, eye: Vec3) -> f32 {
 pub(crate) struct WaterRenderer {
     pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
+    camera_group: wgpu::BindGroup,
     time: wgpu::Buffer,
 }
 impl WaterRenderer {
@@ -22,7 +23,7 @@ impl WaterRenderer {
         });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("water uniforms"),
-            entries: &[0, 1].map(|binding| wgpu::BindGroupLayoutEntry {
+            entries: &[0].map(|binding| wgpu::BindGroupLayoutEntry {
                 binding,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
@@ -41,20 +42,17 @@ impl WaterRenderer {
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("water uniforms"),
             layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: time.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: time.as_entire_binding(),
+            }],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("water layout"),
-            bind_group_layouts: &[Some(&layout)],
+            bind_group_layouts: &[
+                Some(&super::sun_shadow::camera_layout(device)),
+                Some(&layout),
+            ],
             immediate_size: 0,
         });
         let pipeline=device.create_render_pipeline(&wgpu::RenderPipelineDescriptor{
@@ -64,8 +62,12 @@ impl WaterRenderer {
         Self {
             pipeline,
             group,
+            camera_group: super::sun_shadow::fallback_camera_group(device, camera),
             time,
         }
+    }
+    pub(crate) fn set_camera_group(&mut self, group: wgpu::BindGroup) {
+        self.camera_group = group;
     }
     pub(crate) fn prepare(&self, queue: &wgpu::Queue) {
         queue.write_buffer(
@@ -82,7 +84,8 @@ impl WaterRenderer {
         indices: u32,
     ) -> usize {
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.group, &[]);
+        pass.set_bind_group(0, &self.camera_group, &[]);
+        pass.set_bind_group(1, &self.group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.set_index_buffer(index.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..indices, 0, 0..1);
@@ -98,7 +101,20 @@ pub(crate) fn time() -> f32 {
         % (std::f64::consts::TAU * 10.0)) as f32
 }
 pub(super) fn shader(source: &str) -> String {
-    daylight::surface_shader(&format!("{}\n{source}", include_str!("water_surface.wgsl")))
+    daylight::surface_shader(&format!(
+        "{}\n{}\n{}\n{source}",
+        include_str!("material/pbr.wgsl"),
+        super::sun_shadow::SHADER,
+        include_str!("water_surface.wgsl")
+    ))
+}
+pub(super) fn lod_shader(source: &str) -> String {
+    daylight::surface_shader(&format!(
+        "{}\n{}\n{}\n{source}",
+        include_str!("material/pbr.wgsl"),
+        super::sun_shadow::SHADER.replace("@group(0)", "@group(3)"),
+        include_str!("water_surface.wgsl")
+    ))
 }
 #[cfg(test)]
 mod tests;

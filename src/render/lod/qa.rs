@@ -151,6 +151,8 @@ impl EditGpu {
                 color_attachments: &super::super::scene_ao::attachments(
                     &self.post.scene,
                     &self.post.ambient.indirect,
+                    &self.post.reflections.normal,
+                    &self.post.reflections.response,
                     super::super::SKY_COLOR,
                 ),
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -165,6 +167,9 @@ impl EditGpu {
             });
             assert!(self.gpu.draw(&mut pass) > 0);
         }
+        self.post
+            .reflections
+            .configure(camera.position, Atmosphere::at(crate::daylight::INITIAL_MS));
         self.post.resolve_ambient(
             &self.device,
             &self.queue,
@@ -176,7 +181,16 @@ impl EditGpu {
             &mut encoder,
             &self.post.scene,
             &self.post.ambient.indirect,
+            &self.post.reflections.normal,
+            &self.post.reflections.response,
             &self.depth,
+        );
+        self.post.resolve_reflections(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.depth,
+            super::super::view_projection(camera, WIDTH, HEIGHT),
         );
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &self.view);

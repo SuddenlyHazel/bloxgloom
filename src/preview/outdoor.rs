@@ -4,6 +4,7 @@ use super::*;
 mod creatures;
 mod depth;
 pub(super) mod motion;
+pub(super) mod showcase;
 pub(super) mod workshop;
 pub use creatures::install as install_outdoor_creatures;
 pub use depth::render as render_outdoor_depth;
@@ -11,6 +12,7 @@ pub use motion::render as render_outdoor_motion;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum View {
+    Showcase(showcase::View),
     Workshop(workshop::View),
     Overview,
     Canopy,
@@ -27,7 +29,7 @@ pub fn render_outdoor_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         format!(
             "Outdoor acceptance v1\nProduction voxel, articulated character, sun-shadow and HDR/postprocess paths\n1280x800; exposure 1.0; bloom 0.12; bounce disabled\nNoon world time {}; idle pose 0.35 seconds; no UI or auto exposure\nTemporal AA requested: {}; eight stationary samples on supported backends; GL fallback is reported on stderr\nContact occlusion requested: {} (finite strength clamped 0..1; default 1)\nShadow quality: {:?}; set BLOXGLOOM_SUN_SHADOWS=high for matched acceptance captures\nOne identical scene in all four views, built from builtin grass, stone, wood and alpha-cutout leaves\nOverview: open grass, overlapping canopy and cave mouth\nCanopy: light/dark character recipes under layered leaves\nEntrance: light/dark character recipes and unlit deep cave\nInterior: no emissives or exposure compensation; deep stone must remain dark\nAdapter identity and actor sky/glow samples are printed to stdout\nSoftware rendering is visual evidence, not hardware performance evidence\n",
             crate::daylight::INITIAL_MS,
-            if std::env::var("BLOXGLOOM_TAA").is_ok_and(|value| value == "1") {
+            if render::post::temporal_requested() {
                 "on"
             } else {
                 "off"
@@ -81,6 +83,9 @@ pub(super) fn prepare(view: View, chunks: &mut HashMap<ChunkKey, Arc<world::Chun
     if let View::Workshop(view) = view {
         return workshop::prepare(view, chunks);
     }
+    if let View::Showcase(view) = view {
+        return showcase::prepare(view, chunks);
+    }
     // Overlapping, volumetric crowns rather than one alpha plane. The near edge
     // exposes leaf silhouettes; the center stacks five layers above the actors.
     for (x, z) in [(-12, -15), (-5, -16), (-13, -7), (-4, -8)] {
@@ -123,6 +128,7 @@ pub(super) fn prepare(view: View, chunks: &mut HashMap<ChunkKey, Arc<world::Chun
 
 fn camera(view: View) -> Camera {
     let (position, target, fov) = match view {
+        View::Showcase(view) => return showcase::camera(view),
         View::Workshop(view) => return workshop::camera(view),
         View::Depth => (Vec3::new(10.0, 37.5, 8.5), Vec3::new(1.0, 34.0, -3.5), 55.0),
         View::Overview => (

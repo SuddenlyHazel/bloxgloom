@@ -50,7 +50,7 @@ fn companion_keys_resolve_independently_of_registration_order_and_missing_maps_f
 }
 
 #[test]
-fn data_mips_are_linear_and_do_not_weight_normals_by_height_alpha() {
+fn normal_mips_average_directions_without_height_coverage_weighting() {
     let mut catalog = Catalog::new();
     register(&mut catalog, "test:rock", &[170, 150, 120, 255].repeat(4));
     register(
@@ -61,7 +61,15 @@ fn data_mips_are_linear_and_do_not_weight_normals_by_height_alpha() {
         ],
     );
     let maps = prepare(&catalog);
-    assert_eq!(&maps.normal.last().unwrap()[..4], &[128, 128, 240, 127]);
+    let last = &maps.normal.last().unwrap()[..4];
+    assert!((i16::from(last[0]) - 128).abs() <= 1);
+    assert!((i16::from(last[1]) - 128).abs() <= 1);
+    assert_eq!(&last[2..], &[255, 127]);
+    assert_ne!(
+        maps.flags[0] & 32,
+        0,
+        "variable opaque height enables tracing"
+    );
     let old = catalog.fingerprint();
     register(&mut catalog, "test:rock_s", &[64, 0, 0, 255].repeat(4));
     assert_ne!(catalog.fingerprint(), old);
@@ -106,7 +114,81 @@ fn lab_pbr_mips_keep_categories_and_filter_continuous_channels() {
         }
     }
     let last = &maps.specular.last().unwrap()[..4];
-    assert_eq!(last, [64, 231, 255, 127]);
+    // Roughness filters in squared space to retain the unresolved lobe width.
+    let expected =
+        ((1.0 - ((1.0 + (127.0_f32 / 255.0).powi(2)) * 0.5).sqrt()) * 255.0).round() as u8;
+    assert_eq!(last, [expected, 231, 255, 127]);
+}
+
+#[test]
+fn unresolved_lab_normal_variance_broadens_reflections_and_preserves_ao_height() {
+    let stride = (TEXTURE_SIZE * TEXTURE_SIZE * 4) as usize;
+    let mut normal = Vec::with_capacity(stride);
+    for y in 0..TEXTURE_SIZE {
+        for x in 0..TEXTURE_SIZE {
+            normal.extend([
+                if (x + y) % 2 == 0 { 51 } else { 204 },
+                128,
+                211,
+                if x % 2 == 0 { 255 } else { 127 },
+            ]);
+        }
+    }
+    let source = normal.clone();
+    let specular = [230, 10, 20, 0].repeat(stride / 4);
+    let (normals, materials) = normal_mips::prepare(normal, specular.clone(), &[true]);
+    assert_eq!(normals[0], source, "authored base normal stays unchanged");
+    assert_eq!(
+        materials[0], specular,
+        "authored base material stays unchanged"
+    );
+    for level in 1..TEXTURE_MIPS as usize {
+        let n = &normals[level][..4];
+        assert!((i16::from(n[0]) - 128).abs() <= 1);
+        assert_eq!(
+            &n[2..],
+            &[211, 191],
+            "AO and height remain independent scalar data"
+        );
+        let s = &materials[level][..4];
+        assert!(
+            s[0] < 140,
+            "unresolved tilted normals must not become a glossy flat surface"
+        );
+        assert_eq!(&s[1..], &[10, 20, 0]);
+        assert_eq!(
+            s[0], materials[1][0],
+            "variance must survive repeated normalization"
+        );
+    }
+    let flat = [128, 128, 211, 255].repeat(stride / 4);
+    let (_, smooth) = normal_mips::prepare(flat, specular, &[true]);
+    assert_eq!(
+        smooth.last().unwrap()[0],
+        230,
+        "a constant normal does not become rougher"
+    );
+}
+
+#[test]
+fn cutout_height_does_not_enable_camera_or_light_ray_marching() {
+    let mut catalog = Catalog::new();
+    register(&mut catalog, "test:leaf", &[80, 160, 40, 255].repeat(4));
+    register(
+        &mut catalog,
+        "test:leaf_n",
+        &[
+            128, 128, 255, 0, 128, 128, 255, 255, 128, 128, 255, 0, 128, 128, 255, 255,
+        ],
+    );
+    let mut leaf = catalog.textures()[0].clone();
+    leaf.alpha_cutout = true;
+    let mut cutout = Catalog::new();
+    cutout.register_texture(leaf).unwrap();
+    cutout
+        .register_texture(catalog.textures()[1].clone())
+        .unwrap();
+    assert_eq!(prepare(&cutout).flags[0] & 32, 0);
 }
 
 #[test]

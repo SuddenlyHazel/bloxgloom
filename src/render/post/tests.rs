@@ -49,6 +49,9 @@ fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
                     (0.5, 1.0, false, 4.0),
                     (0.0, 1.0, false, 4.0),
                     (0.5, 0.0, true, 1.0),
+                    (0.004, 0.0, true, 1.0),
+                    (0.02, 0.0, true, 1.0),
+                    (0.08, 0.0, true, 1.0),
                 ] {
                     post.configure(&queue, enabled, exposure, bloom);
                     let readback = device.create_buffer(&wgpu::BufferDescriptor {
@@ -129,6 +132,14 @@ fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
                 assert!(
                     pixels[4] > pixels[3] && pixels[4] < 255,
                     "HDR values must retain highlight gradation"
+                );
+                assert!(
+                    pixels[9] >= 12 && pixels[10] >= 37,
+                    "dark material detail was crushed by the tone-map toe: {pixels:?}"
+                );
+                assert!(
+                    pixels[9] < pixels[10] && pixels[10] < pixels[11],
+                    "shaded radiance must remain distinguishable"
                 );
                 transfer_results.push(pixels);
             }

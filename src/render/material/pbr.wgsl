@@ -81,8 +81,41 @@ fn bg_pbr_environment(normal: vec3f, view: vec3f, pbr: BgPbr,
     sky_radiance: vec3f, sky_visibility: f32, local_radiance: vec3f, local_visibility: f32) -> vec3f {
     if !pbr.present { return vec3f(0.0); }
     let nv = clamp(dot(normal,view),0.0,1.0);
-    let fresnel = pbr.f0+(max(vec3f(1.0-pbr.roughness),pbr.f0)-pbr.f0)*pow(1.0-nv,5.0);
-    let energy = 1.0-0.5*pbr.roughness*pbr.roughness;
-    return fresnel*energy*(max(sky_radiance,vec3f(0.0))*clamp(sky_visibility,0.0,1.0)
+    return bg_pbr_environment_weight(nv,pbr.roughness,pbr.f0)*(max(sky_radiance,vec3f(0.0))*clamp(sky_visibility,0.0,1.0)
         +max(local_radiance,vec3f(0.0))*clamp(local_visibility,0.0,1.0));
+}
+
+// Analytic split-sum DFG fit: integrates GGX masking/Fresnel across the
+// specular lobe instead of applying a single grazing Fresnel to its center.
+fn bg_pbr_environment_weight(nv: f32, roughness: f32, f0: vec3f) -> vec3f {
+    let r = roughness*vec4f(-1.0,-0.0275,-0.572,0.022)+vec4f(1.0,0.0425,1.04,-0.04);
+    let a = min(r.x*r.x,exp2(-9.28*clamp(nv,0.0,1.0)))*r.x+r.y;
+    let ab = vec2f(-1.04,1.04)*a+r.zw;
+    return clamp(f0*ab.x+vec3f(ab.y),vec3f(0.0),vec3f(1.0));
+}
+fn bg_pbr_sky(direction: vec3f, horizon: vec3f, zenith: vec4f) -> vec3f {
+    return mix(horizon,zenith.xyz,smoothstep(-0.08,0.86,direction.y))*zenith.w*smoothstep(-0.08,0.0,direction.y);
+}
+// Deterministic GGX importance quadrature of the smooth analytic sky. There
+// is no random per-pixel noise and no synthetic ground radiance. SSR uses the
+// same function to replace exactly this fallback where real geometry is hit.
+fn bg_pbr_prefiltered_sky(reflected: vec3f, roughness: f32, horizon: vec3f, zenith: vec4f) -> vec3f {
+    // Align quadrature to the sky gradient: azimuth rotation cannot change
+    // the convolution, and the pole fallback has vanishing influence.
+    var tangent=vec3f(1.0,0.0,0.0);
+    if abs(reflected.y)<0.999999 {tangent=normalize(vec3f(0.0,1.0,0.0)-reflected*reflected.y);}
+    let bitangent=cross(reflected,tangent);
+    let alpha=roughness*roughness;
+    let azimuth=array<vec2f,8>(vec2f(1.000000000,0.000000000),vec2f(-0.737368878,0.675490294),vec2f(0.087425725,-0.996171041),vec2f(0.608438860,0.793600752),vec2f(-0.984713485,-0.174181951),vec2f(0.843755296,-0.536728051),vec2f(-0.259604306,0.965715074),vec2f(-0.460907023,-0.887448430));
+    var sum=vec3f(0.0);var weights=0.0;
+    for(var i=0u;i<8u;i++) {
+        let xi=(f32(i)+0.5)/8.0;
+        let cosine=sqrt((1.0-xi)/(1.0+(alpha*alpha-1.0)*xi));
+        let sine=sqrt(max(0.0,1.0-cosine*cosine));
+        let h=tangent*(azimuth[i].x*sine)+bitangent*(azimuth[i].y*sine)+reflected*cosine;
+        let ray=reflect(-reflected,h);
+        let weight=max(dot(reflected,ray),0.0);
+        sum+=bg_pbr_sky(ray,horizon,zenith)*weight;weights+=weight;
+    }
+    return sum/max(weights,0.00001);
 }

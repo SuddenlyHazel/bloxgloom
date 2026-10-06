@@ -68,6 +68,7 @@ impl Atmosphere {
             * smooth(-0.02, 0.12, self.sun.y)
             * (1.0 - self.cloud).powi(2)
             * self.lighting.sun_intensity
+            * 2.4
     }
 
     pub(crate) fn ambient(self) -> (Vec3, Vec3) {
@@ -80,11 +81,11 @@ impl Atmosphere {
         }
         let horizon = Vec3::new(0.59, 0.72, 0.82);
         let zenith = Vec3::new(0.20, 0.45, 0.75);
-        let lower = convolve(self.horizon, horizon, Vec3::new(0.30, 0.285, 0.26));
+        let lower = convolve(self.horizon, horizon, Vec3::new(0.36, 0.335, 0.30));
         let upper = convolve(
             self.zenith.lerp(self.horizon, 0.35),
             zenith.lerp(horizon, 0.35),
-            Vec3::new(0.46, 0.49, 0.54),
+            Vec3::new(0.55, 0.57, 0.60),
         );
         (
             lower * self.lighting.ambient_intensity,

@@ -1,4 +1,5 @@
-//! Opt-in camera/object-reprojected temporal AA, before bloom/display mapping.
+//! Camera/object-reprojected temporal AA, before bloom/display mapping.
+//! Enabled by default; BLOXGLOOM_TAA=0 retains single-frame rendering.
 //! History stores linear depth separately from HDR color (half-float device depth
 //! loses too much precision). A resolve copies back to scene so authored effects
 //! see the same stable HDR input and never accumulate their own output.

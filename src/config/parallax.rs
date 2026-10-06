@@ -13,7 +13,9 @@ impl Default for Parallax {
     fn default() -> Self {
         Self {
             enabled: true,
-            depth: 0.035,
+            // Imported alpha encodes depth relative to labPBR's quarter block.
+            // Half of that relief is a conservative block-edge-safe default.
+            depth: 0.125,
             distance: 32.0,
             steps: 32,
         }
@@ -24,7 +26,7 @@ impl Parallax {
     pub(super) fn sanitized(self) -> Self {
         Self {
             enabled: self.enabled,
-            depth: super::clamp_finite(self.depth, 0.0, 0.15, 0.035),
+            depth: super::clamp_finite(self.depth, 0.0, 0.15, 0.125),
             distance: super::clamp_finite(self.distance, 8.0, 96.0, 32.0),
             steps: self.steps.clamp(12, 64),
         }
@@ -51,7 +53,7 @@ impl Parallax {
                     self.enabled = enabled;
                 }
             }
-            "parallax_depth" => self.depth = super::parse_clamped_float(value, 0.0, 0.15, 0.035),
+            "parallax_depth" => self.depth = super::parse_clamped_float(value, 0.0, 0.15, 0.125),
             "parallax_distance" => {
                 self.distance = super::parse_clamped_float(value, 8.0, 96.0, 32.0)
             }

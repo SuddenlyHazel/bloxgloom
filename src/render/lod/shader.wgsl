@@ -69,7 +69,8 @@ fn bg_lod_coverage(v: Out) {
     return bg_scene_output(albedo*v.light, albedo*v.indirect, v.relative, max(v.sky,camera.eye.w), 1.0);
 }
 @fragment fn fs_water(v: Out, @builtin(front_facing) front: bool) -> BgSceneOutput {
+    let receiver = bg_shadow_receiver(v.local+vec3f(tile.origin.xyz));
     bg_lod_coverage(v);
     let glow = f32((v.surface >> 7u)&15u)/15.0;
-    return bg_water_surface(v.color, v.normal, v.sky, glow, v.local+vec3f(tile.origin.xyz), v.relative, front, options.x);
+    return bg_water_surface(v.color, v.normal, v.sky, glow, v.local+vec3f(tile.origin.xyz), v.relative, front, options.x, bg_sun_visibility(receiver));
 }

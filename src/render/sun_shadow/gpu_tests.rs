@@ -263,7 +263,7 @@ fn gpu_terrain_shadow_edits_cutouts_and_sky_glow_invariance() {
         clear
             .chunks_exact(4)
             .zip(shaded.chunks_exact(4))
-            .filter(|(a, b)| a[0] > b[0] + 4)
+            .filter(|(a, b)| a[0].saturating_sub(b[0]) > 4)
             .count()
             > 150,
         "terrain must receive the production occluder"
@@ -351,7 +351,7 @@ pub(in crate::render) fn verify_custom_alpha(prepared: &crate::render::custom::P
         clear
             .chunks_exact(4)
             .zip(shadow.chunks_exact(4))
-            .filter(|(a, b)| a[0] > b[0] + 4)
+            .filter(|(a, b)| a[0].saturating_sub(b[0]) > 4)
             .count()
             > 150,
         "custom cutout should cast and receive sun shadows"

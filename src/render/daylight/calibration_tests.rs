@@ -149,14 +149,14 @@ fn gpu_daylight_preserves_palette_caves_and_unoccluded_direct_light() {
     assert!(skin.x / skin.z > 1.65, "warm skin lost its hue: {skin:?}");
     let luminance = light[0].dot(Vec3::new(0.2126, 0.7152, 0.0722));
     assert!(
-        (0.38..0.43).contains(&luminance),
+        (0.46..0.50).contains(&luminance),
         "exposure drift: {luminance}"
     );
     assert!(light[1].min_element() > light[0].max_element());
     assert!(light[2].max_element() < light[0].min_element());
     assert!(
-        light[1].max_element() < 1.1,
-        "daylight highlights are overdriven"
+        light[1].max_element() < 2.0,
+        "daylight highlights exceed the bounded HDR lighting range"
     );
 
     let floor = Vec3::new(0.012, 0.015, 0.022);

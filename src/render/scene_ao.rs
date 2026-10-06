@@ -25,6 +25,15 @@ pub(crate) fn color_targets(
             blend: None,
             write_mask: wgpu::ColorWrites::ALL,
         }));
+        // Two compact reflection records fit alongside HDR/indirect within
+        // the portable 32-byte color-attachment budget.
+        for _ in 0..2 {
+            targets.push(Some(wgpu::ColorTargetState {
+                format: INDIRECT_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }));
+        }
     }
     targets
 }
@@ -32,8 +41,10 @@ pub(crate) fn color_targets(
 pub(crate) fn attachments<'a>(
     scene: &'a wgpu::TextureView,
     indirect: &'a wgpu::TextureView,
+    reflection_normal: &'a wgpu::TextureView,
+    reflection_response: &'a wgpu::TextureView,
     clear: wgpu::Color,
-) -> [Option<wgpu::RenderPassColorAttachment<'a>>; 2] {
+) -> [Option<wgpu::RenderPassColorAttachment<'a>>; 4] {
     let attachment = |view, color| {
         Some(wgpu::RenderPassColorAttachment {
             view,
@@ -48,6 +59,8 @@ pub(crate) fn attachments<'a>(
     [
         attachment(scene, clear),
         attachment(indirect, wgpu::Color::TRANSPARENT),
+        attachment(reflection_normal, wgpu::Color::TRANSPARENT),
+        attachment(reflection_response, wgpu::Color::TRANSPARENT),
     ]
 }
 

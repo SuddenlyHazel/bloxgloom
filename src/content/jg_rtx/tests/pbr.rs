@@ -51,21 +51,137 @@ fn imported_ordinary_and_deepslate_ores_use_the_same_declared_metal() {
 #[test]
 fn imported_normal_slopes_match_canonical_source_pixels() {
     let catalog = Catalog::builtins();
-    // Independently audited Bedrock source XY and authored Java AO/height.
+    // Independently audited Bedrock source XY and authored Java AO. Height has
+    // a separate contract: authored relief is retained and selected flat maps
+    // receive explicitly identified, confidence-gated inferred relief.
     // Gravel is a Java green-inversion exception; it needs the same convention.
     for (key, expected) in [
-        ("stone_n", [149, 169, 242, 255]),
-        ("dirt_n", [212, 89, 242, 255]),
-        ("wood_side_n", [12, 116, 252, 255]),
-        ("gravel_n", [180, 125, 225, 249]),
-        ("jg_cobblestone_n", [131, 129, 235, 255]),
+        ("stone_n", [149, 169, 242]),
+        ("dirt_n", [212, 89, 242]),
+        ("wood_side_n", [12, 116, 252]),
+        ("gravel_n", [180, 125, 225]),
+        ("jg_cobblestone_n", [131, 129, 235]),
     ] {
         let bytes = pixels(&catalog, key);
         let offset = (23 * 256 + 19) * 4;
         assert_eq!(
-            &bytes[offset..offset + 4],
+            &bytes[offset..offset + 3],
             &expected,
             "{key} source convention"
+        );
+    }
+}
+
+#[test]
+fn imported_height_preserves_authored_samples_and_identifies_inferred_relief() {
+    let catalog = Catalog::builtins();
+    let offset = (23 * 256 + 19) * 4 + 3;
+    // Existing source-provided height stays exact, including a flat dirt map.
+    // The two terracotta values come from the declared Bedrock heightmaps.
+    for (key, expected) in [
+        ("stone_n", 255),
+        ("dirt_n", 255),
+        ("gravel_n", 249),
+        ("jg_cobblestone_n", 255),
+        ("jg_yellow_glazed_terracotta_n", 223),
+        ("jg_brown_glazed_terracotta_n", 172),
+    ] {
+        assert_eq!(
+            pixels(&catalog, key)[offset],
+            expected,
+            "{key} authored height"
+        );
+    }
+    let provenance: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../assets/jg-rtx/provenance.json")).unwrap();
+    let conversion = |key: &str| {
+        let destination = format!("/{key}.png");
+        &provenance
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| {
+                record["destination"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(&destination)
+            })
+            .unwrap()["pbr_conversion"]
+    };
+    // Audited source-based reconstruction samples and extrema guard physical
+    // scale as well as orientation. Flattening or arbitrary min/max stretching
+    // would fail even if the provenance still claimed successful integration.
+    for (key, sample, minimum, minimum_pixel, maximum_pixel, fit, depth) in [
+        (
+            "wood_side",
+            243,
+            206,
+            (253, 184),
+            (187, 224),
+            0.811964,
+            0.048186,
+        ),
+        (
+            "jg_cherry_log",
+            220,
+            203,
+            (178, 101),
+            (32, 97),
+            0.850245,
+            0.050588,
+        ),
+        (
+            "jg_cherry_planks",
+            249,
+            228,
+            (160, 32),
+            (130, 2),
+            0.997064,
+            0.026272,
+        ),
+        (
+            "jg_bricks",
+            240,
+            211,
+            (95, 222),
+            (101, 68),
+            0.984291,
+            0.043294,
+        ),
+    ] {
+        let bytes = pixels(&catalog, &format!("{key}_n"));
+        let alpha = |(x, y): (usize, usize)| bytes[(y * 256 + x) * 4 + 3];
+        assert_eq!(bytes[offset], sample, "{key} inferred height sample");
+        assert_eq!(alpha(minimum_pixel), minimum, "{key} groove depth");
+        assert_eq!(alpha(maximum_pixel), 255, "{key} surface peak");
+        assert_eq!(bytes.chunks_exact(4).map(|p| p[3]).min(), Some(minimum));
+        let details = conversion(key);
+        assert_eq!(
+            details["height_source_kind"],
+            "inferred from canonical RGB normal; not authored height"
+        );
+        let measurement = &details["height_reconstruction"];
+        assert!((measurement["normal_fit"].as_f64().unwrap() - fit).abs() < 0.000001);
+        assert!((measurement["depth_fraction"].as_f64().unwrap() - depth).abs() < 0.000001);
+        assert!(
+            details.get("height_source").is_none(),
+            "inference cannot claim an authored height source"
+        );
+    }
+    // Poorly integrable source normals keep their authored flat alpha.
+    for key in ["jg_acacia_log", "jg_jungle_log_top"] {
+        assert!(
+            pixels(&catalog, &format!("{key}_n"))
+                .chunks_exact(4)
+                .all(|p| p[3] == 255)
+        );
+        let details = conversion(key);
+        assert!(details.get("height_source_kind").is_none());
+        assert!(
+            details["height_reconstruction"]["normal_fit"]
+                .as_f64()
+                .unwrap()
+                < 0.70
         );
     }
 }

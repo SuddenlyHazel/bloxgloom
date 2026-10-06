@@ -28,8 +28,8 @@ fn atmosphere_drives_surface_color_energy_and_keeps_legacy_uniform_offsets() {
     let storm = crate::render::weather::Presentation::new(1.0, 1.8, [0.0; 2], 1.0, 0.0, 0.0)
         .atmosphere(noon);
     let (lower, upper) = noon.ambient();
-    assert!(lower.distance(Vec3::new(0.30, 0.285, 0.26)) < 1e-6);
-    assert!(upper.distance(Vec3::new(0.46, 0.49, 0.54)) < 1e-6);
+    assert!(lower.distance(Vec3::new(0.36, 0.335, 0.30)) < 1e-6);
+    assert!(upper.distance(Vec3::new(0.55, 0.57, 0.60)) < 1e-6);
     assert!(
         dawn.sun_radiance().x / dawn.sun_radiance().z
             > noon.sun_radiance().x / noon.sun_radiance().z
