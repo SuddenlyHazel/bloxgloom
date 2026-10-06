@@ -3,16 +3,16 @@
 use std::{io::Cursor, path::PathBuf};
 use wgpu::util::DeviceExt;
 pub(super) const SHADER: &str = include_str!("reference_clouds.wgsl");
-pub(super) struct Noise {
+pub(crate) struct Noise {
     texture: wgpu::Texture,
-    pub(super) view: wgpu::TextureView,
-    pub(super) sampler: wgpu::Sampler,
+    pub(crate) view: wgpu::TextureView,
+    pub(crate) sampler: wgpu::Sampler,
     pending: Option<wgpu::Buffer>,
-    pub(super) available: bool,
+    pub(crate) available: bool,
     size: (u32, u32),
 }
 impl Noise {
-    pub(super) fn new(device: &wgpu::Device) -> Self {
+    pub(crate) fn new(device: &wgpu::Device) -> Self {
         let reference = super::super::bsl_reference::enabled();
         let path = std::env::var_os("BLOXGLOOM_BSL_NOISE")
             .map(PathBuf::from)
@@ -23,13 +23,22 @@ impl Noise {
             Some(Ok(image)) => image,
             Some(Err(error)) => {
                 eprintln!(
-                    "BSL reference clouds unavailable: {}: {error}; using enhanced clouds. Supply local noise with BLOXGLOOM_BSL_NOISE (BSL author redistribution permission is required).",
+                    "BSL reference noise unavailable: {}: {error}; using enhanced clouds and omitting source film grain. Supply local noise with BLOXGLOOM_BSL_NOISE (BSL author redistribution permission is required).",
                     path.display()
                 );
                 ((1, 1), vec![0; 4])
             }
             None => ((1, 1), vec![0; 4]),
         };
+        Self::image(device, size, pixels, available)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture(device: &wgpu::Device, rgba: [u8; 4]) -> Self {
+        Self::image(device, (512, 512), rgba.repeat(512 * 512), true)
+    }
+
+    fn image(device: &wgpu::Device, size: (u32, u32), pixels: Vec<u8>, available: bool) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("user supplied BSL linear noise"),
             size: wgpu::Extent3d {
@@ -82,7 +91,7 @@ impl Noise {
         pixels.truncate(info.buffer_size());
         Ok(((info.width, info.height), pixels))
     }
-    pub(super) fn upload(&mut self, encoder: &mut wgpu::CommandEncoder) {
+    pub(crate) fn upload(&mut self, encoder: &mut wgpu::CommandEncoder) {
         if let Some(buffer) = self.pending.take() {
             encoder.copy_buffer_to_texture(
                 wgpu::TexelCopyBufferInfo {

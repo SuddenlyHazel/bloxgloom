@@ -57,13 +57,17 @@ fn tone_map(value: vec3<f32>) -> vec3<f32> {
     var hdr = textureSample(scene, linear_sampler, input.uv).rgb;
     var color = max(hdr, vec3<f32>(0.0));
     if settings.w > 0.0 {
-        if settings.y > 0.0 { hdr += textureSample(bloom, linear_sampler, input.uv).rgb * settings.y; }
+        if settings.y > 0.0 {
+            if BG_REFERENCE_BLOOM { hdr = bg_reference_bloom(hdr, input.uv); }
+            else { hdr += textureSample(bloom, linear_sampler, input.uv).rgb * settings.y; }
+        }
         if BG_BSL_STYLE {
             let distance = length(input.uv - vec2f(0.5));
             hdr *= 1.0 - (distance * distance * 0.3535 + distance * 0.75) * 1.06;
         }
         color = tone_map(max(hdr * settings.x, vec3<f32>(0.0)));
     }
+    if BG_REFERENCE_DISPLAY {return vec4f(color,1.0);}
     if settings.z > 0.0 {
         color = select(1.055 * pow(color, vec3<f32>(1.0 / 2.4)) - 0.055, color * 12.92, color <= vec3<f32>(0.0031308));
     }

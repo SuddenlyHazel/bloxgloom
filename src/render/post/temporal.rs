@@ -22,9 +22,9 @@ pub(crate) struct Temporal {
     resolved: bool,
     layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
-    settings: wgpu::Buffer,
+    pub(super) settings: wgpu::Buffer,
     sampler: wgpu::Sampler,
-    previous: Option<(Mat4, crate::render::Camera)>,
+    pub(super) previous: Option<(Mat4, crate::render::Camera)>,
     pending: Option<(Mat4, crate::render::Camera)>,
     frame: u32,
     index: usize,
@@ -315,6 +315,20 @@ impl Temporal {
             scene.texture().as_image_copy(),
             scene.texture().size(),
         );
+        self.resolved = true;
+    }
+
+    pub(super) fn reference_reset(&mut self) {
+        self.previous = None;
+        self.valid = false;
+        self.resolved = false;
+    }
+
+    pub(super) fn reference_frame(&self) -> Option<(&wgpu::Buffer, &wgpu::TextureView)> {
+        (self.pending.is_some() && !self.resolved).then_some((&self.settings, &self.motion))
+    }
+
+    pub(super) fn reference_resolved(&mut self) {
         self.resolved = true;
     }
 

@@ -2,6 +2,8 @@
 //! Shared by the window renderer, image previews, and GPU benchmark.
 use wgpu::util::DeviceExt;
 
+mod reference_bloom;
+mod reference_display;
 mod targets;
 pub(crate) mod temporal;
 
@@ -23,6 +25,8 @@ pub(crate) struct PostProcess {
     pub(crate) reflections: super::reflections::Reflections,
     pub(crate) trace: super::trace::TraceLighting,
     atmosphere: super::atmosphere::AtmospherePass,
+    reference_bloom: Option<reference_bloom::ReferenceBloom>,
+    reference_display: Option<reference_display::ReferenceDisplay>,
     bloom: [wgpu::TextureView; 2],
     groups: [wgpu::BindGroup; 3],
     composite_group: wgpu::BindGroup,
@@ -46,6 +50,22 @@ impl PostProcess {
         width: u32,
         height: u32,
         output: wgpu::TextureFormat,
+    ) -> Self {
+        Self::new_with_reference(
+            device,
+            width,
+            height,
+            output,
+            super::bsl_reference::enabled(),
+        )
+    }
+
+    fn new_with_reference(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        output: wgpu::TextureFormat,
+        reference: bool,
     ) -> Self {
         let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -102,10 +122,14 @@ impl PostProcess {
             label: Some("HDR and bloom shader"),
             source: wgpu::ShaderSource::Wgsl(
                 format!(
-                    "{}\nconst BG_BSL_STYLE: bool = {};\n{}",
+                    "{}\nconst BG_BSL_STYLE: bool = {};\nconst BG_REFERENCE_BLOOM: bool = {};\nconst BG_REFERENCE_DISPLAY: bool = {};\n{}\n{}\n{}",
                     super::sky::STYLE_SHADER,
                     super::sky::style_enabled(),
-                    include_str!("post.wgsl")
+                    reference,
+                    reference,
+                    reference_bloom::COMMON,
+                    include_str!("post.wgsl"),
+                    reference_bloom::COMPOSITE
                 )
                 .into(),
             ),
@@ -142,7 +166,14 @@ impl PostProcess {
                 cache: None,
             })
         };
+        let reference_bloom = reference.then(|| {
+            reference_bloom::ReferenceBloom::new(device, &targets.scene, &layout, &settings)
+        });
+        let reference_display = reference
+            .then(|| reference_display::ReferenceDisplay::new(device, width, height, output));
         Self {
+            reference_bloom,
+            reference_display,
             scene: targets.scene,
             temporal: None,
             ambient: super::scene_ao::AmbientOcclusion::new(device, width, height),
@@ -154,7 +185,7 @@ impl PostProcess {
             extract: pipeline("extract", HDR_FORMAT),
             horizontal: pipeline("horizontal", HDR_FORMAT),
             vertical: pipeline("vertical", HDR_FORMAT),
-            composite: pipeline("composite", output),
+            composite: pipeline("composite", if reference { HDR_FORMAT } else { output }),
             settings,
             layout,
             sampler,
@@ -180,10 +211,25 @@ impl PostProcess {
         if self.temporal.is_some() {
             self.temporal = Some(temporal::Temporal::new(device, width, height));
         }
+        if let Some(display) = &mut self.reference_display {
+            display.resize(device, width, height);
+        }
         self.ambient.resize(device, width, height);
         self.reflections.resize(device, width, height);
         self.trace.resize(device, targets.scene.texture().size());
         self.atmosphere.resize(device, width, height);
+        if self.reference_bloom.is_some() {
+            let input = self
+                .effect
+                .as_ref()
+                .map_or(&targets.scene, |effect| effect.output());
+            self.reference_bloom = Some(reference_bloom::ReferenceBloom::new(
+                device,
+                input,
+                &self.layout,
+                &self.settings,
+            ));
+        }
         self.scene = targets.scene;
         self.bloom = targets.bloom;
         self.groups = targets.groups;
@@ -203,6 +249,9 @@ impl PostProcess {
         }
         let size = self.scene.texture().size();
         self.temporal = enabled.then(|| temporal::Temporal::new(device, size.width, size.height));
+        if let Some(display) = &mut self.reference_display {
+            display.reset();
+        }
     }
 
     pub(crate) fn temporal_enabled(&self) -> bool {
@@ -364,6 +413,9 @@ impl PostProcess {
     }
 
     pub(crate) fn submitted(&mut self) {
+        if let Some(display) = &mut self.reference_display {
+            display.submitted();
+        }
         if let Some(temporal) = &mut self.temporal {
             temporal.submitted();
         }
@@ -375,6 +427,10 @@ impl PostProcess {
         encoder: &mut wgpu::CommandEncoder,
         depth: &wgpu::TextureView,
     ) {
+        if let Some(display) = &mut self.reference_display {
+            display.depth = Some(depth.clone());
+            return;
+        }
         if let Some(temporal) = &mut self.temporal {
             temporal.resolve(
                 device,
@@ -428,6 +484,18 @@ impl PostProcess {
         {
             return;
         }
+        if self.reference_display.is_some()
+            && (self.enabled != enabled
+                || self.exposure != exposure
+                || self.bloom_strength != bloom_strength)
+        {
+            if let Some(display) = &mut self.reference_display {
+                display.reset();
+            }
+            if let Some(temporal) = &mut self.temporal {
+                temporal.reference_reset();
+            }
+        }
         self.exposure = exposure;
         self.enabled = enabled;
         self.bloom_strength = bloom_strength;
@@ -444,7 +512,7 @@ impl PostProcess {
     }
 
     pub fn encode(
-        &self,
+        &mut self,
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
@@ -452,6 +520,12 @@ impl PostProcess {
     ) {
         if let Some(effect) = &self.effect {
             effect.encode(queue, encoder);
+        }
+        if self.enabled
+            && self.bloom_strength > 0.0
+            && let Some(reference) = &self.reference_bloom
+        {
+            reference.encode(encoder);
         }
         let mut draw = |label,
                         pipeline: &wgpu::RenderPipeline,
@@ -474,7 +548,7 @@ impl PostProcess {
             pass.set_bind_group(0, group, &[]);
             pass.draw(0..3, 0..1);
         };
-        if self.enabled && self.bloom_strength > 0.0 {
+        if self.enabled && self.bloom_strength > 0.0 && self.reference_bloom.is_none() {
             draw(
                 "bloom extract",
                 &self.extract,
@@ -497,8 +571,25 @@ impl PostProcess {
         draw(
             "HDR display mapping",
             &self.composite,
-            &self.composite_group,
-            output,
+            self.reference_bloom
+                .as_ref()
+                .map_or(&self.composite_group, |reference| {
+                    &reference.composite_group
+                }),
+            self.reference_display
+                .as_ref()
+                .map_or(output, |display| &display.linear),
         );
+        if let Some(display) = &mut self.reference_display {
+            display.encode(
+                _device,
+                queue,
+                encoder,
+                output,
+                self.temporal.as_mut(),
+                &self.ambient.indirect,
+                self.enabled,
+            );
+        }
     }
 }
