@@ -190,6 +190,9 @@ def selected_blocks():
                 'jungle':(91,158,64),'acacia':(115,166,72),'dark_oak':(87,139,55),
                 'mangrove':(110,149,56)}.get(species)
         block(species+'_leaves',kind='leaves',family='leaves',tint=tint)
+    # Living boughs retain bark on every face; old logs keep their cut ends.
+    for species in ['oak','spruce','birch','jungle','acacia','dark_oak','mangrove','cherry','pale_oak']:
+        block(species+'_wood',species+'_log',kind='log',family='wood')
     for name in ['azalea_leaves','flowering_azalea_leaves']:
         block(name,kind='leaves',family='leaves')
     block('mangrove_roots','mangrove_roots_side','mangrove_roots_top',family='wood')

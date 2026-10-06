@@ -10,7 +10,7 @@ pub(super) fn state(key: &str) -> BlockId {
 
 pub(super) struct Palette {
     pub trees: [(BlockId, BlockId); 9],
-    pub branch_logs: [(BlockId, BlockId); 9],
+    pub branch_wood: [(BlockId, BlockId); 9],
     pub rocks: [BlockId; 7],
     pub deep_rock: BlockId,
     pub soils: [BlockId; 4],
@@ -32,14 +32,14 @@ pub(super) fn palette() -> &'static Palette {
                 state(&format!("bloxgloom:{species}_leaves")),
             )
         }),
-        branch_logs: [
+        branch_wood: [
             "oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry",
             "pale_oak",
         ]
         .map(|species| {
             (
-                state(&format!("bloxgloom:{species}_log[axis=x]")),
-                state(&format!("bloxgloom:{species}_log[axis=z]")),
+                state(&format!("bloxgloom:{species}_wood[axis=x]")),
+                state(&format!("bloxgloom:{species}_wood[axis=z]")),
             )
         }),
         rocks: [

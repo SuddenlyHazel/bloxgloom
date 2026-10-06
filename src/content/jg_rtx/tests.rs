@@ -1,4 +1,5 @@
 use super::*;
+mod bark_wood;
 mod pbr;
 
 #[test]

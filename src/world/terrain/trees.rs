@@ -84,11 +84,9 @@ pub(in crate::world) fn tree_anchor(cell_x: i64, cell_z: i64, seed: u64) -> Opti
     } else {
         palette().trees[species]
     };
-    let (log_x, log_z) = if species == 9 {
-        (WOOD, WOOD)
-    } else {
-        palette().branch_logs[species]
-    };
+    // Living boughs carry bark through every bend and terminal face. Cut log
+    // endgrain remains available for placed timber and the vertical trunk.
+    let (log_x, log_z) = palette().branch_wood[if species == 9 { 0 } else { species }];
     let base_height = match species {
         1 => 11,
         2 => 8,
@@ -195,3 +193,6 @@ pub(in crate::world) fn tree_block_at(x: i64, y: i64, z: i64, seed: u64) -> Opti
     }
     leaf
 }
+
+#[cfg(test)]
+mod tests;

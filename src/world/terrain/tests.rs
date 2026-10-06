@@ -13,6 +13,7 @@ fn imported_tree_materials_match_chunks_and_distant_columns_at_seams() {
     let mut lod = LodSampler::new(seed);
     let mut logs = 0;
     let mut leaves = 0;
+    let mut boughs = 0;
     for z in tree.z - TREE_RADIUS..=tree.z + TREE_RADIUS {
         for x in tree.x - TREE_RADIUS..=tree.x + TREE_RADIUS {
             let bottom = tree.ground_y as i32;
@@ -28,10 +29,11 @@ fn imported_tree_materials_match_chunks_and_distant_columns_at_seams() {
                 assert_eq!(distant[(y - bottom) as usize], sample);
                 logs += usize::from(sample == tree.log);
                 leaves += usize::from(sample == tree.leaves);
+                boughs += usize::from(tree.is_log(sample) && sample != tree.log);
             }
         }
     }
-    assert!(logs > 0 && leaves > 0);
+    assert!(logs > 0 && leaves > 0 && boughs > 0);
 }
 
 #[test]

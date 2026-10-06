@@ -18419,6 +18419,222 @@
         171
       ],
       "family": "fantasy"
+    },
+    {
+      "id": 266,
+      "key": "oak_wood",
+      "name": "OAK WOOD",
+      "top": "jg_oak_log",
+      "side": "jg_oak_log",
+      "bottom": "jg_oak_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.361228,
+        0.314147,
+        0.245869,
+        1.0
+      ],
+      "reflectance": [
+        92,
+        80,
+        62
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 267,
+      "key": "spruce_wood",
+      "name": "SPRUCE WOOD",
+      "top": "jg_spruce_log",
+      "side": "jg_spruce_log",
+      "bottom": "jg_spruce_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.174275,
+        0.159878,
+        0.153586,
+        1.0
+      ],
+      "reflectance": [
+        44,
+        40,
+        39
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 268,
+      "key": "birch_wood",
+      "name": "BIRCH WOOD",
+      "top": "jg_birch_log",
+      "side": "jg_birch_log",
+      "bottom": "jg_birch_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.351694,
+        0.37907,
+        0.382719,
+        1.0
+      ],
+      "reflectance": [
+        89,
+        96,
+        97
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 269,
+      "key": "jungle_wood",
+      "name": "JUNGLE WOOD",
+      "top": "jg_jungle_log",
+      "side": "jg_jungle_log",
+      "bottom": "jg_jungle_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.346828,
+        0.280511,
+        0.100027,
+        1.0
+      ],
+      "reflectance": [
+        88,
+        71,
+        25
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 270,
+      "key": "acacia_wood",
+      "name": "ACACIA WOOD",
+      "top": "jg_acacia_log",
+      "side": "jg_acacia_log",
+      "bottom": "jg_acacia_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.209788,
+        0.211515,
+        0.203114,
+        1.0
+      ],
+      "reflectance": [
+        53,
+        53,
+        51
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 271,
+      "key": "dark_oak_wood",
+      "name": "DARK OAK WOOD",
+      "top": "jg_dark_oak_log",
+      "side": "jg_dark_oak_log",
+      "bottom": "jg_dark_oak_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.168673,
+        0.130205,
+        0.089828,
+        1.0
+      ],
+      "reflectance": [
+        43,
+        33,
+        22
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 272,
+      "key": "mangrove_wood",
+      "name": "MANGROVE WOOD",
+      "top": "jg_mangrove_log",
+      "side": "jg_mangrove_log",
+      "bottom": "jg_mangrove_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.335718,
+        0.310619,
+        0.290632,
+        1.0
+      ],
+      "reflectance": [
+        85,
+        79,
+        74
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 273,
+      "key": "cherry_wood",
+      "name": "CHERRY WOOD",
+      "top": "jg_cherry_log",
+      "side": "jg_cherry_log",
+      "bottom": "jg_cherry_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.356727,
+        0.3359,
+        0.332614,
+        1.0
+      ],
+      "reflectance": [
+        90,
+        85,
+        84
+      ],
+      "family": "wood"
+    },
+    {
+      "id": 274,
+      "key": "pale_oak_wood",
+      "name": "PALE OAK WOOD",
+      "top": "jg_pale_oak_log",
+      "side": "jg_pale_oak_log",
+      "bottom": "jg_pale_oak_log",
+      "kind": "log",
+      "supports_plant": false,
+      "flammable": true,
+      "emission": 0,
+      "swatch": [
+        0.445162,
+        0.408949,
+        0.389012,
+        1.0
+      ],
+      "reflectance": [
+        113,
+        104,
+        99
+      ],
+      "family": "wood"
     }
   ]
 }

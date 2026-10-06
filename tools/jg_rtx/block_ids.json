@@ -264,5 +264,14 @@
   "nether_quartz_ore": 262,
   "ancient_debris": 263,
   "shroomlight": 264,
-  "sea_lantern": 265
+  "sea_lantern": 265,
+  "oak_wood": 266,
+  "spruce_wood": 267,
+  "birch_wood": 268,
+  "jungle_wood": 269,
+  "acacia_wood": 270,
+  "dark_oak_wood": 271,
+  "mangrove_wood": 272,
+  "cherry_wood": 273,
+  "pale_oak_wood": 274
 }
