@@ -13,6 +13,16 @@ fn bg_sky_celestial_uv(ray:vec3f,direction:vec3f,extent:f32)->vec2f {
 fn bg_sky_celestial_inside(uv:vec2f,alignment:f32)->f32 {
     return select(0.0,1.0,alignment>0.0&&all(uv>=vec2f(0.0))&&all(uv<=vec2f(1.0)));
 }
+// Asset metadata: luminance-weighted centroid above75% of the linear-sRGB
+// peak in unchanged512x512 JG sun.png (SHA256976a853bc48bc37b294b671c1e32cca7
+// 0218f05bf81c011d6a47b31b1ea2718e). The baked flare puts its principal core
+// off the image center. Reference mode retains the original centered quad.
+const BG_JG_SUN_CORE_UV:vec2f=vec2f(227.6215,216.7756)/512.0;
+fn bg_sky_sun_uv(ray:vec3f,direction:vec3f)->vec2f {
+    let uv=bg_sky_celestial_uv(ray,direction,0.30);
+    if abs(sky_camera.reference.w)>0.5 {return uv;}
+    return uv+BG_JG_SUN_CORE_UV-vec2f(0.5);
+}
 struct SkyOutput {@location(0) color:vec4f,@location(1) indirect:vec4f,@location(2) reflection_normal:vec4f,@location(3) reflection_response:vec4f};
 @fragment fn fs_main(input:SkyVertex)->SkyOutput {
     let ray=bg_sky_camera_ray(input.uv);
@@ -20,7 +30,7 @@ struct SkyOutput {@location(0) color:vec4f,@location(1) indirect:vec4f,@location
     let cloud_parameters=bg_sky_camera_cloud();
     var color=bg_sky_base(ray,bg_sky_camera_sun(),cloud_parameters,sky_camera.climate.xy,sky_camera.horizon.xyz,sky_camera.zenith.xyz);
     let alignment=dot(ray,sun_direction);let solar=sky_camera.sun_radiance.xyz;
-    let sun_uv=bg_sky_celestial_uv(ray,sun_direction,0.30);
+    let sun_uv=bg_sky_sun_uv(ray,sun_direction);
     let sun_color=textureSampleLevel(sun_art,cloud_sampler,clamp(sun_uv,vec2f(0.0),vec2f(1.0)),0.0).rgb;
     color+=sun_color*solar*bg_sky_celestial_inside(sun_uv,alignment)*6.5;
     let night=1.0-clamp(sun_direction.y*10.0+0.5,0.0,1.0);

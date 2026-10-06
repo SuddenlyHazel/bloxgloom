@@ -56,9 +56,18 @@ pub(super) fn create(
     format: wgpu::TextureFormat,
     bind: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
+    create_with_source(device, format, bind, super::shader_source())
+}
+
+pub(super) fn create_with_source(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    bind: &wgpu::BindGroupLayout,
+    source: String,
+) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("BSL style sky with volume clouds"),
-        source: wgpu::ShaderSource::Wgsl(super::shader_source().into()),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("sky pipeline layout"),

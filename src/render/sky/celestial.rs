@@ -103,3 +103,7 @@ impl Celestial {
         self.moon.upload(encoder);
     }
 }
+
+#[cfg(test)]
+#[path = "celestial/tests.rs"]
+mod tests;
