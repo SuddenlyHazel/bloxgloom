@@ -1,5 +1,6 @@
 //! Deterministic terrain generation, biome sampling, and chunk decoration.
 mod hydrology;
+mod landforms;
 mod materials;
 #[cfg(test)]
 mod tests;
@@ -30,12 +31,14 @@ pub(super) fn generate_blocks(key: ChunkKey, seed: u64) -> Vec<BlockId> {
         return blocks;
     }
     let mut patterns = HashMap::new();
+    let mut columns = Vec::with_capacity(CHUNK_SIZE * CHUNK_SIZE);
     let mut hydrology = hydrology::Sampler::new(seed);
     for z in 0..CHUNK_SIZE {
         for x in 0..CHUNK_SIZE {
             let world_x = i64::from(key.x) * CHUNK_SIZE as i64 + x as i64;
             let world_z = i64::from(key.z) * CHUNK_SIZE as i64 + z as i64;
             let column = hydrology.column(world_x, world_z);
+            columns.push(column);
             let pattern =
                 if bottom <= column.height && bottom + CHUNK_SIZE as i64 > column.height - 4 {
                     surface_pattern(world_x, world_z, seed, &mut patterns)
@@ -50,7 +53,7 @@ pub(super) fn generate_blocks(key: ChunkKey, seed: u64) -> Vec<BlockId> {
             }
         }
     }
-    decorate_chunk(key, seed, &mut blocks, &mut patterns);
+    decorate_chunk(key, seed, &mut blocks, &mut patterns, &columns);
     blocks
 }
 
@@ -76,6 +79,7 @@ fn decorate_chunk(
     seed: u64,
     blocks: &mut [BlockId],
     patterns: &mut HashMap<(i64, i64), [u8; 64]>,
+    columns: &[Column],
 ) {
     let first_x = i64::from(key.x) * CHUNK_SIZE as i64;
     let first_y = i64::from(key.y) * CHUNK_SIZE as i64;
@@ -104,7 +108,7 @@ fn decorate_chunk(
                             ];
                             let at = Chunk::index(local).unwrap();
                             if blocks[at] == AIR
-                                || (piece == tree.log
+                                || (tree.is_log(piece)
                                     && crate::content::jg_rtx::is_leaf(
                                         crate::content::catalog(),
                                         blocks[at],
@@ -118,12 +122,11 @@ fn decorate_chunk(
             }
         }
     }
-    let mut hydrology = hydrology::Sampler::new(seed);
     for z in 0..CHUNK_SIZE {
         for x in 0..CHUNK_SIZE {
             let world_x = first_x + x as i64;
             let world_z = first_z + z as i64;
-            let column = hydrology.column(world_x, world_z);
+            let column = columns[x + z * CHUNK_SIZE];
             let world_y = column.height + 1;
             if !(first_y..first_y + CHUNK_SIZE as i64).contains(&world_y) {
                 continue;
@@ -171,55 +174,16 @@ pub(super) struct Column {
     pub(super) shore: bool,
     rock_region: i64,
     strata_offset: i64,
+    temperature: f64,
+    moisture: f64,
+    slope: f64,
 }
 
 pub(super) fn terrain_column(x: i64, z: i64, seed: u64) -> Column {
     hydrology::Sampler::new(seed).column(x, z)
 }
 fn base_column(x: i64, z: i64, seed: u64) -> Column {
-    let continent = noise2(x, z, 256, seed ^ 0x42ab_51a4);
-    let temperature = noise2(x, z, 384, seed ^ 0x8179_e6f2);
-    let moisture = noise2(x, z, 320, seed ^ 0x6a03_d2e1);
-    let uplift = noise2(x, z, 512, seed ^ 0x9b57_2a13);
-    let hills = noise2(x, z, 64, seed ^ 0xd88a_4f9b);
-    let detail = noise2(x, z, 24, seed ^ 0x7c14_1583);
-    let ridge = 1.0 - noise2(x, z, 96, seed ^ 0xe7d2_391f).abs();
-    let mountain = smooth(((uplift - 0.05) / 0.72).clamp(0.0, 1.0));
-    let aridity =
-        ((temperature + 0.05) * 1.5).clamp(0.0, 1.0) * ((-moisture + 0.05) * 1.5).clamp(0.0, 1.0);
-    let forested = (moisture * 1.5).clamp(0.0, 1.0);
-    let polar = ((-temperature - 0.1) * 1.6).clamp(0.0, 1.0);
-    let dunes = noise2(x + z / 3, z, 42, seed ^ 0xb62d_7a35) * 3.4
-        + noise2(x, z, 14, seed ^ 0x7b43_719a) * 0.8;
-    let height = (21.0
-        + continent * 6.0
-        + hills * (3.5 + mountain * 3.0)
-        + detail * (1.5 - polar * 0.8)
-        + aridity * dunes
-        + forested * noise2(x, z, 48, seed ^ 0x2740_83be) * 2.0
-        + mountain * mountain * ridge * ridge * 24.0)
-        .round() as i64;
-    let biome = if mountain > 0.72 && height > 34 {
-        Biome::Highland
-    } else if temperature < -0.23 {
-        Biome::Tundra
-    } else if temperature > 0.12 && moisture < -0.12 {
-        Biome::Desert
-    } else if moisture > 0.08 {
-        Biome::Forest
-    } else {
-        Biome::Plains
-    };
-    Column {
-        height,
-        rocky: biome == Biome::Highland && height > 41,
-        biome,
-        water_level: None,
-        water_kind: None,
-        shore: false,
-        rock_region: (continent * 8.0).round() as i64,
-        strata_offset: (hills * 7.0).round() as i64,
-    }
+    landforms::column(x, z, seed)
 }
 
 pub(crate) fn terrain_height(x: i64, z: i64, seed: u64) -> i64 {
@@ -275,7 +239,13 @@ fn generated_block_with_pattern(
         if y < column.height - 4 {
             return materials::rock(x, y, z, column, seed);
         }
-        let top = if column.shore {
+        let top = if column.rocky && !column.shore {
+            if column.height > 74 || column.temperature < -0.55 {
+                SNOW
+            } else {
+                materials::rock(x, y, z, column, seed)
+            }
+        } else if column.shore {
             if matches!(column.biome, Biome::Desert) {
                 SAND
             } else if column.biome == Biome::Forest {
@@ -525,7 +495,7 @@ impl LodSampler {
                 let mut leaf = None;
                 for tree in &trees {
                     if let Some(piece) = tree_piece(*tree, x, y, z) {
-                        if piece == tree.log {
+                        if tree.is_log(piece) {
                             return piece;
                         }
                         leaf.get_or_insert(piece);
@@ -561,6 +531,7 @@ pub(crate) fn water_feature(x: i64, z: i64, seed: u64) -> Option<(i64, i64, &'st
             hydrology::Kind::River => "river",
             hydrology::Kind::Lake => "lake",
             hydrology::Kind::Pond => "pond",
+            hydrology::Kind::Ocean => "ocean",
         },
     ))
 }

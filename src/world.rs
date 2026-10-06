@@ -34,10 +34,10 @@ use terrain::{
 
 pub const CHUNK_SIZE: usize = 16;
 pub const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
-pub const MAX_TERRAIN_HEIGHT: i32 = 64;
-pub const MAX_GENERATED_HEIGHT: i32 = MAX_TERRAIN_HEIGHT + 20;
+pub const MAX_TERRAIN_HEIGHT: i32 = 88;
+pub const MAX_GENERATED_HEIGHT: i32 = MAX_TERRAIN_HEIGHT + 24;
 pub const BEDROCK_Y: i32 = -64;
-pub const TERRAIN_GENERATOR_VERSION: u16 = 6;
+pub const TERRAIN_GENERATOR_VERSION: u16 = 7;
 pub type BlockId = crate::content::BlockStateId;
 pub const AIR: BlockId = crate::content::BlockStateId(0);
 pub const GRASS: BlockId = crate::content::BlockStateId(1);

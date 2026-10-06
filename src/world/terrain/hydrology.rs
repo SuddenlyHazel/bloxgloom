@@ -8,6 +8,7 @@ pub(super) enum Kind {
     River,
     Lake,
     Pond,
+    Ocean,
 }
 #[derive(Clone, Copy)]
 struct Site {
@@ -35,6 +36,12 @@ impl Sampler {
         // a square seam where the river passes the protected spawn column.
         let spawn_distance = ((x as f64).powi(2) + (z as f64).powi(2)).sqrt();
         if spawn_distance < 24.0 {
+            return column;
+        }
+        if column.height < super::landforms::SEA_LEVEL {
+            column.water_level = Some(super::landforms::SEA_LEVEL);
+            column.water_kind = Some(Kind::Ocean);
+            column.shore = column.height >= super::landforms::SEA_LEVEL - 3;
             return column;
         }
         if let Some((distance, width, depth)) = self.river(x, z) {
@@ -79,17 +86,12 @@ impl Sampler {
         column
     }
     fn river(&self, x: i64, z: i64) -> Option<(f64, f64, f64)> {
-        let (across, along) = if self.seed & 1 == 0 { (x, z) } else { (z, x) };
-        let lane = (across - 64 + 192).div_euclid(384);
-        let salt = lattice_hash(self.seed ^ 0x715e_a51d, lane, 0, 0);
-        let offset = (salt % 41) as f64 - 20.0;
-        let centre = (lane * 384 + 64) as f64
-            + offset
-            + noise2(lane * 733, along, 192, self.seed ^ 0x713a_c951) * 55.0
-            + noise2(lane * 911, along, 63, self.seed ^ 0xc4b1_095e) * 12.0;
-        let width = 4.5 + (noise2(lane * 197, along, 96, self.seed ^ 0x71aa_0993) + 1.0) * 1.5;
-        let distance = (across as f64 - centre).abs();
-        (distance < width + 14.0).then_some((distance, width, 2.5 + (salt % 3) as f64))
+        let field = super::landforms::drainage(x, z, self.seed);
+        // Reuse the valley field that suppressed mountain uplift. Its zero
+        // contours turn, branch and cross regional boundaries without lanes.
+        let width = 5.5 + (noise2(x, z, 192, self.seed ^ 0x71aa_0993) + 1.0) * 2.0;
+        let distance = field * 240.0;
+        (distance < width + 14.0).then_some((distance, width, 3.0))
     }
 }
 fn site(cx: i64, cz: i64, size: i64, kind: Kind, seed: u64) -> Option<Site> {

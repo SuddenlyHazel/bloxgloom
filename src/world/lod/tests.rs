@@ -114,9 +114,10 @@ fn transition_sampling_retains_off_center_canopies_and_shared_vertical_air() {
                 && s.flags & crate::content::PLANT == 0
         })
     };
-    let tree = (-16..16)
-        .flat_map(|z| (-16..16).map(move |x| (x, z)))
-        .find_map(|(x, z)| crate::world::terrain::tree_anchor(x, z, 17))
+    let tree = (-64..64)
+        .flat_map(|z| (-64..64).map(move |x| (x, z)))
+        .filter_map(|(x, z)| crate::world::terrain::tree_anchor(x, z, 17))
+        .find(|tree| tree.trunk_top + 2 < 80)
         .expect("tree fixture");
     let mut found = false;
     for z in ((tree.z - 4).div_euclid(2) * 2..=tree.z + 4).step_by(2) {

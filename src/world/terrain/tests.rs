@@ -65,3 +65,122 @@ fn regional_rock_and_ore_are_registered_and_reproducible() {
     );
     assert_eq!(generated_block(-16, i64::from(BEDROCK_Y), 16, seed), STONE);
 }
+
+#[test]
+fn regional_landforms_have_coasts_plateaus_peaks_and_all_climates() {
+    for seed in [0xB10C_6100, 17, 99] {
+        let mut climates = [false; 5];
+        let mut min = i64::MAX;
+        let mut max = i64::MIN;
+        let mut steep = 0;
+        let mut ocean = 0;
+        let mut high_flat = 0;
+        let mut sampler = hydrology::Sampler::new(seed);
+        for z in (-2048..=2048).step_by(32) {
+            for x in (-2048..=2048).step_by(32) {
+                let column = sampler.column(x, z);
+                min = min.min(column.height);
+                max = max.max(column.height);
+                steep += usize::from(column.rocky);
+                ocean += usize::from(column.water_kind == Some(hydrology::Kind::Ocean));
+                high_flat += usize::from(column.height > 40 && column.slope < 0.2);
+                climates[column.biome as usize] = true;
+                assert!(column.height <= i64::from(crate::world::MAX_TERRAIN_HEIGHT));
+                assert_eq!(column.height, terrain_column(x, z, seed).height);
+            }
+        }
+        assert!(
+            climates.into_iter().all(|present| present),
+            "climates for seed {seed}"
+        );
+        assert!(
+            min < 16 && max > 55,
+            "landform range {min}..{max} for seed {seed}"
+        );
+        assert!(
+            steep > 20 && ocean > 20 && high_flat > 20,
+            "seed {seed}: steep={steep}, ocean={ocean}, high_flat={high_flat}"
+        );
+        eprintln!(
+            "landforms seed={seed}: range={min}..{max} rocky={steep} ocean={ocean} plateaus={high_flat}"
+        );
+    }
+}
+
+#[test]
+fn regional_trees_have_openings_species_and_branched_bounded_crowns() {
+    let seed = 0xB10C_6100;
+    let mut seen = std::collections::HashSet::new();
+    let mut occupied = 0;
+    let mut branched = 0;
+    for z in -80..=80 {
+        for x in -80..=80 {
+            if let Some(tree) = tree_anchor(x, z, seed) {
+                seen.insert(tree.log);
+                occupied += 1;
+                assert!(tree.trunk_top + 2 <= i64::from(MAX_GENERATED_HEIGHT));
+                assert_eq!(
+                    tree_piece(tree, tree.x + TREE_RADIUS + 1, tree.trunk_top, tree.z),
+                    None
+                );
+                branched += usize::from((tree.ground_y + 1..=tree.trunk_top).any(|y| {
+                    tree_piece(tree, tree.x + 1, y, tree.z).is_some_and(|block| tree.is_log(block))
+                        || tree_piece(tree, tree.x, y, tree.z + 1)
+                            .is_some_and(|block| tree.is_log(block))
+                }));
+            }
+        }
+    }
+    assert!(seen.len() >= 6, "regional species: {seen:?}");
+    assert!(occupied > 500 && occupied < 13_000, "tree sites={occupied}");
+    assert!(branched > 100, "branched trees={branched}");
+}
+
+#[test]
+#[ignore = "run with --release --ignored --nocapture for isolated generation timing"]
+fn generation_cost_report() {
+    // Wall time is reported, never asserted: shared CI/build contention should
+    // not make deterministic behavior flaky. Use --release --nocapture to measure.
+    let seed = 0xB10C_6100;
+    let start = std::time::Instant::now();
+    let mut count = 0;
+    let mut checksum = 0u64;
+    for z in -2..=2 {
+        for x in -2..=2 {
+            for y in [-2, 0, 1, 3] {
+                let chunk = generate_blocks(ChunkKey { x, y, z }, seed);
+                checksum =
+                    checksum.wrapping_add(chunk.iter().map(|id| u64::from(id.0)).sum::<u64>());
+                count += 1;
+            }
+        }
+    }
+    eprintln!(
+        "generation: {count} chunks {:.3} ms/chunk, checksum={checksum}",
+        start.elapsed().as_secs_f64() * 1000.0 / f64::from(count)
+    );
+    assert_ne!(checksum, 0);
+}
+
+#[test]
+fn generated_landscape_capture_sites_match_their_ecological_subjects() {
+    let seed = 0xB10C_6100;
+    let coast = terrain_column(-656, -2048, seed);
+    assert_eq!(coast.water_kind, Some(hydrology::Kind::Ocean));
+    assert!(coast.height > 8 && coast.height < landforms::SEA_LEVEL);
+    let meadow = terrain_column(-2000, -2048, seed);
+    assert_eq!(meadow.biome, Biome::Plains);
+    assert!(meadow.water_level.is_none() && meadow.height > 20);
+    let mountain = terrain_column(-1024, -1840, seed);
+    assert_eq!(mountain.biome, Biome::Highland);
+    assert!(mountain.height > 60);
+    let (x, z) = (-710i64, -2044i64);
+    let grove = tree_anchor(
+        x.div_euclid(trees::TREE_CELL),
+        z.div_euclid(trees::TREE_CELL),
+        seed,
+    )
+    .expect("the fixed cherry grove capture contains a generated tree");
+    assert_eq!(grove.log, materials::palette().trees[7].0);
+    assert_eq!(terrain_column(grove.x, grove.z, seed).biome, Biome::Forest);
+}

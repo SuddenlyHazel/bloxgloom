@@ -13,7 +13,7 @@ fn seeded_features_are_deterministic_flat_and_keep_spawn_dry() {
                 reverse.column(x, z);
             }
         }
-        let mut counts = [0usize; 3];
+        let mut counts = [0usize; 4];
         for z in (-512..=512).step_by(8) {
             for x in (-512..=512).step_by(8) {
                 let column = sampler.column(x, z);
@@ -32,6 +32,7 @@ fn seeded_features_are_deterministic_flat_and_keep_spawn_dry() {
                                     Kind::River => 5,
                                     Kind::Lake => 7,
                                     Kind::Pond => 3,
+                                    Kind::Ocean => 26,
                                 }
                         );
                     }
@@ -48,7 +49,7 @@ fn seeded_features_are_deterministic_flat_and_keep_spawn_dry() {
             }
         }
         assert!(
-            counts.into_iter().all(|count| count > 0),
+            counts[..3].iter().all(|count| *count > 0),
             "missing feature for seed {seed}: {counts:?}"
         );
         for z in -16..=16 {
