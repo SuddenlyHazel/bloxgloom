@@ -1,4 +1,6 @@
 //! Actual submitted histories retain static convergence while native poses move.
+#[path = "paired_tests/empty_dynamic.rs"]
+mod empty_dynamic_tests;
 #[path = "paired_tests/history.rs"]
 mod history_tests;
 #[path = "paired_tests/lobes.rs"]

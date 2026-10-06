@@ -20,6 +20,11 @@ fn actual_primary_counter_source_validates_and_retains_exact_hooks() {
 }
 
 fn controls() {
+    assert_ne!(
+        std::env::var("BLOXGLOOM_GI_EMPTY_DYNAMIC").as_deref(),
+        Ok("1"),
+        "primary counters instrument generic transport; use BLOXGLOOM_GI_EMPTY_DYNAMIC=0 baseline"
+    );
     assert_eq!(std::env::var("BLOXGLOOM_GI").as_deref(), Ok("1"));
     assert!(!crate::render::bsl_reference::enabled());
     for flag in [

@@ -226,7 +226,7 @@ impl Gpu {
         });
         // Keep the original full-target viewport, fragment coordinates and derivative quads.
         pass.set_scissor_rect(tile.x, tile.y, tile.width, tile.height);
-        pass.set_pipeline(&self.trace);
+        pass.set_pipeline(self.transport_pipeline());
         pass.set_bind_group(0, group, &[]);
         pass.set_bind_group(1, materials, &[]);
         pass.set_bind_group(2, &self.dynamic.group, &[]);

@@ -1,5 +1,6 @@
 //! Half-resolution path transport and depth/normal-aware radiance reconstruction.
 mod diagnostics;
+mod empty_dynamic;
 mod history;
 mod lobes;
 mod lod;
@@ -31,6 +32,7 @@ pub(crate) struct Gpu {
     deformation: super::deformation::Deformation,
     uniform: wgpu::Buffer,
     trace: wgpu::RenderPipeline,
+    empty_trace: Option<wgpu::RenderPipeline>,
     composite: wgpu::RenderPipeline,
     filter: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -265,6 +267,8 @@ impl Gpu {
             entries: &composite_entries,
         });
         let source = shaders::transport_for_modes(water_lobes, reconstruction);
+        let empty_source = empty_dynamic::configured(water_lobes)
+            .then(|| empty_dynamic::source_for(&source, true));
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("path transport"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
@@ -333,6 +337,16 @@ impl Gpu {
             "fs_transport",
             None,
         );
+        let empty_trace = empty_source.map(|source| {
+            empty_dynamic::pipeline(
+                device,
+                &source,
+                &layout,
+                material_layout,
+                &dynamic.layout,
+                water_lobes,
+            )
+        });
         let additive = wgpu::BlendState {
             color: wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::One,
@@ -366,6 +380,7 @@ impl Gpu {
             geometry: Geometry::new(device, scene),
             uniform,
             trace,
+            empty_trace,
             composite,
             filter,
             layout,

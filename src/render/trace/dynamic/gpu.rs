@@ -363,6 +363,11 @@ impl DynamicGpu {
         }
         self.encoded_generation.set(self.generation);
     }
+    /// Mirrors the current uploaded geometry header, including disabled/pending frames.
+    pub(in crate::render::trace) fn is_empty(&self) -> bool {
+        self.nodes == 0
+    }
+
     pub fn byte_len(&self) -> usize {
         self.geometry.size() as usize + self.source.size() as usize + self.frame.size() as usize
     }
