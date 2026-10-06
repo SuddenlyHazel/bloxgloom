@@ -38,6 +38,7 @@ pub(crate) struct Gpu {
     textured: bool,
     camera: wgpu::Buffer,
     group: wgpu::BindGroup,
+    water_group: wgpu::BindGroup,
     tile_layout: wgpu::BindGroupLayout,
     coverage: wgpu::Buffer,
     tiles: HashMap<TileKey, Tile>,
@@ -72,7 +73,8 @@ impl Gpu {
             options: p.options,
             textured: std::env::var("BLOXGLOOM_LOD_TEXTURES").as_deref() != Ok("0"),
             camera: p.camera,
-            group: p.group,
+            group: p.group.clone(),
+            water_group: p.group,
             tile_layout: p.tile_layout,
             coverage,
             tiles: HashMap::new(),
@@ -356,7 +358,10 @@ impl Gpu {
             },
         ];
         resources.extend(inputs.entries(3));
-        self.group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        // Opaque terrain writes the original depth attachment. Its camera group
+        // must retain inert water inputs, including on subsequent frames; only
+        // the later fluid pass may sample that attachment for source SSR.
+        self.water_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("LOD source water shared noise/frame"),
             layout: &self.pipeline.get_bind_group_layout(0),
             entries: &resources,
@@ -368,7 +373,7 @@ impl Gpu {
     pub(crate) fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>) -> usize {
         pass.set_pipeline(&self.water_pipeline);
         pass.set_bind_group(3, &self.shadow_group, &[]);
-        pass.set_bind_group(0, &self.group, &[]);
+        pass.set_bind_group(0, &self.water_group, &[]);
         pass.set_bind_group(2, &self.materials, &[]);
         let mut visible = self.visible.clone();
         visible.sort_by(|a, b| {
