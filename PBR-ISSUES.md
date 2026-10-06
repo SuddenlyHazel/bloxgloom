@@ -4,6 +4,12 @@ The October 5, 2026 audit compared 350 imported JG RTX materials, their source p
 
 ## Current goal status — October 6, 2026
 
+Portability follow-up: the ignored, user-supplied `external/shaders` directory
+formerly supplied compile-time material mappings and test GLSL. Those imports
+are removed; the normal build and test suite now use repository-owned data.
+See the portability record at the end of this document. Earlier references to
+"checked-in BSL" describe the supplied profile, not tracked source files.
+
 The separate BSL reference mode targets the checked-in default. The enhanced renderer remains the normal game mode. The goal remains active; implementation, visual acceptance and matched-runtime parity are separate checks.
 
 | Area | Current implementation and remaining acceptance |
@@ -869,3 +875,60 @@ focused follow-up. Release build, formatting, all-target/all-feature strict
 Clippy, and AST graph update pass. Logs:
 `/private/tmp/bloxgloom-shimmer-{post-tests,release-build,fmt,clippy,graph}.log`.
 Live acceptance remains the user's play-test.
+
+## Fresh-checkout portability follow-up
+
+The gaming-laptop build failure exposed an actual packaging mistake: seven Rust
+`include_str!` sites depended on ignored `external/shaders` files. Two were in
+production wind/emission classification, so even the ordinary enhanced release
+required the developer's local BSL checkout at compile time. The other five
+were source-comparison tests. Earlier descriptions of that pack as "checked-in"
+were incorrect.
+
+Production classification now matches explicit engine texture identities.
+Independent SHA-256 snapshots of the old generated wind/emission shader text
+verify exact preservation across all 1,054 builtin texture entries: 79 nonzero
+wind assignments and 15 nonzero emission assignments, with all other entries
+remaining unclassified. Texture pixels, catalog/save/wire IDs and GPU material
+equations are unchanged. New builtin materials need explicit classifications.
+
+Ordinary wind GPU checks use an independent, repo-owned mathematical oracle.
+It covers all ten botanical classes across 480 time/height/UV/eye-offset cases,
+with the original `1e-5` bound and exact enhanced-wind/pickup guards. A numerical
+sine-hash capture from one GPU would not be a portable cross-vendor oracle.
+Optional `BLOXGLOOM_BSL_SOURCE=/path/to/shaders` enables live GLSL/default-setting
+audits; an explicitly supplied but invalid directory fails those audits.
+Without this opt-in, no shader-pack file is read by the tests.
+
+Reference noise is also explicitly optional through `BLOXGLOOM_BSL_NOISE`.
+There is no implicit lookup in the ignored directory or relative to the working
+directory. Missing/invalid comparison noise uses enhanced clouds and omits source
+film grain, with a diagnostic. The original source pack and noise are not added
+to Git. Enhanced gameplay has no need for either input.
+
+Verification used a tracked-files-only export of the staged index, with no
+`external/` directory, sibling texture pack, local worlds or other ignored files:
+
+- The full test binary compiles (`cargo test --no-run`); all 81 tests selected by
+  `cargo test reference -- --test-threads=1` pass. The full unrelated suite was
+  not rerun. Additional explicit local-source wind (4), emission (1), and
+  celestial (1) checks pass.
+- Release build, formatting and all-target/all-feature warnings-denied Clippy
+  pass. `tools/check_embedded_assets.py` checks 1,415 literal embedded paths,
+  all tracked and inside the repository. Manifest-relative concatenated test
+  paths are additionally exercised by the clean test compilation.
+- The copied standalone release renders enhanced and reference previews from
+  a separate empty working directory. Both images were inspected at
+  `/private/tmp/bloxgloom-portable-enhanced.png` and
+  `/private/tmp/bloxgloom-portable-reference.png`. This validates the available
+  headless rendering path, not the gaming laptop's specific OS/GPU.
+- Sequential old/new `perf 300 6`, GI/TAA off, 1280×720, reports CPU submission
+  p50/p95 11.886/13.793 → 11.767/13.335 ms and GPU p50/p95
+  13.131/14.012 → 13.070/14.081 ms. Setup is separately 5,970.0 → 5,668.4 ms;
+  worker mesh payload remains 61,150,260 bytes with 160,650 visible triangles.
+  These single-run controls show comparable cost, not a shader speedup or a
+  promised live FPS.
+
+Proof logs are `/private/tmp/bloxgloom-portability-clean-{test-build,reference-tests,clippy,release-build}.log`,
+`/private/tmp/bloxgloom-portability-optional-source-{wind,emission,celestial}.log`,
+and `/private/tmp/bloxgloom-portability-{old,new}-perf.log`.

@@ -4026,9 +4026,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1791283950.3819,
-    "seen": 1791284028.533277,
-    "ast_hash": "28d4b177d9cc4a32316b23c8647f4db4",
+    "mtime": 1791302374.7096663,
+    "seen": 1791302524.731065,
+    "ast_hash": "817d6bae43bfd363e5d4295bf1666225",
     "semantic_hash": ""
   },
   "SCRIPTING.md": {
@@ -16944,9 +16944,9 @@
     "semantic_hash": ""
   },
   "PBR-ISSUES.md": {
-    "mtime": 1791296136.9887424,
-    "seen": 1791296177.621493,
-    "ast_hash": "c87dc705523717a427120e69dffa3c61",
+    "mtime": 1791302834.541279,
+    "seen": 1791302860.525943,
+    "ast_hash": "6624cc021005a10f48556a64d1748f73",
     "semantic_hash": ""
   },
   "src/render/material/color.rs": {
@@ -17154,9 +17154,9 @@
     "semantic_hash": ""
   },
   "BSL_REFERENCE_AUDIT.md": {
-    "mtime": 1791277044.5246236,
-    "seen": 1791277290.132874,
-    "ast_hash": "644c5479ec58424a37f35b88571f6d4e",
+    "mtime": 1791302438.5884683,
+    "seen": 1791302524.73106,
+    "ast_hash": "a9b4efc4d8afa2d2ac2b110df9f9007a",
     "semantic_hash": ""
   },
   "assets/textures/environment/moon_phases.png": {
@@ -17178,9 +17178,9 @@
     "semantic_hash": ""
   },
   "src/render/bsl_reference.rs": {
-    "mtime": 1791276289.4730804,
-    "seen": 1791277290.131741,
-    "ast_hash": "20c5f876f8497cfc022c05c88c2e7644",
+    "mtime": 1791302345.6764157,
+    "seen": 1791302524.7299619,
+    "ast_hash": "8d1d46539e42b9bec2eb4d2abdb50a39",
     "semantic_hash": ""
   },
   "src/render/bsl_reference/gpu.rs": {
@@ -17304,9 +17304,9 @@
     "semantic_hash": ""
   },
   "src/render/sky/reference_clouds.rs": {
-    "mtime": 1791258552.0798497,
-    "seen": 1791258932.6301901,
-    "ast_hash": "cba18e1cc746e201fb618d229c6fda33",
+    "mtime": 1791302346.0501819,
+    "seen": 1791302524.7301729,
+    "ast_hash": "a3be4af3cb32d9febe4e03c4dc049a46",
     "semantic_hash": ""
   },
   "src/render/sky/reference_clouds/gpu.rs": {
@@ -17322,9 +17322,9 @@
     "semantic_hash": ""
   },
   "src/render/sky/reference_clouds/render_tests.rs": {
-    "mtime": 1791257020.4953628,
-    "seen": 1791257364.858583,
-    "ast_hash": "b1cef09782218f6dea240cad1c669ef7",
+    "mtime": 1791302342.8869128,
+    "seen": 1791302524.730175,
+    "ast_hash": "67061012e25d895cfe0eb285f4106200",
     "semantic_hash": ""
   },
   "src/render/sky/reference_clouds/tests.rs": {
@@ -17994,15 +17994,15 @@
     "semantic_hash": ""
   },
   "src/render/bsl_reference/emission.rs": {
-    "mtime": 1791276285.7071166,
-    "seen": 1791277290.131744,
-    "ast_hash": "b73aa539b903f356faf209615c45ba11",
+    "mtime": 1791302374.7106073,
+    "seen": 1791302524.729965,
+    "ast_hash": "d3f794a7307050ebfb59f6ff279368b1",
     "semantic_hash": ""
   },
   "src/render/bsl_reference/emission/tests.rs": {
-    "mtime": 1791276301.0814583,
-    "seen": 1791277290.131745,
-    "ast_hash": "02aeff6ae9f127db787185721bebb092",
+    "mtime": 1791302345.6699007,
+    "seen": 1791302524.7299662,
+    "ast_hash": "31cc6b3764c29d699eaa50a17b9149d7",
     "semantic_hash": ""
   },
   "src/render/bsl_reference/handlight.rs": {
@@ -18024,15 +18024,15 @@
     "semantic_hash": ""
   },
   "src/render/foliage/reference.rs": {
-    "mtime": 1791275465.0225246,
-    "seen": 1791277290.1318028,
-    "ast_hash": "66d257f187502ba6f1b4d009743ca3e2",
+    "mtime": 1791302345.7428172,
+    "seen": 1791302524.7300138,
+    "ast_hash": "566cd02e855c127e95fc9e559a5448df",
     "semantic_hash": ""
   },
   "src/render/foliage/reference/tests.rs": {
-    "mtime": 1791275577.983006,
-    "seen": 1791277290.131804,
-    "ast_hash": "a5c54cd843c63bbe49c2c9f82a9bd86e",
+    "mtime": 1791302345.7424684,
+    "seen": 1791302524.730015,
+    "ast_hash": "b9a6c4463acd635cac3da71ff8296569",
     "semantic_hash": ""
   },
   "src/render/foliage/reference/tests/callers.rs": {
@@ -18042,15 +18042,15 @@
     "semantic_hash": ""
   },
   "src/render/foliage/reference/tests/gpu.rs": {
-    "mtime": 1791277022.8040378,
-    "seen": 1791277290.131806,
-    "ast_hash": "b9dbfa58404b3e0c3eb61debf8e50d8f",
+    "mtime": 1791302438.579218,
+    "seen": 1791302524.7300181,
+    "ast_hash": "3114b5e5f832900a137687885dc289cb",
     "semantic_hash": ""
   },
   "src/render/foliage/reference/tests/oracle.rs": {
-    "mtime": 1791275962.9331613,
-    "seen": 1791277290.131807,
-    "ast_hash": "fecf46dee20e28c3f22bc2619fd88df8",
+    "mtime": 1791302440.7419338,
+    "seen": 1791302524.730019,
+    "ast_hash": "afe34b09de91895fccc4a43e5e0adc72",
     "semantic_hash": ""
   },
   "src/render/post/reference_ao.rs": {
@@ -18096,9 +18096,9 @@
     "semantic_hash": ""
   },
   "src/render/sky/reference_celestial/tests.rs": {
-    "mtime": 1791276612.6394358,
-    "seen": 1791277290.1319711,
-    "ast_hash": "5ad7ce38b0d1afb2cb7b19366a79d52d",
+    "mtime": 1791302346.0421507,
+    "seen": 1791302524.730172,
+    "ast_hash": "637853b5d7d744fcb4c30816c7098ad4",
     "semantic_hash": ""
   },
   "src/render/trace/gpu/history.rs": {
@@ -18513,6 +18513,18 @@
     "mtime": 1791296107.180628,
     "seen": 1791296177.62056,
     "ast_hash": "34e3d71e745bcbd16383a81707e102ac",
+    "semantic_hash": ""
+  },
+  "tools/check_embedded_assets.py": {
+    "mtime": 1791302342.8873773,
+    "seen": 1791302524.731035,
+    "ast_hash": "a72557e4efe72159c882d545a0053012",
+    "semantic_hash": ""
+  },
+  "src/render/foliage/reference/tests/README.md": {
+    "mtime": 1791302438.5881393,
+    "seen": 1791302524.731262,
+    "ast_hash": "91de3fc8bf2b5b1241009c1a24736de7",
     "semantic_hash": ""
   }
 }

@@ -1,9 +1,9 @@
-//! Source-oracle GPU proof is registered before the shared compilation checkpoint.
+//! Independent portable GPU oracle, with an optional live GLSL comparison.
 use super::*;
 use wgpu::util::DeviceExt;
 
 #[test]
-fn gpu_reference_botanical_wind_matches_verbatim_glsl_class_top_and_eye_bend() {
+fn gpu_reference_botanical_wind_matches_independent_oracle_class_top_and_eye_bend() {
     let catalog = Catalog::builtins();
     let keys = [
         "leaves",
@@ -14,6 +14,8 @@ fn gpu_reference_botanical_wind_matches_verbatim_glsl_class_top_and_eye_bend() {
         "jg_vine",
         "jg_pink_petals",
         "jg_dead_bush",
+        "jg_torchflower",
+        "jg_lily_pad",
     ];
     let layers: Vec<_> = keys
         .iter()
@@ -132,23 +134,24 @@ fn gpu_reference_botanical_wind_matches_verbatim_glsl_class_top_and_eye_bend() {
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
+    let entries = [
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: input.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: output.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: metadata.as_entire_binding(),
+        },
+    ];
     let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &pipeline.get_bind_group_layout(0),
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: input.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: output.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: metadata.as_entire_binding(),
-            },
-        ],
+        entries: &entries,
     });
     let mut encoder = device.create_command_encoder(&Default::default());
     {

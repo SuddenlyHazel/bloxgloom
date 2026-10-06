@@ -17,18 +17,19 @@ fn reference_celestial_source_parses_and_preserves_source_settings() {
     )
     .validate(&module)
     .unwrap();
-    let settings = include_str!("../../../../external/shaders/lib/settings.glsl");
-    for expected in [
-        "#define SUN_INTENSITY 1.50",
-        "#define MOON_INTENSITY 1.50",
-        "#define SUN_MOON_GROUND",
-        "#define SKY_DESATURATION",
-        "#define NIGHT_MOON_PHASE",
-    ] {
-        assert!(
-            settings.contains(expected),
-            "source default changed: {expected}"
-        );
+    if let Some(settings) = crate::render::bsl_reference::audit_source("lib/settings.glsl") {
+        for expected in [
+            "#define SUN_INTENSITY 1.50",
+            "#define MOON_INTENSITY 1.50",
+            "#define SUN_MOON_GROUND",
+            "#define SKY_DESATURATION",
+            "#define NIGHT_MOON_PHASE",
+        ] {
+            assert!(
+                settings.contains(expected),
+                "source default changed: {expected}"
+            );
+        }
     }
 }
 

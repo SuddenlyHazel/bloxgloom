@@ -6,9 +6,11 @@ fn gpu_local_reference_clouds_accumulate_submitted_sky_samples() {
         eprintln!("local BSL cloud capture requires explicit reference mode");
         return;
     }
-    let source = std::env::var_os("BLOXGLOOM_BSL_NOISE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| "external/shaders/tex/noise.png".into());
+    let Some(source) = std::env::var_os("BLOXGLOOM_BSL_NOISE") else {
+        eprintln!("optional local BSL cloud capture skipped: no explicit input");
+        return;
+    };
+    let source = std::path::PathBuf::from(source);
     if super::super::Noise::read(&source).is_err() {
         eprintln!("local BSL cloud capture skipped: no valid local input");
         return;

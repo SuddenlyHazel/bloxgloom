@@ -1,7 +1,10 @@
-//! Mechanical dialect conversion of actual checked-in GLSL, independent of the port.
+//! Optional dialect conversion of developer-supplied GLSL, independent of the port.
 pub(super) fn source() -> String {
-    let original =
-        include_str!("../../../../../external/shaders/lib/vertex/waving.glsl").replace('\r', "");
+    let Some(original) = crate::render::bsl_reference::audit_source("lib/vertex/waving.glsl")
+    else {
+        return include_str!("portable_oracle.wgsl").to_owned();
+    };
+    let original = original.replace('\r', "");
     let function = |name: &str| {
         let start = original.find(&format!(" {name}(")).unwrap();
         let start = original[..start].rfind('\n').map_or(0, |at| at + 1);

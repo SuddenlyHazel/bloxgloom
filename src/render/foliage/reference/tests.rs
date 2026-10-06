@@ -40,8 +40,10 @@ fn frozen_builtin_wind_classes_preserve_source_stationary_and_tall_blocks() {
 }
 
 #[test]
-fn checked_in_source_settings_and_distant_vertices_have_expected_defaults() {
-    let settings = include_str!("../../../../external/shaders/lib/settings.glsl");
+fn optional_source_settings_and_distant_vertices_have_expected_defaults() {
+    let Some(settings) = crate::render::bsl_reference::audit_source("lib/settings.glsl") else {
+        return;
+    };
     for name in [
         "WAVING_GRASS",
         "WAVING_CROP",
@@ -70,7 +72,7 @@ fn checked_in_source_settings_and_distant_vertices_have_expected_defaults() {
             "{name}"
         );
     }
-    let distant = include_str!("../../../../external/shaders/program/dh_terrain.glsl");
+    let distant = crate::render::bsl_reference::audit_source("program/dh_terrain.glsl").unwrap();
     assert!(
         !distant.contains("WavingBlocks("),
         "source DH terrain includes the helper but keeps coarse vegetation stationary"
@@ -80,3 +82,15 @@ fn checked_in_source_settings_and_distant_vertices_have_expected_defaults() {
 mod callers;
 mod gpu;
 mod oracle;
+
+#[test]
+fn portable_builtin_classification_preserves_audited_shader_bytes() {
+    use sha2::{Digest, Sha256};
+    // Captured from the previous source-driven implementation across every
+    // builtin texture, including zero/default classifications.
+    let source = shader(&Catalog::builtins());
+    assert_eq!(
+        format!("{:x}", Sha256::digest(source.as_bytes())),
+        "87d316e89c1c0f6cbfc487ec18c576cd3ee5354bc14648284bbc94476ed42f87"
+    );
+}

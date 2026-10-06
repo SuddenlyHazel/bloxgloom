@@ -18,7 +18,7 @@ pub(crate) fn enabled() -> bool {
     default_materials() || advanced_materials()
 }
 
-/// The checked-in ADVANCED_MATERIALS-off profile.
+/// The audited ADVANCED_MATERIALS-off reference profile.
 pub(crate) fn default_materials() -> bool {
     std::env::var("BLOXGLOOM_BSL_REFERENCE").is_ok_and(|value| value == "1")
 }
@@ -85,3 +85,17 @@ pub(crate) fn palettes(atmosphere: Atmosphere) -> (Vec3, Vec3) {
 
 #[cfg(test)]
 mod tests;
+
+/// Optional comparisons with a developer-supplied BSL shader directory.
+/// These inputs are never embedded or required to build/test/run the game.
+#[cfg(test)]
+pub(in crate::render) fn audit_source(relative: &str) -> Option<String> {
+    let root = std::env::var_os("BLOXGLOOM_BSL_SOURCE")?;
+    let path = std::path::PathBuf::from(root).join(relative);
+    Some(std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "explicit BSL source audit input {}: {error}",
+            path.display()
+        )
+    }))
+}

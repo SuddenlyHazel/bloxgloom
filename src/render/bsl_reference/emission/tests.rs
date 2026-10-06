@@ -33,33 +33,18 @@ fn default_emission_uses_modern_source_classes_and_explicit_state_proxies() {
             .unwrap();
         assert_eq!(texture_class(texture), expected, "{key}");
     }
-    for (key, expected) in [
-        ("torch", 150),
-        ("wall_torch", 150),
-        ("candle:lit=true", 158),
-        ("candle:lit=false", 0),
-        ("candle", 0),
-        ("furnace:lit=true", 152),
-        ("furnace:lit=false", 0),
-        ("redstone_torch:lit=true", 150),
-        ("redstone_torch:lit=false", 0),
-        ("diamond_ore", 0),
-        ("nether_quartz_ore", 0),
-        ("lava", 153),
-    ] {
-        assert_eq!(source_class(key), expected, "{key}");
+    if let Some(settings) = crate::render::bsl_reference::audit_source("lib/settings.glsl") {
+        assert!(
+            settings
+                .lines()
+                .any(|l| l.trim().starts_with("#define EMISSIVE_HARDCODED 0 //"))
+        );
+        assert!(
+            settings
+                .lines()
+                .any(|l| l.trim() == "//#define GLOWING_ORES")
+        );
     }
-    let settings = include_str!("../../../../external/shaders/lib/settings.glsl");
-    assert!(
-        settings
-            .lines()
-            .any(|l| l.trim().starts_with("#define EMISSIVE_HARDCODED 0 //"))
-    );
-    assert!(
-        settings
-            .lines()
-            .any(|l| l.trim() == "//#define GLOWING_ORES")
-    );
 }
 
 // Extract the actual consumer assignments, retaining their default-only guard.
@@ -249,4 +234,16 @@ fn gpu_actual_near_and_lod_default_emission_match_encoded_color_and_preserve_adv
         assert_eq!(&rows[0][2..], &[1.7, 1.7]);
         assert_eq!(rows[1], [0.0; 4]);
     }
+}
+
+#[test]
+fn portable_builtin_classification_preserves_audited_shader_bytes() {
+    use sha2::{Digest, Sha256};
+    // Captured from the previous source-driven implementation across every
+    // builtin texture, including zero/default classifications.
+    let source = shader(&Catalog::builtins());
+    assert_eq!(
+        format!("{:x}", Sha256::digest(source.as_bytes())),
+        "c93435e5f71f93475351a380f1bd029820240479420f677d82be75e326957ca1"
+    );
 }

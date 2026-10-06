@@ -1,4 +1,4 @@
-//! Local-only comparison input: BSL's supplied noise is not redistributable.
+//! Optional local comparison input: BSL's supplied noise is not bundled.
 //! Nothing from the user's shader checkout is embedded in the executable.
 use std::{io::Cursor, path::PathBuf};
 use wgpu::util::DeviceExt;
@@ -14,21 +14,28 @@ pub(crate) struct Noise {
 impl Noise {
     pub(crate) fn new(device: &wgpu::Device) -> Self {
         let reference = super::super::bsl_reference::enabled();
-        let path = std::env::var_os("BLOXGLOOM_BSL_NOISE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("external/shaders/tex/noise.png"));
-        let image = reference.then(|| Self::read(&path));
+        let path = reference
+            .then(|| std::env::var_os("BLOXGLOOM_BSL_NOISE").map(PathBuf::from))
+            .flatten();
+        let image = path.as_deref().map(Self::read);
         let available = matches!(image, Some(Ok(_)));
         let (size, pixels) = match image {
             Some(Ok(image)) => image,
             Some(Err(error)) => {
                 eprintln!(
                     "BSL reference noise unavailable: {}: {error}; using enhanced clouds and omitting source film grain. Supply local noise with BLOXGLOOM_BSL_NOISE (BSL author redistribution permission is required).",
-                    path.display()
+                    path.as_ref().unwrap().display()
                 );
                 ((1, 1), vec![0; 4])
             }
-            None => ((1, 1), vec![0; 4]),
+            None => {
+                if reference {
+                    eprintln!(
+                        "BSL reference noise not supplied; using enhanced clouds and omitting source film grain. BLOXGLOOM_BSL_NOISE optionally selects a local comparison image."
+                    );
+                }
+                ((1, 1), vec![0; 4])
+            }
         };
         Self::image(device, size, pixels, available)
     }
