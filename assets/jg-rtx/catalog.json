@@ -7786,8 +7786,8 @@
       "stitch_vertical": false,
       "emission_strength": 1.1666666666666667,
       "foliage": {
-        "wrap": 0.35,
-        "transmission": 0.28
+        "wrap": 0.0,
+        "transmission": 0.0
       }
     },
     {
@@ -9442,8 +9442,8 @@
       "stitch_vertical": false,
       "emission_strength": 1.1666666666666667,
       "foliage": {
-        "wrap": 0.35,
-        "transmission": 0.28
+        "wrap": 0.0,
+        "transmission": 0.0
       }
     },
     {
@@ -9478,8 +9478,8 @@
       "stitch_vertical": false,
       "emission_strength": 1.1666666666666667,
       "foliage": {
-        "wrap": 0.35,
-        "transmission": 0.28
+        "wrap": 0.0,
+        "transmission": 0.0
       }
     },
     {
@@ -9514,8 +9514,8 @@
       "stitch_vertical": false,
       "emission_strength": 1.1666666666666667,
       "foliage": {
-        "wrap": 0.35,
-        "transmission": 0.28
+        "wrap": 0.0,
+        "transmission": 0.0
       }
     },
     {
@@ -9550,8 +9550,8 @@
       "stitch_vertical": false,
       "emission_strength": 1.1666666666666667,
       "foliage": {
-        "wrap": 0.35,
-        "transmission": 0.28
+        "wrap": 0.0,
+        "transmission": 0.0
       }
     },
     {
@@ -12400,15 +12400,15 @@
       "flammable": true,
       "emission": 0,
       "swatch": [
-        0.373541,
-        0.325234,
-        0.255205,
+        0.361228,
+        0.314147,
+        0.245869,
         1.0
       ],
       "reflectance": [
-        95,
-        82,
-        65
+        92,
+        80,
+        62
       ],
       "family": "wood"
     },
@@ -13072,15 +13072,15 @@
       "flammable": true,
       "emission": 0,
       "swatch": [
-        0.373738,
-        0.352548,
-        0.349077,
+        0.356727,
+        0.3359,
+        0.332614,
         1.0
       ],
       "reflectance": [
-        95,
-        89,
-        89
+        90,
+        85,
+        84
       ],
       "family": "wood"
     },

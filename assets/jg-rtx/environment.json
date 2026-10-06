@@ -1,0 +1,25 @@
+{
+  "source": "https://github.com/jasonjgardner/jg-rtx",
+  "source_revision": "6c1da08d231ff4c94cf014f780759231756f94bd",
+  "license": "CC-BY-SA-4.0; retained in assets/jg-rtx/LICENSE",
+  "attribution": "Jason J. Gardner and upstream contributors; assets/jg-rtx/CREDITS.md",
+  "moon_atlas": {
+    "columns": 4,
+    "rows": 2,
+    "phase_indices": "server day modulo 8; row-major"
+  },
+  "textures": [
+    {
+      "source": "java/pack/assets/minecraft/textures/environment/sun.png",
+      "destination": "assets/textures/environment/sun.png",
+      "sha256": "976a853bc48bc37b294b671c1e32cca70218f05bf81c011d6a47b31b1ea2718e",
+      "processing": "unchanged source bytes; runtime sRGB texture decoding"
+    },
+    {
+      "source": "java/pack/assets/minecraft/textures/environment/moon_phases.png",
+      "destination": "assets/textures/environment/moon_phases.png",
+      "sha256": "88100d177a7ef4d52d90984935196ac9e728f58b8d903b4ac25a57ad48b2c2e3",
+      "processing": "unchanged source bytes; runtime sRGB texture decoding"
+    }
+  ]
+}

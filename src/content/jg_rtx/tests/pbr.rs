@@ -204,3 +204,52 @@ fn imported_smoothness_matches_perceptual_mer_source_pixels() {
         );
     }
 }
+
+#[test]
+fn curated_botanical_materials_are_dry_and_provenance_distinguishes_derived_art() {
+    let catalog = Catalog::builtins();
+    for (key, ceiling) in [
+        ("jg_cherry_leaves_s", 128),
+        ("jg_oak_leaves_s", 128),
+        ("jg_poppy_s", 153),
+    ] {
+        let bytes = pixels(&catalog, key);
+        assert!(bytes.chunks_exact(4).all(|p| p[0] <= ceiling));
+        assert!(bytes.chunks_exact(4).any(|p| p[0] == ceiling));
+    }
+    let crystal = catalog
+        .texture(
+            catalog
+                .texture_key("bloxgloom:jg_amethyst_cluster")
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        crystal.foliage,
+        Default::default(),
+        "mineral cutouts do not bend or transmit as plants"
+    );
+    let provenance: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../assets/jg-rtx/provenance.json")).unwrap();
+    for key in ["jg_cherry_log", "jg_oak_log", "wood_side"] {
+        let record = provenance
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| {
+                v["destination"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(&format!("/{key}.png"))
+            })
+            .unwrap();
+        assert_eq!(
+            record["art_curation"]["albedo"]["kind"],
+            "derived diffuse art"
+        );
+        assert_eq!(
+            record["art_curation"]["albedo"]["tool"],
+            "tools/jg_rtx/art.py"
+        );
+    }
+}

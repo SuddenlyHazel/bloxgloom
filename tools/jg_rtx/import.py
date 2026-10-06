@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 import pbr
 import color as albedo
+import art
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_SIZE = 256
@@ -18,6 +19,13 @@ TEXTURES = {}
 BLOCKS = []
 PROVENANCE = []
 BLOCK_IDS = {}
+
+
+def save_png(image, path):
+    """Don't expose a truncated include_bytes! asset to concurrent builds."""
+    pending = path.with_suffix('.png.tmp')
+    image.save(pending, format='PNG', optimize=True)
+    pending.replace(path)
 
 
 def frame(path):
@@ -59,9 +67,10 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
     # A block face must cover the entire cube; alpha is meaningful only for foliage/items.
     if not cutout:
         color.putalpha(255)
+    color, diffuse_art = art.bark(color, key)
     dest = ROOT / 'assets/textures' / folder / (key + '.png')
     dest.parent.mkdir(parents=True, exist_ok=True)
-    color.save(dest, optimize=True)
+    save_png(color, dest)
     companions = []
     n_path = path.with_name(path.stem + ('_n.png' if edition == 'java' else '_normal.png'))
     s_path = path.with_name(path.stem + ('_s.png' if edition == 'java' else '_mer.png'))
@@ -102,21 +111,25 @@ def import_texture(stem, *, key=None, folder='blocks', cutout=False, tint=None, 
     maps['n'], maps['s'], conversion = pbr.repair_companions(
         BEDROCK, path.stem, maps['n'], maps['s'],
         n_path if edition == 'java' and n_path.exists() else None, color.size)
+    maps['s'], material_art = art.gloss(maps['s'], stem, cutout)
     for suffix, im in maps.items():
         companion = dest.with_stem(dest.stem + '_' + suffix)
-        im.save(companion, optimize=True)
+        save_png(im, companion)
         companions.append({'key':key+'_'+suffix, 'path':str(companion.relative_to(ROOT)),
                            'alpha_cutout':False, 'stitch_edges':False, 'stitch_vertical':False,
                            'emission_strength':0., 'foliage':{'wrap':0.,'transmission':0.}})
     TEXTURES[key] = {'key':key, 'path':str(dest.relative_to(ROOT)), 'alpha_cutout':cutout,
                      'stitch_edges':False, 'stitch_vertical':False, 'emission_strength':0.,
-                     'foliage':{'wrap':.35 if cutout else 0.,'transmission':.28 if cutout else 0.},
+                     'foliage':{'wrap':.35 if cutout and art.botanical(stem) else 0.,'transmission':.28 if cutout and art.botanical(stem) else 0.},
                      '_companions':companions}
     PROVENANCE.append({'destination':str(dest.relative_to(ROOT)), 'source':str(path.relative_to(SOURCE)),
                        'normal_source':str(n_path.relative_to(SOURCE)) if n_path.exists() else None,
                        'material_source':str(s_path.relative_to(SOURCE)) if s_path.exists() else None,
                        'edition':edition, 'tint':tint})
     record = PROVENANCE[-1]
+    if diffuse_art or material_art:
+        record['art_curation'] = {kind: value for kind, value in
+                                  [('albedo', diffuse_art), ('specular', material_art)] if value}
     record['smoothness_source'] = record['material_source']
     record['ao_height_source'] = record['normal_source'] if edition == 'java' else None
     record['pbr_conversion'] = {
@@ -278,7 +291,7 @@ def replacements():
             a=np.array(overlay); a[:,:,:3]=np.rint(a[:,:,:3].astype(float)*np.array([115,168,68])/255).astype(np.uint8)
             color=Image.open(ROOT/TEXTURES[key]['path']).convert('RGBA')
             color = albedo.composite(color, Image.fromarray(a))
-            color.putalpha(255); color.save(ROOT/TEXTURES[key]['path'],optimize=True)
+            color.putalpha(255); save_png(color, ROOT/TEXTURES[key]['path'])
 
 
 def compose_sunflower():
@@ -301,7 +314,7 @@ def compose_sunflower():
             base.paste(piece, ((width-head_size)//2, 0), mask)
         else:
             base = albedo.composite(base, piece, ((width-head_size)//2, 0))
-        base.save(dest, optimize=True)
+        save_png(base, dest)
     next(p for p in PROVENANCE if p['destination'] == str(top_path.relative_to(ROOT)))['composite'] = 'sunflower_front head at 60% tile width, centered at top'
 
 

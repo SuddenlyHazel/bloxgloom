@@ -181,6 +181,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/log_oak_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "albedo": {
+        "kind": "derived diffuse art",
+        "operation": "periodic 3x3 linear-luminance median; suppress 45% of isolated positive glints; preserve chromaticity and alpha",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/log_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/oak_log_n.png",
     "pbr_conversion": {
@@ -235,6 +242,13 @@
       168,
       68
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/leaves_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/oak_leaves_n.png",
     "pbr_conversion": {
@@ -254,6 +268,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_rose_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_rose_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/poppy_n.png",
     "pbr_conversion": {
@@ -273,6 +294,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_dandelion_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_dandelion_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/dandelion_n.png",
     "pbr_conversion": {
@@ -342,6 +370,13 @@
       168,
       68
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/tallgrass_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/short_grass_n.png",
     "pbr_conversion": {
@@ -361,6 +396,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/sapling_oak_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/sapling_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/oak_sapling_n.png",
     "pbr_conversion": {
@@ -903,6 +945,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/log_oak_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "albedo": {
+        "kind": "derived diffuse art",
+        "operation": "periodic 3x3 linear-luminance median; suppress 45% of isolated positive glints; preserve chromaticity and alpha",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/log_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/oak_log_n.png",
     "pbr_conversion": {
@@ -1032,6 +1081,13 @@
       168,
       68
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/leaves_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/oak_leaves_n.png",
     "pbr_conversion": {
@@ -1180,6 +1236,13 @@
       127,
       91
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/leaves_spruce_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/spruce_leaves_n.png",
     "pbr_conversion": {
@@ -1322,6 +1385,13 @@
       169,
       80
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/leaves_birch_mers.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/birch_leaves_n.png",
     "pbr_conversion": {
@@ -1610,6 +1680,13 @@
       166,
       72
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/leaves_acacia_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/acacia_leaves_n.png",
     "pbr_conversion": {
@@ -1906,6 +1983,13 @@
       149,
       56
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/mangrove_leaves_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/mangrove_leaves_n.png",
     "pbr_conversion": {
@@ -1925,6 +2009,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/cherry_log_side_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "albedo": {
+        "kind": "derived diffuse art",
+        "operation": "periodic 3x3 linear-luminance median; suppress 45% of isolated positive glints; preserve chromaticity and alpha",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/cherry_log_side_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/cherry_log_n.png",
     "pbr_conversion": {
@@ -2050,6 +2141,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/cherry_leaves_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/cherry_leaves_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/cherry_leaves_n.png",
     "pbr_conversion": {
@@ -2193,6 +2291,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/pale_oak_leaves_mer.png",
     "edition": "bedrock",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/pale_oak_leaves_mer.png",
     "ao_height_source": null,
     "pbr_conversion": {
@@ -2212,6 +2317,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/azalea_leaves_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/azalea_leaves_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/azalea_leaves_n.png",
     "pbr_conversion": {
@@ -2231,6 +2343,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/azalea_leaves_flowers_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 128/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/azalea_leaves_flowers_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/flowering_azalea_leaves_n.png",
     "pbr_conversion": {
@@ -4196,6 +4315,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_dandelion_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_dandelion_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/dandelion_n.png",
     "pbr_conversion": {
@@ -4215,6 +4341,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_rose_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_rose_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/poppy_n.png",
     "pbr_conversion": {
@@ -4280,6 +4413,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_houstonia_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_houstonia_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/azure_bluet_n.png",
     "pbr_conversion": {
@@ -4322,6 +4462,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_cornflower_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_cornflower_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/cornflower_n.png",
     "pbr_conversion": {
@@ -4341,6 +4488,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_lily_of_the_valley_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_lily_of_the_valley_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/lily_of_the_valley_n.png",
     "pbr_conversion": {
@@ -4379,6 +4533,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_tulip_red_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_tulip_red_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/red_tulip_n.png",
     "pbr_conversion": {
@@ -4398,6 +4559,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_tulip_orange_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_tulip_orange_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/orange_tulip_n.png",
     "pbr_conversion": {
@@ -4417,6 +4585,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_tulip_white_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_tulip_white_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/white_tulip_n.png",
     "pbr_conversion": {
@@ -4436,6 +4611,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flower_tulip_pink_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flower_tulip_pink_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/pink_tulip_n.png",
     "pbr_conversion": {
@@ -4551,6 +4733,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/double_plant_rose_bottom_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/double_plant_rose_bottom_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/rose_bush_bottom_n.png",
     "pbr_conversion": {
@@ -4570,6 +4759,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/double_plant_rose_top_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/double_plant_rose_top_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/rose_bush_top_n.png",
     "pbr_conversion": {
@@ -4627,6 +4823,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/pitcher_crop_bottom_stage_4_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/pitcher_crop_bottom_stage_4_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/pitcher_crop_bottom_stage_4_n.png",
     "pbr_conversion": {
@@ -4646,6 +4849,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/pitcher_crop_top_stage_4_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/pitcher_crop_top_stage_4_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/pitcher_crop_top_stage_4_n.png",
     "pbr_conversion": {
@@ -4665,6 +4875,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/pink_petals_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/pink_petals_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/pink_petals_n.png",
     "pbr_conversion": {
@@ -4684,6 +4901,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/spore_blossom_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/spore_blossom_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/spore_blossom_n.png",
     "pbr_conversion": {
@@ -4703,6 +4927,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/azalea_plant_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/azalea_plant_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/azalea_plant_n.png",
     "pbr_conversion": {
@@ -4726,6 +4957,13 @@
       166,
       67
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/tallgrass_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/short_grass_n.png",
     "pbr_conversion": {
@@ -4745,6 +4983,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/tall_dry_grass_mers.tga",
     "edition": "bedrock",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/tall_dry_grass_mers.tga",
     "ao_height_source": null,
     "pbr_conversion": {
@@ -4783,6 +5028,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/deadbush_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/deadbush_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/dead_bush_n.png",
     "pbr_conversion": {
@@ -4844,6 +5096,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/cave_vines_body_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/cave_vines_body_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/cave_vines_n.png",
     "pbr_conversion": {
@@ -4863,6 +5122,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/hanging_roots_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/hanging_roots_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/hanging_roots_n.png",
     "pbr_conversion": {
@@ -4905,6 +5171,13 @@
       166,
       67
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "java/pack/assets/minecraft/textures/block/lily_pad_s.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/lily_pad_n.png",
     "pbr_conversion": {
@@ -4965,6 +5238,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/mushroom_red_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/mushroom_red_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/red_mushroom_n.png",
     "pbr_conversion": {
@@ -4988,6 +5268,13 @@
       166,
       67
     ],
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/reeds_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/sugar_cane_n.png",
     "pbr_conversion": {
@@ -5045,6 +5332,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flowering_azalea_side_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flowering_azalea_side_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/flowering_azalea_side_n.png",
     "pbr_conversion": {
@@ -5064,6 +5358,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/flowering_azalea_top_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/flowering_azalea_top_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/flowering_azalea_top_n.png",
     "pbr_conversion": {
@@ -5121,6 +5422,13 @@
     "material_source": "java/pack/assets/minecraft/textures/block/sweet_berry_bush_stage3_s.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": null,
     "ao_height_source": "java/pack/assets/minecraft/textures/block/sweet_berry_bush_stage3_n.png",
     "pbr_conversion": {
@@ -5144,6 +5452,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/cave_vines_head_berries_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/cave_vines_head_berries_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/cave_vines_head_berries_n.png",
     "pbr_conversion": {
@@ -5253,6 +5568,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/seagrass_doubletall_bottom_a_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/seagrass_doubletall_bottom_a_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/tall_seagrass_bottom_n.png",
     "pbr_conversion": {
@@ -5272,6 +5594,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/seagrass_doubletall_top_a_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/seagrass_doubletall_top_a_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/tall_seagrass_top_n.png",
     "pbr_conversion": {
@@ -5291,6 +5620,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/sapling_oak_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/sapling_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/oak_sapling_n.png",
     "pbr_conversion": {
@@ -5367,6 +5703,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/sapling_acacia_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/sapling_acacia_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/acacia_sapling_n.png",
     "pbr_conversion": {
@@ -5386,6 +5729,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/sapling_roofed_oak_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/sapling_roofed_oak_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/dark_oak_sapling_n.png",
     "pbr_conversion": {
@@ -5424,6 +5774,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/mangrove_propagule_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/mangrove_propagule_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/mangrove_propagule_n.png",
     "pbr_conversion": {
@@ -6880,6 +7237,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/crimson_fungus_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/crimson_fungus_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/crimson_fungus_n.png",
     "pbr_conversion": {
@@ -6899,6 +7263,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/crimson_roots_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/crimson_roots_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/crimson_roots_n.png",
     "pbr_conversion": {
@@ -7069,6 +7440,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/warped_fungus_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/warped_fungus_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/warped_fungus_n.png",
     "pbr_conversion": {
@@ -7088,6 +7466,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/warped_roots_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/warped_roots_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/warped_roots_n.png",
     "pbr_conversion": {
@@ -7107,6 +7492,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/weeping_vines_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/weeping_vines_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/weeping_vines_n.png",
     "pbr_conversion": {
@@ -7126,6 +7518,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/twisting_vines_base_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/twisting_vines_base_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/twisting_vines_n.png",
     "pbr_conversion": {
@@ -7164,6 +7563,13 @@
     "material_source": "bedrock/pack/RP/textures/blocks/chorus_flower_mer.png",
     "edition": "java",
     "tint": null,
+    "art_curation": {
+      "specular": {
+        "kind": "derived material art",
+        "operation": "dry botanical perceptual smoothness ceiling 153/255; retain source F0, subsurface and emission",
+        "tool": "tools/jg_rtx/art.py"
+      }
+    },
     "smoothness_source": "bedrock/pack/RP/textures/blocks/chorus_flower_mer.png",
     "ao_height_source": "java/pack/assets/minecraft/textures/block/chorus_flower_n.png",
     "pbr_conversion": {
