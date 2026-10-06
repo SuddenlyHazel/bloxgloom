@@ -2,14 +2,29 @@
 use super::SUN_DIRECTION;
 use glam::{Mat4, Vec3};
 
+mod sky_diffuse;
+
 /// Compose calibrated lighting and fog without reserving shadow bindings.
 /// Distant terrain shares this basis but owns a separate coverage bind group.
 pub(super) fn surface_shader(source: &str) -> String {
+    let daylight = super::bsl_reference::surface_shader();
+    let daylight = if super::bsl_reference::enabled() {
+        daylight
+    } else {
+        format!(
+            "{}\n{}",
+            daylight.replace(
+                "fn bg_environment_radiance(",
+                "fn bg_legacy_environment_radiance("
+            ),
+            include_str!("daylight/environment.wgsl")
+        )
+    };
     super::fog::shader(&format!(
         "{}\n{}\n{}\n{}\n{}\n{source}",
         super::bsl_reference::shader(),
         super::sky::CLOUD_SHADER,
-        super::bsl_reference::surface_shader(),
+        daylight,
         include_str!("daylight/primary_cloud.wgsl"),
         include_str!("scene_ao_output.wgsl")
     ))
@@ -119,6 +134,15 @@ impl Atmosphere {
             let color = super::bsl_reference::palettes(self).1;
             return (color, color);
         }
+        if super::sky::style_enabled() {
+            let (lower, upper) =
+                sky_diffuse::convolved(self.sun.y, self.rain_strength, self.moon_multiplier());
+            return (
+                lower * self.lighting.ambient_intensity,
+                upper * self.lighting.ambient_intensity,
+            );
+        }
+        // Non-BSL styling retains its original horizon/zenith calibration.
         // A broad hemispherical convolution desaturates the sky. Calibrate its
         // clear-noon energy once; do not adapt exposure as the scene darkens.
         fn convolve(color: Vec3, reference: Vec3, energy: Vec3) -> Vec3 {
@@ -189,8 +213,8 @@ impl Atmosphere {
         // Preserve the terrain parallax slot at byte 128 for every camera.
         data[32..36].copy_from_slice(&crate::config::parallax::Parallax::default().uniform());
         data[36..39].copy_from_slice(&self.sun_radiance().to_array());
-        // Shared sky/fog styling uses actual rain and lunar phase, independent
-        // of the brighter horizon colors calibrated for indirect illumination.
+        // Shared sky/fog styling and diffuse convolution use actual rain and
+        // lunar phase; horizon/zenith remain the non-BSL fallback palettes.
         data[39] = self.rain_strength;
         data[40..43].copy_from_slice(&self.zenith.to_array());
         data[43] = self.lighting.environment_intensity;

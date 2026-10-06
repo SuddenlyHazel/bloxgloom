@@ -31,8 +31,8 @@ fn atmosphere_drives_surface_color_energy_and_keeps_legacy_uniform_offsets() {
     let storm = crate::render::weather::Presentation::new(1.0, 1.8, [0.0; 2], 1.0, 0.0, 0.0)
         .atmosphere(noon);
     let (lower, upper) = noon.ambient();
-    assert!(lower.distance(Vec3::new(0.36, 0.335, 0.30)) < 1e-6);
-    assert!(upper.distance(Vec3::new(0.55, 0.57, 0.60)) < 1e-6);
+    assert!(lower.distance(Vec3::new(0.000388, 0.000834, 0.001520)) < 0.00002);
+    assert!(upper.distance(Vec3::new(0.025788, 0.065146, 0.152631)) < 0.00002);
     assert!(
         dawn.sun_radiance().x / dawn.sun_radiance().z
             > noon.sun_radiance().x / noon.sun_radiance().z
@@ -133,3 +133,6 @@ fn scene_transport_cloud_uniform_preserves_sun_energy_and_legacy_offsets() {
     };
     assert!((fallback.sun_radiance() - clear.sun_radiance() * 0.04).length() < 0.000001);
 }
+
+#[path = "tests/sky_diffuse.rs"]
+mod sky_diffuse;
