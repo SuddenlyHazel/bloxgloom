@@ -10,7 +10,9 @@ fn terrain_edit_interrupts_idle_mossbun_on_the_next_tick_across_a_seam() {
     use crate::server::entities::{EntityPayload, EntitySpawn, mossbun::Mossbun};
     let save = TestSave::new("idle-mossbun-support-wake");
     let mut state = state_for(&save, 7);
-    let y = crate::world::MAX_GENERATED_HEIGHT + 32;
+    // Exercise the horizontal support seam without also crossing a vertical
+    // entity-owner seam during the first falling steps.
+    let y = crate::world::MAX_GENERATED_HEIGHT + 33;
     let rest = [16.05, y as f32, 0.5];
     reside_neighbourhood(&mut state, rest);
     for x in [15, 16] {

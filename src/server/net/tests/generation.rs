@@ -5,7 +5,9 @@ use bloxgloom_host_api::generation::{Context, Contributor, GenerationError, Outp
 struct Marker;
 impl Contributor for Marker {
     fn generate(&self, _: Context, output: &mut Output) -> Result<(), GenerationError> {
-        output.set([0, 0, 0], "bloxgloom:glowstone")
+        // Keep the origin spawn column clear, including a chunk-aligned
+        // generation ceiling; the marker still identifies every loaded chunk.
+        output.set([8, 0, 8], "bloxgloom:glowstone")
     }
 }
 impl bloxgloom_host_api::Extension for Marker {
@@ -72,7 +74,7 @@ fn registered_generation_streams_after_cache_miss_and_server_restart() {
                     protocol::read_server(&mut peer).unwrap()
                 {
                     assert_eq!(
-                        snapshot.chunk.block([0, 0, 0]),
+                        snapshot.chunk.block([8, 0, 8]),
                         Some(crate::world::GLOWSTONE)
                     );
                     break;

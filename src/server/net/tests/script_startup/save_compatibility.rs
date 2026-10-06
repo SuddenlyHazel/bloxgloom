@@ -255,13 +255,13 @@ fn incompatible_package_contracts_and_generation_leave_saved_files_unchanged() {
     let terrain = Fixture::new();
     terrain.generator(
         "return function(h) h.register_generator('demo:terrain',1,'demo:terrain') end",
-        "return function(c) c.set_block(0,0,0,'bloxgloom:stone') end",
+        "return function(c) c.set_block(8,0,8,'bloxgloom:stone') end",
     );
     terrain.reopen();
     let before = saved_files(&terrain.0.join("save"));
     std::fs::write(
         terrain.0.join("packages/demo/terrain.luau"),
-        "return function(c) c.set_block(0,0,0,'bloxgloom:glowstone') end",
+        "return function(c) c.set_block(8,0,8,'bloxgloom:glowstone') end",
     )
     .unwrap();
     assert!(

@@ -129,6 +129,13 @@ fn dirt_needs_daylight_and_a_clear_column_without_adjacent_grass() {
     let save = Save::new();
     let mut world = World::new(7, save.0.clone()).unwrap();
     edit(&mut world, CELL, DIRT);
+    // Grass growth requires an authoritative clear column through the full
+    // generation ceiling, including newly taller terrain/canopy chunks.
+    for y in CELL[1].div_euclid(world::CHUNK_SIZE as i32) + 1
+        ..=world::MAX_GENERATED_HEIGHT.div_euclid(world::CHUNK_SIZE as i32)
+    {
+        world.get_chunk(ChunkKey { x: 0, y, z: 0 }).unwrap();
+    }
     assert_eq!(
         check(&mut world, CELL, true).unwrap(),
         Some(Rule::GrassGrowth)
@@ -383,9 +390,10 @@ fn sky_ceiling_tracks_owner_worker_roof_installation_and_removal() {
     edit(&mut world, CELL, DIRT);
     world.get_block(8, 120, 8).unwrap();
     world.get_chunk(ChunkKey { x: 0, y: 6, z: 0 }).unwrap();
-    for (block, expected_top, expected_rule) in
-        [(STONE, 127, None), (AIR, 95, Some(Rule::GrassGrowth))]
-    {
+    for (block, expected_top, expected_rule) in [
+        (STONE, 127, None),
+        (AIR, world::MAX_GENERATED_HEIGHT, Some(Rule::GrassGrowth)),
+    ] {
         let prepared = world.prepare_edits(&[(8, 120, 8, block)]).unwrap();
         let tasks = world.prepare_owner_apply_batch(prepared).unwrap();
         let receipts = tasks.into_iter().map(|task| task.run().unwrap()).collect();

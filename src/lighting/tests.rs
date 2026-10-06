@@ -4,15 +4,18 @@ use crate::world::{AIR, GLOWSTONE, LEAVES, MOSS, RED_FLOWER, WOOD};
 #[test]
 fn natural_cavern_skylight_crosses_the_zero_height_chunk_boundary() {
     let seed = 0xB10C_6100;
+    // Generator v7 preserves a naturally carved shaft at (262, 400).
+    // The positive surface height ensures this is a cave entrance above y=0.
+    assert!(world::terrain_height(262, 400, seed) > 0);
     let key = ChunkKey {
         x: 16,
         y: -1,
-        z: 20,
+        z: 25,
     };
     let mut known = HashMap::new();
     for y in -2..=world::MAX_GENERATED_HEIGHT / CHUNK_SIZE as i32 {
-        for z in 19..=21 {
-            for x in 15..=17 {
+        for z in key.z - 1..=key.z + 1 {
+            for x in key.x - 1..=key.x + 1 {
                 let key = ChunkKey { x, y, z };
                 known.insert(key, Arc::new(world::generate_chunk(key, seed)));
             }
@@ -34,6 +37,9 @@ fn natural_cavern_skylight_crosses_the_zero_height_chunk_boundary() {
                 let (chunk, local) = world::world_to_chunk(wx, y, wz);
                 content::catalog().sky_attenuation(known[&chunk].block(local).unwrap()) == 0
             });
+            if [wx, wz] == [262, 400] {
+                assert!(open, "fixture shaft must remain naturally open across y=0");
+            }
             if open {
                 open_columns += 1;
                 assert_eq!(fallback.face([x, 15, z], 1, 0).sky, 15);

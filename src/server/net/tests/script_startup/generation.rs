@@ -28,7 +28,11 @@ impl Fixture {
 #[test]
 fn luau_generation_streams_from_loader_after_restart() {
     let fixture = Fixture::new();
-    fixture.generator(REGISTER, MARKER);
+    // The marker must not fill the origin's chunk-aligned spawn ceiling.
+    fixture.generator(
+        REGISTER,
+        &MARKER.replace("c.set_block(0,0,0", "c.set_block(8,0,8"),
+    );
     for _ in 0..2 {
         let mut state = Box::new(fixture.open().unwrap());
         let fingerprint = state.world.catalog_arc().fingerprint();
@@ -62,7 +66,7 @@ fn luau_generation_streams_from_loader_after_restart() {
                 if let ServerMessage::WorldSnapshotStart(snapshot) =
                     protocol::read_server(&mut peer).unwrap()
                 {
-                    assert_eq!(snapshot.chunk.block([0, 0, 0]), Some(GLOWSTONE));
+                    assert_eq!(snapshot.chunk.block([8, 0, 8]), Some(GLOWSTONE));
                     break;
                 }
             }
